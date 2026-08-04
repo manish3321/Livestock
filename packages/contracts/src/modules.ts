@@ -1,0 +1,386 @@
+import { z } from 'zod';
+import {
+  APPROVAL_STATUSES,
+  EXPENSE_CATEGORIES,
+  HEALTH_RECORD_TYPES,
+  INVENTORY_ALERT_LEVELS,
+  PAYMENT_STATUSES,
+  QUALITY_GRADES_FISH,
+  QUALITY_GRADES_MILK_EGGS,
+  REVENUE_SOURCES,
+} from './domain';
+
+/** Approval thresholds (NPR) — above this, expense escalates to Admin. */
+export const EXPENSE_ESCALATION_THRESHOLDS: Record<
+  (typeof EXPENSE_CATEGORIES)[number],
+  number
+> = {
+  FEED: 50000,
+  MEDICINE: 25000,
+  LABOR: 40000,
+  INFRASTRUCTURE: 100000,
+  EQUIPMENT: 75000,
+  TRANSPORT: 20000,
+  MARKETING: 30000,
+  ADMIN: 20000,
+  MISC: 15000,
+  EMERGENCY: 10000,
+};
+
+// ---- Groups ----
+export const POULTRY_TYPES = ['LAYER', 'BROILER', 'DUCK'] as const;
+export const GROUP_HEALTH = ['HEALTHY', 'WATCH', 'SICK'] as const;
+
+export const groupCreateSchema = z.object({
+  name: z.string().min(1).max(120),
+  poultryType: z.enum(POULTRY_TYPES),
+  breed: z.string().min(1).max(80),
+  initialCount: z.number().int().positive(),
+  startedAt: z.coerce.date(),
+  healthStatus: z.enum(GROUP_HEALTH).default('HEALTHY'),
+  notes: z.string().max(2000).optional(),
+});
+export type GroupCreate = z.infer<typeof groupCreateSchema>;
+export const groupUpdateSchema = groupCreateSchema.partial();
+export type GroupUpdate = z.infer<typeof groupUpdateSchema>;
+
+export const mortalityCreateSchema = z.object({
+  count: z.number().int().positive(),
+  reason: z.string().max(500).optional(),
+  occurredAt: z.coerce.date().default(() => new Date()),
+});
+export type MortalityCreate = z.infer<typeof mortalityCreateSchema>;
+
+// ---- Fish ----
+export const fishBatchCreateSchema = z.object({
+  name: z.string().min(1).max(120),
+  species: z.string().min(1).max(80),
+  stockingDate: z.coerce.date(),
+  estimatedCount: z.number().int().positive(),
+  avgWeightGrams: z.number().positive(),
+  notes: z.string().max(2000).optional(),
+});
+export type FishBatchCreate = z.infer<typeof fishBatchCreateSchema>;
+export const fishBatchUpdateSchema = fishBatchCreateSchema.partial().extend({
+  harvestedAt: z.coerce.date().nullable().optional(),
+});
+export type FishBatchUpdate = z.infer<typeof fishBatchUpdateSchema>;
+
+export const waterQualityCreateSchema = z.object({
+  recordedAt: z.coerce.date().default(() => new Date()),
+  temperatureC: z.number().optional(),
+  ph: z.number().optional(),
+  dissolvedO2: z.number().optional(),
+  notes: z.string().max(500).optional(),
+});
+export type WaterQualityCreate = z.infer<typeof waterQualityCreateSchema>;
+
+export const fishSamplingCreateSchema = z.object({
+  sampledAt: z.coerce.date().default(() => new Date()),
+  sampleCount: z.number().int().positive(),
+  totalWeightGrams: z.number().positive(),
+  /** If omitted, estimatedCount is left unchanged on the batch. */
+  estimatedCount: z.number().int().positive().optional(),
+  notes: z.string().max(500).optional(),
+});
+export type FishSamplingCreate = z.infer<typeof fishSamplingCreateSchema>;
+
+// ---- Expenses ----
+export const expenseCreateSchema = z.object({
+  category: z.enum(EXPENSE_CATEGORIES),
+  amount: z.number().positive(),
+  expenseDate: z.coerce.date(),
+  description: z.string().min(1).max(500),
+  receiptNumber: z.string().max(80).optional(),
+});
+export type ExpenseCreate = z.infer<typeof expenseCreateSchema>;
+
+export const expenseReviewSchema = z.object({
+  decision: z.enum(['APPROVE', 'REJECT']),
+  reviewNote: z.string().max(500).optional(),
+});
+export type ExpenseReview = z.infer<typeof expenseReviewSchema>;
+
+export const expenseListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(25),
+  status: z.enum(APPROVAL_STATUSES).optional(),
+  category: z.enum(EXPENSE_CATEGORIES).optional(),
+});
+export type ExpenseListQuery = z.infer<typeof expenseListQuerySchema>;
+
+// ---- Revenue ----
+export const revenueCreateSchema = z.object({
+  source: z.enum(REVENUE_SOURCES),
+  quantity: z.number().positive(),
+  unit: z.string().min(1).max(20),
+  rate: z.number().nonnegative(),
+  revenueDate: z.coerce.date(),
+  buyerName: z.string().max(120).optional(),
+  buyerContact: z.string().max(120).optional(),
+  paymentTerms: z.string().max(200).optional(),
+  paymentStatus: z.enum(PAYMENT_STATUSES).default('PENDING'),
+  notes: z.string().max(2000).optional(),
+});
+export type RevenueCreate = z.infer<typeof revenueCreateSchema>;
+export const revenueUpdateSchema = revenueCreateSchema.partial();
+export type RevenueUpdate = z.infer<typeof revenueUpdateSchema>;
+
+export const revenueListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(25),
+  source: z.enum(REVENUE_SOURCES).optional(),
+  paymentStatus: z.enum(PAYMENT_STATUSES).optional(),
+});
+export type RevenueListQuery = z.infer<typeof revenueListQuerySchema>;
+
+// ---- Inventory ----
+export const INVENTORY_CATEGORIES = [
+  'FEED',
+  'MEDICINE',
+  'VACCINE',
+  'EQUIPMENT',
+  'SUPPLIES',
+] as const;
+
+export const inventoryCreateSchema = z.object({
+  name: z.string().min(1).max(120),
+  category: z.enum(INVENTORY_CATEGORIES),
+  unit: z.string().min(1).max(20),
+  currentStock: z.number().nonnegative(),
+  minimumStock: z.number().nonnegative(),
+  expiryDate: z.coerce.date().optional(),
+  supplier: z.string().max(120).optional(),
+  batchLotNumber: z.string().max(80).optional(),
+  notes: z.string().max(2000).optional(),
+});
+export type InventoryCreate = z.infer<typeof inventoryCreateSchema>;
+export const inventoryUpdateSchema = inventoryCreateSchema.partial();
+export type InventoryUpdate = z.infer<typeof inventoryUpdateSchema>;
+
+export function inventoryAlertLevel(
+  current: number,
+  minimum: number,
+): (typeof INVENTORY_ALERT_LEVELS)[number] {
+  if (minimum <= 0) return 'GOOD';
+  if (current < minimum * 0.5) return 'CRITICAL';
+  if (current <= minimum) return 'LOW';
+  return 'GOOD';
+}
+
+export const restockCreateSchema = z.object({
+  quantity: z.number().positive(),
+  notes: z.string().max(500).optional(),
+});
+export type RestockCreate = z.infer<typeof restockCreateSchema>;
+
+// ---- Health ----
+export const healthCreateSchema = z.object({
+  type: z.enum(HEALTH_RECORD_TYPES),
+  title: z.string().min(1).max(120),
+  animalId: z.string().uuid().optional(),
+  groupId: z.string().uuid().optional(),
+  performedAt: z.coerce.date(),
+  nextDueAt: z.coerce.date().optional(),
+  notes: z.string().max(2000).optional(),
+});
+export type HealthCreate = z.infer<typeof healthCreateSchema>;
+
+/** Default next-due offsets (days) for common schedules. */
+export const HEALTH_DEFAULT_INTERVAL_DAYS: Partial<
+  Record<(typeof HEALTH_RECORD_TYPES)[number], number>
+> = {
+  VACCINATION: 365, // FMD annual default; Newcastle monthly is set explicitly
+  DEWORMING: 90,
+  CHECKUP: 180,
+};
+
+export const healthListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(25),
+  type: z.enum(HEALTH_RECORD_TYPES).optional(),
+  due: z.enum(['overdue', 'due_soon', 'all']).default('all'),
+});
+export type HealthListQuery = z.infer<typeof healthListQuerySchema>;
+
+// ---- Breeding ----
+export const MATING_TYPES = ['NATURAL', 'AI'] as const;
+export const PREGNANCY_STATUSES = [
+  'OPEN',
+  'PREGNANT',
+  'CONFIRMED',
+  'DELIVERED',
+  'FAILED',
+] as const;
+
+export const breedingCreateSchema = z.object({
+  motherId: z.string().uuid(),
+  matingType: z.enum(MATING_TYPES),
+  fatherTagOrAi: z.string().max(80).optional(),
+  matingDate: z.coerce.date(),
+  pregnancyStatus: z.enum(PREGNANCY_STATUSES).default('PREGNANT'),
+  notes: z.string().max(2000).optional(),
+});
+export type BreedingCreate = z.infer<typeof breedingCreateSchema>;
+
+export const breedingUpdateSchema = z.object({
+  pregnancyStatus: z.enum(PREGNANCY_STATUSES).optional(),
+  birthDate: z.coerce.date().optional(),
+  offspringTag: z.string().max(20).optional(),
+  notes: z.string().max(2000).optional(),
+  fatherTagOrAi: z.string().max(80).optional(),
+});
+export type BreedingUpdate = z.infer<typeof breedingUpdateSchema>;
+
+// ---- Production ----
+export const PRODUCTION_TYPES = ['MILK', 'EGGS', 'FISH'] as const;
+export const QUALITY_GRADES = [
+  ...QUALITY_GRADES_MILK_EGGS,
+  ...QUALITY_GRADES_FISH,
+] as const;
+
+export const productionCreateSchema = z.object({
+  type: z.enum(PRODUCTION_TYPES),
+  entryDate: z.coerce.date(),
+  quantity: z.number().positive(),
+  unit: z.string().min(1).max(20),
+  quality: z.enum(QUALITY_GRADES).optional(),
+  animalId: z.string().uuid().optional(),
+  groupId: z.string().uuid().optional(),
+  batchId: z.string().uuid().optional(),
+  notes: z.string().max(2000).optional(),
+});
+export type ProductionCreate = z.infer<typeof productionCreateSchema>;
+
+export const productionListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(25),
+  type: z.enum(PRODUCTION_TYPES).optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+});
+export type ProductionListQuery = z.infer<typeof productionListQuerySchema>;
+
+// ---- Dashboard / Reports ----
+export const reportQuerySchema = z.object({
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+  species: z.string().optional(),
+  category: z.string().optional(),
+});
+export type ReportQuery = z.infer<typeof reportQuerySchema>;
+
+export const pnlQuerySchema = z.object({
+  period: z.enum(['monthly', 'quarterly', 'yearly']).default('monthly'),
+  year: z.coerce.number().int().min(2000).max(2100).optional(),
+});
+export type PnlQuery = z.infer<typeof pnlQuerySchema>;
+
+// ---- Herd batches (category + age-range counts) ----
+export const HERD_BATCH_KINDS = ['LIVESTOCK', 'POULTRY', 'FISH'] as const;
+export type HerdBatchKind = (typeof HERD_BATCH_KINDS)[number];
+
+export const ILLNESS_CONDITIONS = [
+  'FMD',
+  'MASTITIS',
+  'NEWCASTLE',
+  'PARASITES',
+  'INJURY',
+  'RESPIRATORY',
+  'DIGESTIVE',
+  'SKIN',
+  'OTHER',
+] as const;
+export type IllnessCondition = (typeof ILLNESS_CONDITIONS)[number];
+
+export const ILLNESS_CONDITION_LABEL: Record<IllnessCondition, string> = {
+  FMD: 'Foot-and-mouth (FMD)',
+  MASTITIS: 'Mastitis',
+  NEWCASTLE: 'Newcastle / Ranikhet',
+  PARASITES: 'Parasites',
+  INJURY: 'Injury',
+  RESPIRATORY: 'Respiratory',
+  DIGESTIVE: 'Digestive',
+  SKIN: 'Skin / external',
+  OTHER: 'Other',
+};
+
+export const herdBatchCreateSchema = z
+  .object({
+    kind: z.enum(HERD_BATCH_KINDS),
+    category: z.string().min(1).max(80),
+    name: z.string().min(1).max(120),
+    ageFromMonths: z.number().int().min(0).max(600).nullable().optional(),
+    ageToMonths: z.number().int().min(0).max(600).nullable().optional(),
+    initialCount: z.number().int().positive(),
+    notes: z.string().max(2000).optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (
+      val.ageFromMonths != null &&
+      val.ageToMonths != null &&
+      val.ageToMonths < val.ageFromMonths
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'ageToMonths must be >= ageFromMonths',
+        path: ['ageToMonths'],
+      });
+    }
+  });
+export type HerdBatchCreate = z.infer<typeof herdBatchCreateSchema>;
+
+export const herdBatchUpdateSchema = z
+  .object({
+    category: z.string().min(1).max(80).optional(),
+    name: z.string().min(1).max(120).optional(),
+    ageFromMonths: z.number().int().min(0).max(600).nullable().optional(),
+    ageToMonths: z.number().int().min(0).max(600).nullable().optional(),
+    currentCount: z.number().int().min(0).optional(),
+    notes: z.string().max(2000).nullable().optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (
+      val.ageFromMonths != null &&
+      val.ageToMonths != null &&
+      val.ageToMonths < val.ageFromMonths
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'ageToMonths must be >= ageFromMonths',
+        path: ['ageToMonths'],
+      });
+    }
+  });
+export type HerdBatchUpdate = z.infer<typeof herdBatchUpdateSchema>;
+
+export const herdBatchListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(50),
+  kind: z.enum(HERD_BATCH_KINDS).optional(),
+  category: z.string().max(80).optional(),
+  q: z.string().max(80).optional(),
+});
+export type HerdBatchListQuery = z.infer<typeof herdBatchListQuerySchema>;
+
+export const batchIllnessCreateSchema = z.object({
+  condition: z.enum(ILLNESS_CONDITIONS),
+  count: z.number().int().positive(),
+  occurredAt: z.coerce.date().default(() => new Date()),
+  notes: z.string().max(500).optional(),
+});
+export type BatchIllnessCreate = z.infer<typeof batchIllnessCreateSchema>;
+
+export const batchMortalityCreateSchema = z.object({
+  count: z.number().int().positive(),
+  reason: z.string().max(500).optional(),
+  occurredAt: z.coerce.date().default(() => new Date()),
+});
+export type BatchMortalityCreate = z.infer<typeof batchMortalityCreateSchema>;
+
+export const herdMonthlyReportQuerySchema = z.object({
+  year: z.coerce.number().int().min(2000).max(2100),
+  month: z.coerce.number().int().min(1).max(12),
+  kind: z.enum(HERD_BATCH_KINDS).optional(),
+});
+export type HerdMonthlyReportQuery = z.infer<typeof herdMonthlyReportQuerySchema>;

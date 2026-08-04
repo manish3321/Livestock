@@ -1,0 +1,702 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Identity & tenancy
+// ---------------------------------------------------------------------------
+
+enum Role {
+  ADMIN
+  MANAGER
+  WORKER
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  name         String
+  phone        String?
+  passwordHash String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships FarmMembership[]
+  sessions    RefreshSession[]
+  devices     Device[]
+  auditEvents AuditEvent[]
+}
+
+model Farm {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  location  String?
+  currency  String   @default("NPR")
+  timezone  String   @default("Asia/Kathmandu")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships      FarmMembership[]
+  animals          Animal[]
+  weightRecords    WeightRecord[]
+  animalGroups     AnimalGroup[]
+  groupMortality   GroupMortalityEvent[]
+  fishBatches      FishBatch[]
+  waterQualityLogs WaterQualityLog[]
+  fishSamplings    FishSampling[]
+  expenses         Expense[]
+  revenues         Revenue[]
+  inventoryItems   InventoryItem[]
+  restockRequests  RestockRequest[]
+  healthRecords    HealthRecord[]
+  breedingRecords  BreedingRecord[]
+  productionEntries ProductionEntry[]
+  auditEvents      AuditEvent[]
+  changeLog        ChangeLogEntry[]
+  mutations        SyncMutationRecord[]
+  herdBatches      HerdBatch[]
+  batchIllness     BatchIllnessEvent[]
+  batchMortality   BatchMortalityEvent[]
+}
+
+model FarmMembership {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  farmId String @db.Uuid
+  role   Role
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, farmId])
+  @@index([farmId])
+}
+
+// ---------------------------------------------------------------------------
+// Sessions & devices
+// ---------------------------------------------------------------------------
+
+model RefreshSession {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @db.Uuid
+  tokenHash    String    @unique
+  platform     String    @default("web")
+  deviceName   String?
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedById String?   @db.Uuid
+  createdAt    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Device {
+  id         String   @id
+  userId     String   @db.Uuid
+  platform   String   @default("android")
+  fcmToken   String?
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Audit trail
+// ---------------------------------------------------------------------------
+
+model AuditEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  farmId     String   @db.Uuid
+  userId     String?  @db.Uuid
+  action     String
+  entityType String?
+  entityId   String?
+  metadata   Json?
+  requestId  String?
+  createdAt  DateTime @default(now())
+
+  farm Farm  @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([farmId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Domain: Animals (reference syncable entity for the foundation)
+// ---------------------------------------------------------------------------
+
+enum Species {
+  BUFFALO
+  COW
+  PIG
+  GOAT
+}
+
+enum AnimalStatus {
+  ACTIVE
+  PREGNANT
+  SICK
+  QUARANTINE
+}
+
+enum Gender {
+  FEMALE
+  MALE
+}
+
+enum AnimalSource {
+  PURCHASED
+  BORN
+  TRANSFERRED
+}
+
+model Animal {
+  id           String        @id @default(uuid()) @db.Uuid
+  farmId       String        @db.Uuid
+  tag          String
+  name         String?
+  species      Species
+  breed        String
+  dateOfBirth  DateTime?
+  gender       Gender
+  color        String?
+  source       AnimalSource?
+  motherTag    String?
+  purchaseDate DateTime?
+  purchaseCost Decimal?      @db.Decimal(12, 2)
+  status       AnimalStatus  @default(ACTIVE)
+  notes        String?
+  version      Int           @default(1)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  deletedAt    DateTime?
+
+  farm     Farm             @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  weights  WeightRecord[]
+  health   HealthRecord[]
+  breeding BreedingRecord[]
+  production ProductionEntry[]
+
+  @@unique([farmId, tag])
+  @@index([farmId, updatedAt])
+  @@index([farmId, species])
+  @@index([farmId, status])
+}
+
+model WeightRecord {
+  id         String   @id @default(uuid()) @db.Uuid
+  farmId     String   @db.Uuid
+  animalId   String   @db.Uuid
+  weightKg   Decimal  @db.Decimal(8, 2)
+  recordedAt DateTime
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  farm   Farm   @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal Animal @relation(fields: [animalId], references: [id], onDelete: Cascade)
+
+  @@index([animalId, recordedAt])
+  @@index([farmId])
+}
+
+// ---------------------------------------------------------------------------
+// Groups (poultry flocks) — count-based
+// ---------------------------------------------------------------------------
+
+enum PoultryType {
+  LAYER
+  BROILER
+  DUCK
+}
+
+enum GroupHealthStatus {
+  HEALTHY
+  WATCH
+  SICK
+}
+
+model AnimalGroup {
+  id           String            @id @default(uuid()) @db.Uuid
+  farmId       String            @db.Uuid
+  name         String
+  poultryType  PoultryType
+  breed        String
+  initialCount Int
+  currentCount Int
+  startedAt    DateTime
+  healthStatus GroupHealthStatus @default(HEALTHY)
+  notes        String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  deletedAt    DateTime?
+
+  farm       Farm                  @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  mortality  GroupMortalityEvent[]
+  health     HealthRecord[]
+  production ProductionEntry[]
+
+  @@index([farmId])
+}
+
+model GroupMortalityEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  farmId    String   @db.Uuid
+  groupId   String   @db.Uuid
+  count     Int
+  reason    String?
+  occurredAt DateTime
+  createdAt DateTime @default(now())
+
+  farm  Farm        @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  group AnimalGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId, occurredAt])
+}
+
+// ---------------------------------------------------------------------------
+// Fish batches — estimate-based
+// ---------------------------------------------------------------------------
+
+model FishBatch {
+  id             String    @id @default(uuid()) @db.Uuid
+  farmId         String    @db.Uuid
+  name           String
+  species        String
+  stockingDate   DateTime
+  estimatedCount Int
+  avgWeightGrams Decimal   @db.Decimal(8, 2)
+  notes          String?
+  harvestedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  farm         Farm              @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  waterQuality WaterQualityLog[]
+  samplings    FishSampling[]
+  production   ProductionEntry[]
+
+  @@index([farmId])
+}
+
+model WaterQualityLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  farmId       String   @db.Uuid
+  batchId      String   @db.Uuid
+  recordedAt   DateTime
+  temperatureC Decimal? @db.Decimal(5, 2)
+  ph           Decimal? @db.Decimal(4, 2)
+  dissolvedO2  Decimal? @db.Decimal(5, 2)
+  notes        String?
+  createdAt    DateTime @default(now())
+
+  farm  Farm      @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  batch FishBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId, recordedAt])
+}
+
+model FishSampling {
+  id              String   @id @default(uuid()) @db.Uuid
+  farmId          String   @db.Uuid
+  batchId         String   @db.Uuid
+  sampledAt       DateTime
+  sampleCount     Int
+  totalWeightGrams Decimal @db.Decimal(10, 2)
+  estimatedCount  Int
+  avgWeightGrams  Decimal  @db.Decimal(8, 2)
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  farm  Farm      @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  batch FishBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId, sampledAt])
+}
+
+// ---------------------------------------------------------------------------
+// Herd batches — category + age-range count tracking (livestock/poultry/fish)
+// ---------------------------------------------------------------------------
+
+enum HerdBatchKind {
+  LIVESTOCK
+  POULTRY
+  FISH
+}
+
+model HerdBatch {
+  id             String        @id @default(uuid()) @db.Uuid
+  farmId         String        @db.Uuid
+  kind           HerdBatchKind
+  /** Species / poultry type / fish species label (e.g. BUFFALO, LAYER, Rohu). */
+  category       String
+  name           String
+  ageFromMonths  Int?
+  ageToMonths    Int?
+  initialCount   Int
+  currentCount   Int
+  deadCount      Int           @default(0)
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
+
+  farm      Farm                 @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  illness   BatchIllnessEvent[]
+  mortality BatchMortalityEvent[]
+
+  @@index([farmId, kind])
+  @@index([farmId, category])
+}
+
+model BatchIllnessEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  farmId     String   @db.Uuid
+  batchId    String   @db.Uuid
+  condition  String
+  count      Int
+  occurredAt DateTime
+  resolvedAt DateTime?
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  farm  Farm      @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  batch HerdBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId, occurredAt])
+  @@index([farmId, occurredAt])
+}
+
+model BatchMortalityEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  farmId     String   @db.Uuid
+  batchId    String   @db.Uuid
+  count      Int
+  reason     String?
+  occurredAt DateTime
+  createdAt  DateTime @default(now())
+
+  farm  Farm      @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  batch HerdBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId, occurredAt])
+  @@index([farmId, occurredAt])
+}
+
+// ---------------------------------------------------------------------------
+// Expenses (approval workflow)
+// ---------------------------------------------------------------------------
+
+enum ExpenseCategory {
+  FEED
+  MEDICINE
+  LABOR
+  INFRASTRUCTURE
+  EQUIPMENT
+  TRANSPORT
+  MARKETING
+  ADMIN
+  MISC
+  EMERGENCY
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ESCALATED
+}
+
+model Expense {
+  id              String          @id @default(uuid()) @db.Uuid
+  farmId          String          @db.Uuid
+  category        ExpenseCategory
+  amount          Decimal         @db.Decimal(12, 2)
+  expenseDate     DateTime
+  description     String
+  receiptNumber   String?
+  status          ApprovalStatus  @default(PENDING)
+  submittedById   String          @db.Uuid
+  reviewedById    String?         @db.Uuid
+  reviewedAt      DateTime?
+  reviewNote      String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@index([farmId, status])
+  @@index([farmId, expenseDate])
+}
+
+// ---------------------------------------------------------------------------
+// Revenue
+// ---------------------------------------------------------------------------
+
+enum RevenueSource {
+  MILK
+  EGGS
+  FISH
+  MEAT
+}
+
+enum PaymentStatus {
+  PAID
+  PENDING
+  PARTIAL
+}
+
+model Revenue {
+  id            String        @id @default(uuid()) @db.Uuid
+  farmId        String        @db.Uuid
+  source        RevenueSource
+  quantity      Decimal       @db.Decimal(12, 2)
+  unit          String
+  rate          Decimal       @db.Decimal(12, 2)
+  amount        Decimal       @db.Decimal(12, 2)
+  revenueDate   DateTime
+  buyerName     String?
+  buyerContact  String?
+  paymentTerms  String?
+  paymentStatus PaymentStatus @default(PENDING)
+  invoiceNumber String
+  notes         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@unique([farmId, invoiceNumber])
+  @@index([farmId, revenueDate])
+}
+
+// ---------------------------------------------------------------------------
+// Inventory
+// ---------------------------------------------------------------------------
+
+enum InventoryCategory {
+  FEED
+  MEDICINE
+  VACCINE
+  EQUIPMENT
+  SUPPLIES
+}
+
+model InventoryItem {
+  id              String            @id @default(uuid()) @db.Uuid
+  farmId          String            @db.Uuid
+  name            String
+  category        InventoryCategory
+  unit            String
+  currentStock    Decimal           @db.Decimal(12, 2)
+  minimumStock    Decimal           @db.Decimal(12, 2)
+  expiryDate      DateTime?
+  supplier        String?
+  batchLotNumber  String?
+  notes           String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  deletedAt       DateTime?
+
+  farm    Farm             @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  restock RestockRequest[]
+
+  @@index([farmId, category])
+}
+
+enum RestockStatus {
+  REQUESTED
+  APPROVED
+  ORDERED
+  RECEIVED
+  REJECTED
+}
+
+model RestockRequest {
+  id          String        @id @default(uuid()) @db.Uuid
+  farmId      String        @db.Uuid
+  itemId      String        @db.Uuid
+  quantity    Decimal       @db.Decimal(12, 2)
+  status      RestockStatus @default(REQUESTED)
+  notes       String?
+  requestedBy String        @db.Uuid
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  farm Farm          @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  item InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([farmId, status])
+}
+
+// ---------------------------------------------------------------------------
+// Health records
+// ---------------------------------------------------------------------------
+
+enum HealthRecordType {
+  VACCINATION
+  TREATMENT
+  DEWORMING
+  CHECKUP
+  SURGERY
+}
+
+model HealthRecord {
+  id          String           @id @default(uuid()) @db.Uuid
+  farmId      String           @db.Uuid
+  type        HealthRecordType
+  title       String
+  animalId    String?          @db.Uuid
+  groupId     String?          @db.Uuid
+  performedAt DateTime
+  nextDueAt   DateTime?
+  notes       String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  farm   Farm         @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal Animal?      @relation(fields: [animalId], references: [id], onDelete: SetNull)
+  group  AnimalGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
+  @@index([farmId, nextDueAt])
+  @@index([animalId])
+  @@index([groupId])
+}
+
+// ---------------------------------------------------------------------------
+// Breeding
+// ---------------------------------------------------------------------------
+
+enum MatingType {
+  NATURAL
+  AI
+}
+
+enum PregnancyStatus {
+  OPEN
+  PREGNANT
+  CONFIRMED
+  DELIVERED
+  FAILED
+}
+
+model BreedingRecord {
+  id              String          @id @default(uuid()) @db.Uuid
+  farmId          String          @db.Uuid
+  motherId        String          @db.Uuid
+  matingType      MatingType
+  fatherTagOrAi   String?
+  matingDate      DateTime
+  dueDate         DateTime
+  pregnancyStatus PregnancyStatus @default(PREGNANT)
+  birthDate       DateTime?
+  offspringTag    String?
+  notes           String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  farm   Farm   @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  mother Animal @relation(fields: [motherId], references: [id], onDelete: Cascade)
+
+  @@index([farmId, dueDate])
+  @@index([motherId])
+}
+
+// ---------------------------------------------------------------------------
+// Production tracking
+// ---------------------------------------------------------------------------
+
+enum ProductionType {
+  MILK
+  EGGS
+  FISH
+}
+
+enum QualityGrade {
+  A
+  B
+  C
+  PREMIUM
+  STANDARD
+}
+
+model ProductionEntry {
+  id          String         @id @default(uuid()) @db.Uuid
+  farmId      String         @db.Uuid
+  type        ProductionType
+  entryDate   DateTime
+  quantity    Decimal        @db.Decimal(12, 2)
+  unit        String
+  quality     QualityGrade?
+  animalId    String?        @db.Uuid
+  groupId     String?        @db.Uuid
+  batchId     String?        @db.Uuid
+  notes       String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  farm   Farm         @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal Animal?      @relation(fields: [animalId], references: [id], onDelete: SetNull)
+  group  AnimalGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  batch  FishBatch?   @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  @@index([farmId, entryDate])
+  @@index([farmId, type])
+}
+
+// ---------------------------------------------------------------------------
+// Offline sync
+// ---------------------------------------------------------------------------
+
+enum SyncMutationStatus {
+  APPLIED
+  DUPLICATE
+  CONFLICT
+  FAILED
+}
+
+/// Idempotency ledger: one row per client mutation ever received.
+model SyncMutationRecord {
+  clientMutationId String             @id @db.Uuid
+  farmId           String             @db.Uuid
+  userId           String             @db.Uuid
+  deviceId         String
+  entityType       String
+  entityId         String
+  op               String
+  status           SyncMutationStatus
+  serverVersion    Int?
+  error            String?
+  createdAt        DateTime           @default(now())
+
+  farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@index([farmId, createdAt])
+}
+
+/// Monotonic per-server change feed consumed by /sync/pull.
+model ChangeLogEntry {
+  seq        BigInt    @id @default(autoincrement())
+  farmId     String    @db.Uuid
+  entityType String
+  entityId   String
+  version    Int
+  deletedAt  DateTime?
+  data       Json?
+  createdAt  DateTime  @default(now())
+
+  farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@index([farmId, seq])
+}

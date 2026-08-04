@@ -1,0 +1,16 @@
+{
+  "name": "@farm/tsconfig",
+  "version": "0.1.0",
+  "private": true,
+  "files": [
+    "base.json",
+    "node.json",
+    "react.json"
+  ],
+  "scripts": {
+    "build": "echo skip",
+    "typecheck": "echo skip",
+    "lint": "echo skip",
+    "test": "echo skip"
+  }
+}

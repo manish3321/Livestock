@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared packages
+        run: pnpm --filter @farm/contracts build && pnpm --filter @farm/design-tokens build
+
+      - name: Generate Prisma client
+        run: pnpm --filter @farm/api db:generate
+
+      - name: Lint
+        run: pnpm -r lint
+
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+      - name: Test
+        run: pnpm -r test
+
+      - name: Build API and web
+        run: pnpm --filter @farm/api build && pnpm --filter @farm/web build

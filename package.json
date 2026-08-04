@@ -1,0 +1,20 @@
+{
+  "name": "farm-management",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Farm Management ERP — web dashboard and API",
+  "packageManager": "pnpm@11.17.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "dev:api": "pnpm --filter @farm/api dev",
+    "dev:web": "pnpm --filter @farm/web dev",
+    "db:migrate": "pnpm --filter @farm/api db:migrate",
+    "db:seed": "pnpm --filter @farm/api db:seed"
+  }
+}

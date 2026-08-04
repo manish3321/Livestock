@@ -1,0 +1,21 @@
+{
+  "name": "@farm/design-tokens",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/cjs/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.esm.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src",
+    "test": "echo skip"
+  },
+  "devDependencies": {
+    "@farm/eslint-config": "workspace:*",
+    "@farm/tsconfig": "workspace:*",
+    "@types/node": "^22.9.0",
+    "eslint": "^9.14.0",
+    "typescript": "^5.6.3"
+  }
+}

@@ -1,0 +1,73 @@
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  HttpCode,
+  Post,
+} from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import {
+  loginRequestSchema,
+  refreshRequestSchema,
+  ROLE_PERMISSIONS,
+} from '@farm/contracts';
+import type {
+  LoginRequest,
+  LoginResponse,
+  RefreshRequest,
+  TokenPair,
+} from '@farm/contracts';
+import { CurrentUser, Public } from '../common/decorators';
+import type { RequestUser } from '../common/types';
+import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import { AuthService } from './auth.service';
+
+@ApiTags('auth')
+@Controller('auth')
+export class AuthController {
+  constructor(private readonly auth: AuthService) {}
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('login')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Log in with email and password' })
+  login(
+    @Body(new ZodValidationPipe(loginRequestSchema)) body: LoginRequest,
+    @Headers('x-request-id') requestId?: string,
+  ): Promise<LoginResponse> {
+    return this.auth.login(body, requestId);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Post('refresh')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Rotate a refresh token' })
+  refresh(
+    @Body(new ZodValidationPipe(refreshRequestSchema)) body: RefreshRequest,
+  ): Promise<TokenPair> {
+    return this.auth.refresh(body.refreshToken);
+  }
+
+  @Post('logout')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Revoke the current session' })
+  async logout(@CurrentUser() user: RequestUser): Promise<void> {
+    await this.auth.logout(user.sessionId);
+  }
+
+  @Get('me')
+  @ApiOperation({ summary: 'Current principal, role, and permission map' })
+  me(@CurrentUser() user: RequestUser) {
+    return {
+      id: user.id,
+      email: user.email,
+      farmId: user.farmId,
+      role: user.role,
+      permissions: ROLE_PERMISSIONS[user.role],
+    };
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "extends": "@farm/tsconfig/node.json",
+  "compilerOptions": {
+    "outDir": "dist/cjs",
+    "rootDir": "src"
+  },
+  "include": ["src"]
+}

@@ -1,0 +1,97 @@
+import { Navigate, Route, Routes } from 'react-router-dom';
+import { AuthProvider } from './auth/auth-context';
+import { RequireAuth, RequireModule } from './auth/ProtectedRoute';
+import { AppLayout } from './layout/AppLayout';
+import { ForbiddenPage, NotFoundPage } from './pages/ErrorPages';
+import { LoginPage } from './pages/LoginPage';
+import {
+  BatchDetailPage,
+  FishBatchesPage,
+  LivestockBatchesPage,
+  PoultryBatchesPage,
+} from './pages/batches/BatchesPages';
+import { AnimalDetailPage, AnimalFormPage } from './pages/animals/AnimalDetailPage';
+import { AnimalsListPage } from './pages/animals/AnimalsListPage';
+import { DashboardPage } from './pages/dashboard/DashboardPage';
+import { ExpensesPage } from './pages/expenses/ExpensesPage';
+import { RevenuePage } from './pages/revenue/RevenuePage';
+import { PnlPage } from './pages/pnl/PnlPage';
+import { InventoryPage } from './pages/inventory/InventoryPage';
+import { HealthPage } from './pages/health/HealthPage';
+import { BreedingPage } from './pages/breeding/BreedingPage';
+import { ProductionPage } from './pages/production/ProductionPage';
+import { ReportsPage } from './pages/reports/ReportsPage';
+
+export function App() {
+  return (
+    <AuthProvider>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route element={<RequireAuth />}>
+          <Route element={<AppLayout />}>
+            <Route index element={<Navigate to="/dashboard" replace />} />
+
+            <Route element={<RequireModule module="dashboard" />}>
+              <Route path="/dashboard" element={<DashboardPage />} />
+            </Route>
+
+            <Route element={<RequireModule module="animals" />}>
+              <Route path="/animals" element={<LivestockBatchesPage />} />
+              <Route path="/animals/stock" element={<AnimalsListPage />} />
+              <Route path="/animals/stock/new" element={<AnimalFormPage mode="create" />} />
+              <Route path="/animals/stock/:id" element={<AnimalDetailPage />} />
+              <Route path="/animals/stock/:id/edit" element={<AnimalFormPage mode="edit" />} />
+            </Route>
+
+            <Route element={<RequireModule module="groups" />}>
+              <Route path="/groups" element={<PoultryBatchesPage />} />
+            </Route>
+
+            <Route element={<RequireModule module="fish" />}>
+              <Route path="/fish" element={<FishBatchesPage />} />
+            </Route>
+
+            <Route element={<RequireModule module="animals" />}>
+              <Route path="/batches/:id" element={<BatchDetailPage />} />
+            </Route>
+
+            <Route element={<RequireModule module="expenses" />}>
+              <Route path="/expenses" element={<ExpensesPage />} />
+            </Route>
+
+            <Route element={<RequireModule module="revenue" />}>
+              <Route path="/revenue" element={<RevenuePage />} />
+            </Route>
+
+            <Route element={<RequireModule module="pnl" />}>
+              <Route path="/pnl" element={<PnlPage />} />
+            </Route>
+
+            <Route element={<RequireModule module="inventory" />}>
+              <Route path="/inventory" element={<InventoryPage />} />
+            </Route>
+
+            <Route element={<RequireModule module="health" />}>
+              <Route path="/health" element={<HealthPage />} />
+            </Route>
+
+            <Route element={<RequireModule module="breeding" />}>
+              <Route path="/breeding" element={<BreedingPage />} />
+            </Route>
+
+            <Route element={<RequireModule module="production" />}>
+              <Route path="/production" element={<ProductionPage />} />
+            </Route>
+
+            <Route element={<RequireModule module="reports" />}>
+              <Route path="/reports" element={<ReportsPage />} />
+            </Route>
+
+            <Route path="/forbidden" element={<ForbiddenPage />} />
+            <Route path="*" element={<NotFoundPage />} />
+          </Route>
+        </Route>
+      </Routes>
+    </AuthProvider>
+  );
+}

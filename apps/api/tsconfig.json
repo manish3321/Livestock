@@ -1,0 +1,12 @@
+{
+  "extends": "@farm/tsconfig/node.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "strictPropertyInitialization": false,
+    "declaration": false,
+    "declarationMap": false
+  },
+  "include": ["src", "test", "prisma/seed.ts", "vitest.config.ts"]
+}
