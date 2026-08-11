@@ -13,6 +13,7 @@ import { useAuth } from '../../auth/auth-context';
 import { DataTable, type Column } from '../../components/DataTable';
 import { ErrorState, LoadingState } from '../../components/PageState';
 import { StatusChip } from '../../components/StatusChip';
+import { downloadInvoicePdf } from '../../lib/pdf';
 
 const DEFAULT_UNIT: Record<(typeof REVENUE_SOURCES)[number], string> = {
   MILK: 'L',
@@ -98,6 +99,32 @@ export function RevenuePage() {
         key: 'payment',
         header: t('revenue.paymentStatus'),
         render: (row) => <StatusChip status={row.paymentStatus} />,
+      },
+      {
+        key: 'invoice',
+        header: t('common.actions'),
+        render: (row) => (
+          <button
+            className="btn secondary"
+            type="button"
+            onClick={() =>
+              downloadInvoicePdf({
+                invoiceNumber: row.invoiceNumber,
+                date: formatDate(row.revenueDate),
+                buyerName: row.buyerName,
+                buyerContact: row.buyerContact,
+                source: row.source,
+                quantity: row.quantity,
+                unit: row.unit,
+                rate: row.rate,
+                amount: row.amount,
+                paymentStatus: row.paymentStatus,
+              })
+            }
+          >
+            {t('revenue.invoicePdf')}
+          </button>
+        ),
       },
     ],
     [t],

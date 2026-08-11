@@ -5,13 +5,17 @@ import {
   INVENTORY_ALERT_LEVELS,
   INVENTORY_CATEGORIES,
   formatDate,
+  formatNPR,
   inventoryAlertLevel,
   type InventoryAlertLevel,
   type InventoryCreate,
+  type StockMovementCreate,
 } from '@farm/contracts';
 import {
+  addMovement,
   createInventory,
   listInventory,
+  listMovements,
   requestRestock,
   updateInventory,
   type InventoryDto,
@@ -28,20 +32,32 @@ const emptyForm = (): Partial<InventoryCreate> => ({
   unit: 'kg',
 });
 
+const MOVEMENT_TYPES = ['IN', 'OUT', 'ADJUST'] as const;
+
 export function InventoryPage() {
   const { t } = useTranslation();
   const { can } = useAuth();
   const qc = useQueryClient();
   const [alert, setAlert] = useState<InventoryAlertLevel | ''>('');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<Partial<InventoryCreate>>(emptyForm());
   const [restockQty, setRestockQty] = useState<Record<string, string>>({});
+  const [moveType, setMoveType] = useState<StockMovementCreate['type']>('IN');
+  const [moveQty, setMoveQty] = useState('');
+  const [moveReason, setMoveReason] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const query = useQuery({
     queryKey: ['inventory', alert],
     queryFn: () => listInventory({ pageSize: 100, alert: alert || undefined }),
+  });
+
+  const movementsQ = useQuery({
+    queryKey: ['inventory', expandedId, 'movements'],
+    queryFn: () => listMovements(expandedId!),
+    enabled: Boolean(expandedId),
   });
 
   const save = useMutation({
@@ -52,6 +68,7 @@ export function InventoryPage() {
         unit: form.unit!,
         currentStock: Number(form.currentStock),
         minimumStock: Number(form.minimumStock),
+        unitCost: form.unitCost,
         expiryDate: form.expiryDate,
         supplier: form.supplier,
         batchLotNumber: form.batchLotNumber,
@@ -79,6 +96,20 @@ export function InventoryPage() {
     },
   });
 
+  const movementMut = useMutation({
+    mutationFn: () =>
+      addMovement(expandedId!, {
+        type: moveType,
+        quantity: Number(moveQty),
+        reason: moveReason || undefined,
+      }),
+    onSuccess: () => {
+      setMoveQty('');
+      setMoveReason('');
+      void qc.invalidateQueries({ queryKey: ['inventory'] });
+    },
+  });
+
   const startEdit = (row: InventoryDto) => {
     setEditingId(row.id);
     setShowForm(true);
@@ -88,6 +119,7 @@ export function InventoryPage() {
       unit: row.unit,
       currentStock: row.currentStock,
       minimumStock: row.minimumStock,
+      unitCost: row.unitCost ?? undefined,
       expiryDate: row.expiryDate ? new Date(row.expiryDate) : undefined,
       supplier: row.supplier ?? undefined,
       batchLotNumber: row.batchLotNumber ?? undefined,
@@ -103,6 +135,12 @@ export function InventoryPage() {
         key: 'stock',
         header: t('inventory.stock'),
         render: (row) => `${row.currentStock} / ${row.minimumStock} ${row.unit}`,
+      },
+      {
+        key: 'valuation',
+        header: t('inventory.valuation'),
+        render: (row) =>
+          row.valuation != null ? formatNPR(row.valuation) : '—',
       },
       {
         key: 'alert',
@@ -123,6 +161,17 @@ export function InventoryPage() {
         header: t('common.actions'),
         render: (row) => (
           <div className="page-actions">
+            <button
+              className="btn secondary"
+              type="button"
+              onClick={() =>
+                setExpandedId((prev) => (prev === row.id ? null : row.id))
+              }
+            >
+              {expandedId === row.id
+                ? t('inventory.hideMovements')
+                : t('inventory.movements')}
+            </button>
             {can('inventory:write') && (
               <button className="btn secondary" type="button" onClick={() => startEdit(row)}>
                 {t('common.edit')}
@@ -160,7 +209,7 @@ export function InventoryPage() {
         ),
       },
     ],
-    [t, can, restock.isPending, restockQty],
+    [t, can, restock.isPending, restockQty, expandedId],
   );
 
   const onSubmit = (e: FormEvent) => {
@@ -294,6 +343,22 @@ export function InventoryPage() {
               />
             </div>
             <div className="field">
+              <label htmlFor="inv-cost">{t('inventory.unitCost')}</label>
+              <input
+                id="inv-cost"
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.unitCost ?? ''}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    unitCost: e.target.value ? Number(e.target.value) : undefined,
+                  }))
+                }
+              />
+            </div>
+            <div className="field">
               <label htmlFor="inv-supplier">{t('inventory.supplier')}</label>
               <input
                 id="inv-supplier"
@@ -332,6 +397,79 @@ export function InventoryPage() {
           </p>
           <DataTable columns={columns} rows={query.data.items} rowKey={(r) => r.id} />
         </>
+      )}
+
+      {expandedId && (
+        <div className="card" style={{ marginTop: 24 }}>
+          <h2>{t('inventory.movements')}</h2>
+          {can('inventory:write') && (
+            <form
+              className="inline-form"
+              style={{ flexWrap: 'wrap', marginBottom: 16 }}
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!moveQty || Number(moveQty) <= 0) return;
+                movementMut.mutate();
+              }}
+            >
+              <select
+                value={moveType}
+                onChange={(e) =>
+                  setMoveType(e.target.value as StockMovementCreate['type'])
+                }
+                aria-label={t('inventory.movementType')}
+              >
+                {MOVEMENT_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                placeholder={t('inventory.qty')}
+                value={moveQty}
+                onChange={(e) => setMoveQty(e.target.value)}
+                required
+              />
+              <input
+                placeholder={t('inventory.reason')}
+                value={moveReason}
+                onChange={(e) => setMoveReason(e.target.value)}
+              />
+              <button className="btn" type="submit" disabled={movementMut.isPending}>
+                {t('inventory.addMovement')}
+              </button>
+            </form>
+          )}
+          {movementsQ.isLoading && <LoadingState />}
+          {movementsQ.isError && (
+            <ErrorState onRetry={() => void movementsQ.refetch()} />
+          )}
+          {movementsQ.data && movementsQ.data.length > 0 ? (
+            <ul className="activity-list">
+              {movementsQ.data.map((m) => (
+                <li key={m.id}>
+                  <div>
+                    <strong>{m.type}</strong>
+                    <span className="muted">
+                      {' '}
+                      · {m.quantity}
+                      {m.reason ? ` · ${m.reason}` : ''}
+                    </span>
+                  </div>
+                  <span className="muted">
+                    {new Date(m.createdAt).toLocaleString()}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            !movementsQ.isLoading && <p className="muted">{t('common.empty')}</p>
+          )}
+        </div>
       )}
     </div>
   );

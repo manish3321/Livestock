@@ -8,6 +8,8 @@ import {
   formatDate,
   type ProductionCreate,
 } from '@farm/contracts';
+import { listAnimals } from '../../api/animals';
+import { listBatches } from '../../api/batches';
 import { createProduction, listProduction, type ProductionDto } from '../../api/production';
 import { useAuth } from '../../auth/auth-context';
 import { DataTable, type Column } from '../../components/DataTable';
@@ -38,6 +40,24 @@ export function ProductionPage() {
     queryFn: () => listProduction({ pageSize: 100 }),
   });
 
+  const animalsQ = useQuery({
+    queryKey: ['animals', 'production-select'],
+    queryFn: () => listAnimals({ pageSize: 200 }),
+    enabled: form.type === 'MILK' || showForm,
+  });
+
+  const poultryQ = useQuery({
+    queryKey: ['batches', 'POULTRY', 'production'],
+    queryFn: () => listBatches({ kind: 'POULTRY', pageSize: 200 }),
+    enabled: form.type === 'EGGS' || showForm,
+  });
+
+  const fishQ = useQuery({
+    queryKey: ['batches', 'FISH', 'production'],
+    queryFn: () => listBatches({ kind: 'FISH', pageSize: 200 }),
+    enabled: form.type === 'FISH' || showForm,
+  });
+
   const save = useMutation({
     mutationFn: () =>
       createProduction({
@@ -46,6 +66,9 @@ export function ProductionPage() {
         quantity: Number(form.quantity),
         unit: form.unit || DEFAULT_UNIT[form.type!],
         quality: form.quality,
+        animalId: form.type === 'MILK' ? form.animalId : undefined,
+        herdBatchId:
+          form.type === 'EGGS' || form.type === 'FISH' ? form.herdBatchId : undefined,
         notes: form.notes,
       }),
     onSuccess: () => {
@@ -60,6 +83,16 @@ export function ProductionPage() {
   const grades =
     form.type === 'FISH' ? QUALITY_GRADES_FISH : QUALITY_GRADES_MILK_EGGS;
 
+  const sourceLabel = (row: ProductionDto): string => {
+    if (row.animalTag || row.animalName) {
+      return row.animalName
+        ? `${row.animalTag ?? ''}${row.animalTag ? ' · ' : ''}${row.animalName}`
+        : (row.animalTag ?? '—');
+    }
+    if (row.herdBatchName) return row.herdBatchName;
+    return '—';
+  };
+
   const columns = useMemo<Column<ProductionDto>[]>(
     () => [
       {
@@ -71,6 +104,11 @@ export function ProductionPage() {
         key: 'type',
         header: t('production.type'),
         render: (row) => <StatusChip status="ACTIVE" label={row.type} />,
+      },
+      {
+        key: 'source',
+        header: t('production.source'),
+        render: (row) => sourceLabel(row),
       },
       {
         key: 'qty',
@@ -131,6 +169,8 @@ export function ProductionPage() {
                     type,
                     unit: DEFAULT_UNIT[type],
                     quality: type === 'FISH' ? 'STANDARD' : 'A',
+                    animalId: undefined,
+                    herdBatchId: undefined,
                   }));
                 }}
               >
@@ -141,6 +181,73 @@ export function ProductionPage() {
                 ))}
               </select>
             </div>
+            {form.type === 'MILK' && (
+              <div className="field">
+                <label htmlFor="prod-animal">{t('production.animal')}</label>
+                <select
+                  id="prod-animal"
+                  value={form.animalId ?? ''}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      animalId: e.target.value || undefined,
+                    }))
+                  }
+                >
+                  <option value="">{t('production.selectAnimal')}</option>
+                  {(animalsQ.data?.items ?? []).map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.tag}
+                      {a.name ? ` · ${a.name}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {form.type === 'EGGS' && (
+              <div className="field">
+                <label htmlFor="prod-poultry">{t('production.herdBatch')}</label>
+                <select
+                  id="prod-poultry"
+                  value={form.herdBatchId ?? ''}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      herdBatchId: e.target.value || undefined,
+                    }))
+                  }
+                >
+                  <option value="">{t('production.selectBatch')}</option>
+                  {(poultryQ.data?.items ?? []).map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {form.type === 'FISH' && (
+              <div className="field">
+                <label htmlFor="prod-fish">{t('production.herdBatch')}</label>
+                <select
+                  id="prod-fish"
+                  value={form.herdBatchId ?? ''}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      herdBatchId: e.target.value || undefined,
+                    }))
+                  }
+                >
+                  <option value="">{t('production.selectBatch')}</option>
+                  {(fishQ.data?.items ?? []).map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="field">
               <label htmlFor="prod-qty">{t('production.quantity')}</label>
               <input

@@ -7,6 +7,8 @@ import {
   type HealthCreate,
   type HealthListQuery,
 } from '@farm/contracts';
+import { listAnimals } from '../../api/animals';
+import { listBatches } from '../../api/batches';
 import { createHealthRecord, listHealthRecords, type HealthRecordDto } from '../../api/health';
 import { useAuth } from '../../auth/auth-context';
 import { DataTable, type Column } from '../../components/DataTable';
@@ -32,12 +34,57 @@ export function HealthPage() {
     queryFn: () => listHealthRecords({ pageSize: 100, due }),
   });
 
+  const animalsQ = useQuery({
+    queryKey: ['animals', 'health-select'],
+    queryFn: () => listAnimals({ pageSize: 200 }),
+  });
+
+  const batchesQ = useQuery({
+    queryKey: ['batches', 'health-select'],
+    queryFn: () => listBatches({ pageSize: 200 }),
+  });
+
+  const animalById = useMemo(() => {
+    const map = new Map<string, { tag: string; name: string | null }>();
+    for (const a of animalsQ.data?.items ?? []) {
+      map.set(a.id, { tag: a.tag, name: a.name });
+    }
+    return map;
+  }, [animalsQ.data?.items]);
+
+  const batchById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const b of batchesQ.data?.items ?? []) {
+      map.set(b.id, b.name);
+    }
+    return map;
+  }, [batchesQ.data?.items]);
+
+  const resolveSource = (row: HealthRecordDto): string => {
+    const animalLabel =
+      row.animalTag ||
+      row.animalName ||
+      (row.animalId
+        ? (() => {
+            const a = animalById.get(row.animalId);
+            if (!a) return null;
+            return a.name ? `${a.tag} · ${a.name}` : a.tag;
+          })()
+        : null);
+    const batchLabel =
+      row.herdBatchName ||
+      (row.herdBatchId ? batchById.get(row.herdBatchId) : null);
+    if (animalLabel && batchLabel) return `${animalLabel} / ${batchLabel}`;
+    return animalLabel || batchLabel || '—';
+  };
+
   const save = useMutation({
     mutationFn: () =>
       createHealthRecord({
         type: form.type!,
         title: form.title!,
         animalId: form.animalId || undefined,
+        herdBatchId: form.herdBatchId || undefined,
         performedAt: form.performedAt ?? new Date(),
         nextDueAt: form.nextDueAt,
         notes: form.notes,
@@ -70,12 +117,12 @@ export function HealthPage() {
         render: (row) => (row.nextDueAt ? formatDate(row.nextDueAt) : '—'),
       },
       {
-        key: 'animal',
-        header: t('health.animalId'),
-        render: (row) => row.animalId ?? '—',
+        key: 'source',
+        header: t('health.source'),
+        render: (row) => resolveSource(row),
       },
     ],
-    [t],
+    [t, animalById, batchById],
   );
 
   const onSubmit = (e: FormEvent) => {
@@ -150,15 +197,42 @@ export function HealthPage() {
               />
             </div>
             <div className="field">
-              <label htmlFor="health-animal">{t('health.animalId')}</label>
-              <input
+              <label htmlFor="health-animal">{t('health.animal')}</label>
+              <select
                 id="health-animal"
-                placeholder="UUID (optional)"
                 value={form.animalId ?? ''}
                 onChange={(e) =>
                   setForm((prev) => ({ ...prev, animalId: e.target.value || undefined }))
                 }
-              />
+              >
+                <option value="">{t('health.selectAnimal')}</option>
+                {(animalsQ.data?.items ?? []).map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.tag}
+                    {a.name ? ` · ${a.name}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="health-batch">{t('health.herdBatch')}</label>
+              <select
+                id="health-batch"
+                value={form.herdBatchId ?? ''}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    herdBatchId: e.target.value || undefined,
+                  }))
+                }
+              >
+                <option value="">{t('health.selectBatch')}</option>
+                {(batchesQ.data?.items ?? []).map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name} ({b.kind})
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="field">
               <label htmlFor="health-performed">{t('health.performedAt')}</label>

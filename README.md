@@ -59,6 +59,6 @@ CI (GitHub Actions) runs the same steps on every push/PR.
 
 ## Status
 
-**Web dashboard:** all 12 modules are implemented (API + web UI), including unified herd batch tracking for livestock, poultry, and fish with monthly CSV reports.
+**Web dashboard:** all 12 modules are implemented (API + web UI), including unified herd batch tracking, monthly CSV/PDF reports, expense receipts/budgets, fish water/sampling/harvest, feed logs, admin members/audit, and inventory valuation.
 
-Modules: Dashboard, Livestock (batches), Poultry, Fish, Expenses (approval workflow), Revenue, P&L, Inventory, Health Records, Breeding, Production, Reports.
+Modules: Dashboard, Livestock (batches), Poultry, Fish, Expenses (approval workflow), Revenue, P&L, Inventory, Health Records, Breeding, Production, Reports. Admin (members + audit) for Admin role.

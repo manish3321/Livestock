@@ -16,11 +16,14 @@ export interface DashboardSummary {
   revenueTotal?: number | null;
   expenseTotal?: number | null;
   netProfit?: number | null;
+  financeTrend?: Array<{ month: string; revenue: number; expenses: number }>;
   speciesDistribution: Array<{ species: string; count: number }>;
   alerts: {
     healthOverdue: DashboardAlertItem[];
     inventoryCritical: DashboardAlertItem[];
     pendingApprovals: DashboardAlertItem[];
+    inventoryExpiring?: DashboardAlertItem[];
+    unpaidRevenue?: DashboardAlertItem[];
   };
   recentActivity: Array<{
     id: string;
@@ -131,6 +134,61 @@ export class DashboardService {
     const monthRevenue = Number(revenueAgg?._sum.amount ?? 0);
     const monthExpenses = Number(expenseAgg?._sum.amount ?? 0);
 
+    let financeTrend: Array<{ month: string; revenue: number; expenses: number }> | undefined;
+    if (canFinance) {
+      financeTrend = [];
+      for (let i = 5; i >= 0; i--) {
+        const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+        const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i + 1, 1));
+        const [rev, exp] = await Promise.all([
+          this.prisma.revenue.aggregate({
+            where: { farmId, revenueDate: { gte: start, lt: end } },
+            _sum: { amount: true },
+          }),
+          this.prisma.expense.aggregate({
+            where: {
+              farmId,
+              expenseDate: { gte: start, lt: end },
+              status: 'APPROVED',
+            },
+            _sum: { amount: true },
+          }),
+        ]);
+        financeTrend.push({
+          month: `${start.getUTCFullYear()}-${String(start.getUTCMonth() + 1).padStart(2, '0')}`,
+          revenue: Number(rev._sum.amount ?? 0),
+          expenses: Number(exp._sum.amount ?? 0),
+        });
+      }
+    }
+
+    const in30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const [expiring, unpaidRev] = await Promise.all([
+      this.prisma.inventoryItem.findMany({
+        where: {
+          farmId,
+          deletedAt: null,
+          expiryDate: { gte: now, lte: in30 },
+        },
+        take: 10,
+        select: { id: true, name: true, expiryDate: true },
+      }),
+      canFinance
+        ? this.prisma.revenue.findMany({
+            where: { farmId, paymentStatus: { in: ['PENDING', 'PARTIAL'] } },
+            orderBy: { revenueDate: 'desc' },
+            take: 10,
+            select: {
+              id: true,
+              invoiceNumber: true,
+              amount: true,
+              buyerName: true,
+              paymentStatus: true,
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+
     return {
       animalCount,
       ...(canFinance
@@ -138,6 +196,7 @@ export class DashboardService {
             revenueTotal: monthRevenue,
             expenseTotal: monthExpenses,
             netProfit: monthRevenue - monthExpenses,
+            financeTrend,
           }
         : {
             revenueTotal: null,
@@ -157,6 +216,18 @@ export class DashboardService {
           id: e.id,
           title: e.description,
           detail: `${e.category} · NPR ${Number(e.amount)} · ${e.status}`,
+          dueAt: null,
+        })),
+        inventoryExpiring: expiring.map((i) => ({
+          id: i.id,
+          title: i.name,
+          detail: 'Expires soon',
+          dueAt: i.expiryDate?.toISOString() ?? null,
+        })),
+        unpaidRevenue: unpaidRev.map((r) => ({
+          id: r.id,
+          title: r.invoiceNumber,
+          detail: `NPR ${Number(r.amount)} · ${r.paymentStatus}${r.buyerName ? ` · ${r.buyerName}` : ''}`,
           dueAt: null,
         })),
       },

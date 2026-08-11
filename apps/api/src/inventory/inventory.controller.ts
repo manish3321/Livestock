@@ -17,6 +17,7 @@ import {
   inventoryUpdateSchema,
   pageQuerySchema,
   restockCreateSchema,
+  stockMovementCreateSchema,
 } from '@farm/contracts';
 import type {
   InventoryCreate,
@@ -24,6 +25,7 @@ import type {
   PageQuery,
   PageResult,
   RestockCreate,
+  StockMovementCreate,
 } from '@farm/contracts';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/types';
@@ -32,6 +34,7 @@ import {
   InventoryService,
   type InventoryItemDto,
   type RestockRequestDto,
+  type StockMovementDto,
 } from './inventory.service';
 
 @ApiTags('inventory')
@@ -49,16 +52,6 @@ export class InventoryController {
     return this.inventory.list(user, query);
   }
 
-  @Get(':id')
-  @RequirePermissions('inventory:read')
-  @ApiOperation({ summary: 'Get inventory item' })
-  get(
-    @CurrentUser() user: RequestUser,
-    @Param('id', ParseUUIDPipe) id: string,
-  ): Promise<InventoryItemDto> {
-    return this.inventory.get(user, id);
-  }
-
   @Post()
   @RequirePermissions('inventory:write')
   @ApiOperation({ summary: 'Create inventory item' })
@@ -68,6 +61,27 @@ export class InventoryController {
     @Headers('x-request-id') requestId?: string,
   ): Promise<InventoryItemDto> {
     return this.inventory.create(user, body, requestId);
+  }
+
+  @Post('restock/:requestId/receive')
+  @RequirePermissions('inventory:write')
+  @ApiOperation({ summary: 'Mark restock as RECEIVED and write IN movement' })
+  receiveRestock(
+    @CurrentUser() user: RequestUser,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Headers('x-request-id') auditRequestId?: string,
+  ): Promise<RestockRequestDto> {
+    return this.inventory.receiveRestock(user, requestId, auditRequestId);
+  }
+
+  @Get(':id')
+  @RequirePermissions('inventory:read')
+  @ApiOperation({ summary: 'Get inventory item' })
+  get(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<InventoryItemDto> {
+    return this.inventory.get(user, id);
   }
 
   @Patch(':id')
@@ -104,5 +118,27 @@ export class InventoryController {
     @Headers('x-request-id') requestId?: string,
   ): Promise<RestockRequestDto> {
     return this.inventory.requestRestock(user, id, body, requestId);
+  }
+
+  @Get(':id/movements')
+  @RequirePermissions('inventory:read')
+  @ApiOperation({ summary: 'List stock movements for an item' })
+  listMovements(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<StockMovementDto[]> {
+    return this.inventory.listMovements(user, id);
+  }
+
+  @Post(':id/movements')
+  @RequirePermissions('inventory:write')
+  @ApiOperation({ summary: 'Create a stock movement and adjust stock' })
+  createMovement(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(stockMovementCreateSchema)) body: StockMovementCreate,
+    @Headers('x-request-id') requestId?: string,
+  ): Promise<StockMovementDto> {
+    return this.inventory.createMovement(user, id, body, requestId);
   }
 }

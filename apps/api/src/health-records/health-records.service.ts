@@ -17,12 +17,21 @@ export interface HealthRecordDto {
   title: string;
   animalId: string | null;
   groupId: string | null;
+  herdBatchId: string | null;
+  animalTag: string | null;
+  animalName: string | null;
+  herdBatchName: string | null;
   performedAt: string;
   nextDueAt: string | null;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
 }
+
+type HealthWithRelations = HealthRecord & {
+  animal?: { tag: string; name: string | null } | null;
+  herdBatch?: { name: string } | null;
+};
 
 @Injectable()
 export class HealthRecordsService {
@@ -55,6 +64,10 @@ export class HealthRecordsService {
     const [rows, total] = await Promise.all([
       this.prisma.healthRecord.findMany({
         where,
+        include: {
+          animal: { select: { tag: true, name: true } },
+          herdBatch: { select: { name: true } },
+        },
         orderBy: { performedAt: 'desc' },
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
@@ -71,7 +84,20 @@ export class HealthRecordsService {
   }
 
   async get(user: RequestUser, id: string): Promise<HealthRecordDto> {
-    return toDto(await this.requireRecord(user.farmId, id));
+    const row = await this.prisma.healthRecord.findFirst({
+      where: { id, farmId: user.farmId },
+      include: {
+        animal: { select: { tag: true, name: true } },
+        herdBatch: { select: { name: true } },
+      },
+    });
+    if (!row) {
+      throw new NotFoundException({
+        code: 'HEALTH_RECORD_NOT_FOUND',
+        message: 'Health record not found',
+      });
+    }
+    return toDto(row);
   }
 
   async create(
@@ -95,9 +121,14 @@ export class HealthRecordsService {
         title: input.title,
         animalId: input.animalId,
         groupId: input.groupId,
+        herdBatchId: input.herdBatchId,
         performedAt: input.performedAt,
         nextDueAt,
         notes: input.notes,
+      },
+      include: {
+        animal: { select: { tag: true, name: true } },
+        herdBatch: { select: { name: true } },
       },
     });
 
@@ -127,9 +158,14 @@ export class HealthRecordsService {
         ...(input.title !== undefined ? { title: input.title } : {}),
         ...(input.animalId !== undefined ? { animalId: input.animalId } : {}),
         ...(input.groupId !== undefined ? { groupId: input.groupId } : {}),
+        ...(input.herdBatchId !== undefined ? { herdBatchId: input.herdBatchId } : {}),
         ...(input.performedAt !== undefined ? { performedAt: input.performedAt } : {}),
         ...(input.nextDueAt !== undefined ? { nextDueAt: input.nextDueAt } : {}),
         ...(input.notes !== undefined ? { notes: input.notes } : {}),
+      },
+      include: {
+        animal: { select: { tag: true, name: true } },
+        herdBatch: { select: { name: true } },
       },
     });
     await this.audit.record({
@@ -168,7 +204,7 @@ export class HealthRecordsService {
   }
 }
 
-function toDto(r: HealthRecord): HealthRecordDto {
+function toDto(r: HealthWithRelations): HealthRecordDto {
   return {
     id: r.id,
     farmId: r.farmId,
@@ -176,6 +212,10 @@ function toDto(r: HealthRecord): HealthRecordDto {
     title: r.title,
     animalId: r.animalId,
     groupId: r.groupId,
+    herdBatchId: r.herdBatchId,
+    animalTag: r.animal?.tag ?? null,
+    animalName: r.animal?.name ?? null,
+    herdBatchName: r.herdBatch?.name ?? null,
     performedAt: r.performedAt.toISOString(),
     nextDueAt: r.nextDueAt?.toISOString() ?? null,
     notes: r.notes,

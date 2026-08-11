@@ -315,9 +315,24 @@ export function BreedingPage() {
       {query.isError && <ErrorState onRetry={() => void query.refetch()} />}
       {query.data && (
         <>
-          <p className="result-count">
-            {t('common.resultCount', { count: query.data.total })}
-          </p>
+          {(() => {
+            const items = query.data.items;
+            const delivered = items.filter((r) => r.pregnancyStatus === 'DELIVERED').length;
+            const failed = items.filter((r) => r.pregnancyStatus === 'FAILED').length;
+            const denom = delivered + failed;
+            const rate = denom > 0 ? Math.round((delivered / denom) * 100) : null;
+            return (
+              <p className="result-count">
+                {t('common.resultCount', { count: query.data.total })}
+                {rate != null && (
+                  <>
+                    {' · '}
+                    {t('breeding.successRate')}: {rate}% ({delivered}/{denom})
+                  </>
+                )}
+              </p>
+            );
+          })()}
           <DataTable columns={columns} rows={query.data.items} rowKey={(r) => r.id} />
         </>
       )}

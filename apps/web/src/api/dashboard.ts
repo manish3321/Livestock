@@ -25,11 +25,14 @@ export interface DashboardSummary {
   revenueTotal?: number | null;
   expenseTotal?: number | null;
   netProfit?: number | null;
+  financeTrend?: Array<{ month: string; revenue: number; expenses: number }>;
   speciesDistribution: DashboardSpeciesCount[];
   alerts: {
     healthOverdue: DashboardAlertItem[];
     inventoryCritical: DashboardAlertItem[];
     pendingApprovals: DashboardAlertItem[];
+    inventoryExpiring?: DashboardAlertItem[];
+    unpaidRevenue?: DashboardAlertItem[];
   };
   recentActivity: DashboardActivityItem[];
 }

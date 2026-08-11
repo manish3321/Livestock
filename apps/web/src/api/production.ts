@@ -13,6 +13,10 @@ export interface ProductionDto {
   animalId: string | null;
   groupId: string | null;
   batchId: string | null;
+  herdBatchId?: string | null;
+  animalTag?: string | null;
+  animalName?: string | null;
+  herdBatchName?: string | null;
   notes: string | null;
   createdAt: string;
   updatedAt: string;

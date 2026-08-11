@@ -7,12 +7,17 @@ import {
   formatDate,
   formatNPR,
   type ApprovalStatus,
+  type ExpenseCategory,
   type ExpenseCreate,
 } from '@farm/contracts';
 import {
   createExpense,
+  generateRecurringMonth,
+  listBudgets,
   listExpenses,
   reviewExpense,
+  uploadExpenseReceipt,
+  upsertBudget,
   type ExpenseDto,
 } from '../../api/expenses';
 import { useAuth } from '../../auth/auth-context';
@@ -20,16 +25,25 @@ import { DataTable, type Column } from '../../components/DataTable';
 import { ErrorState, LoadingState } from '../../components/PageState';
 import { StatusChip } from '../../components/StatusChip';
 
+const PAYMENT_OPTIONS = ['UNPAID', 'PAID', 'PARTIAL'] as const;
+
 export function ExpensesPage() {
   const { t } = useTranslation();
   const { can } = useAuth();
   const qc = useQueryClient();
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
   const [status, setStatus] = useState<ApprovalStatus | ''>('');
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<Partial<ExpenseCreate>>({
     category: 'FEED',
     expenseDate: new Date(),
+    paymentStatus: 'UNPAID',
   });
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [budgetCategory, setBudgetCategory] = useState<ExpenseCategory>('FEED');
+  const [budgetAmount, setBudgetAmount] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const query = useQuery({
@@ -38,19 +52,44 @@ export function ExpensesPage() {
       listExpenses({ pageSize: 100, status: status || undefined }),
   });
 
+  const budgetsQ = useQuery({
+    queryKey: ['expenses', 'budgets', year, month],
+    queryFn: () => listBudgets(year, month),
+  });
+
+  const approvedByCategory = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const row of query.data?.items ?? []) {
+      if (row.status !== 'APPROVED') continue;
+      const d = new Date(row.expenseDate);
+      if (d.getFullYear() !== year || d.getMonth() + 1 !== month) continue;
+      map.set(row.category, (map.get(row.category) ?? 0) + row.amount);
+    }
+    return map;
+  }, [query.data?.items, year, month]);
+
   const save = useMutation({
-    mutationFn: () =>
-      createExpense({
+    mutationFn: async () => {
+      const created = await createExpense({
         category: form.category!,
         amount: Number(form.amount),
         expenseDate: form.expenseDate ?? new Date(),
         description: form.description!,
         receiptNumber: form.receiptNumber,
-      }),
+        gstAmount: form.gstAmount,
+        supplier: form.supplier,
+        paymentStatus: form.paymentStatus ?? 'UNPAID',
+      });
+      if (receiptFile) {
+        await uploadExpenseReceipt(created.id, receiptFile);
+      }
+      return created;
+    },
     onSuccess: () => {
       setShowForm(false);
       setError(null);
-      setForm({ category: 'FEED', expenseDate: new Date() });
+      setReceiptFile(null);
+      setForm({ category: 'FEED', expenseDate: new Date(), paymentStatus: 'UNPAID' });
       void qc.invalidateQueries({ queryKey: ['expenses'] });
     },
     onError: (err: Error) => setError(err.message),
@@ -59,6 +98,25 @@ export function ExpensesPage() {
   const review = useMutation({
     mutationFn: ({ id, decision }: { id: string; decision: 'APPROVE' | 'REJECT' }) =>
       reviewExpense(id, { decision }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['expenses'] }),
+  });
+
+  const budgetMut = useMutation({
+    mutationFn: () =>
+      upsertBudget({
+        category: budgetCategory,
+        year,
+        month,
+        amount: Number(budgetAmount),
+      }),
+    onSuccess: () => {
+      setBudgetAmount('');
+      void qc.invalidateQueries({ queryKey: ['expenses', 'budgets'] });
+    },
+  });
+
+  const generateMut = useMutation({
+    mutationFn: () => generateRecurringMonth(),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['expenses'] }),
   });
 
@@ -80,6 +138,29 @@ export function ExpensesPage() {
         key: 'amount',
         header: t('expenses.amount'),
         render: (row) => formatNPR(row.amount),
+      },
+      {
+        key: 'gst',
+        header: t('expenses.gst'),
+        render: (row) =>
+          row.gstAmount != null ? formatNPR(row.gstAmount) : '—',
+      },
+      {
+        key: 'payment',
+        header: t('expenses.paymentStatus'),
+        render: (row) => row.paymentStatus ?? '—',
+      },
+      {
+        key: 'receipt',
+        header: t('expenses.receipt'),
+        render: (row) =>
+          row.receiptUrl ? (
+            <a href={row.receiptUrl} target="_blank" rel="noreferrer">
+              {t('expenses.viewReceipt')}
+            </a>
+          ) : (
+            '—'
+          ),
       },
       {
         key: 'description',
@@ -138,12 +219,93 @@ export function ExpensesPage() {
           <h1>{t('nav.expenses')}</h1>
           <p className="page-subtitle">{t('expenses.subtitle')}</p>
         </div>
-        {can('expenses:submit') && (
-          <div className="page-actions">
-            <button className="btn" type="button" onClick={() => setShowForm((v) => !v)}>
-              {showForm ? t('common.cancel') : t('expenses.submit')}
+        <div className="page-actions">
+          {can('expenses:submit') && (
+            <>
+              <button
+                className="btn secondary"
+                type="button"
+                disabled={generateMut.isPending}
+                onClick={() => generateMut.mutate()}
+              >
+                {t('expenses.generateRecurring')}
+              </button>
+              <button className="btn" type="button" onClick={() => setShowForm((v) => !v)}>
+                {showForm ? t('common.cancel') : t('expenses.submit')}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 24 }}>
+        <h2>{t('expenses.budget')}</h2>
+        <p className="muted">
+          {year}-{String(month).padStart(2, '0')}
+        </p>
+        {(budgetsQ.data ?? []).length === 0 && approvedByCategory.size === 0 ? (
+          <p className="muted">{t('common.empty')}</p>
+        ) : (
+          <ul className="bar-list" style={{ marginTop: 12 }}>
+            {EXPENSE_CATEGORIES.map((cat) => {
+              const budget = budgetsQ.data?.find((b) => b.category === cat)?.amount ?? 0;
+              const spent = approvedByCategory.get(cat) ?? 0;
+              if (!budget && !spent) return null;
+              return (
+                <li key={cat}>
+                  <div className="bar-meta">
+                    <span>{cat}</span>
+                    <span>
+                      {formatNPR(spent)} / {formatNPR(budget)}
+                    </span>
+                  </div>
+                  <div className="bar-track">
+                    <div
+                      className="bar-fill"
+                      style={{
+                        width: `${Math.min(100, budget > 0 ? (spent / budget) * 100 : 0)}%`,
+                      }}
+                    />
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {can('expenses:approve') && (
+          <form
+            className="inline-form"
+            style={{ flexWrap: 'wrap', marginTop: 16 }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!budgetAmount || Number(budgetAmount) < 0) return;
+              budgetMut.mutate();
+            }}
+          >
+            <select
+              value={budgetCategory}
+              onChange={(e) => setBudgetCategory(e.target.value as ExpenseCategory)}
+              aria-label={t('expenses.category')}
+            >
+              {EXPENSE_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <input
+              type="number"
+              min={0}
+              step={0.01}
+              placeholder={t('expenses.budgetAmount')}
+              value={budgetAmount}
+              onChange={(e) => setBudgetAmount(e.target.value)}
+              required
+            />
+            <button className="btn" type="submit" disabled={budgetMut.isPending}>
+              {t('expenses.setBudget')}
             </button>
-          </div>
+          </form>
         )}
       </div>
 
@@ -209,6 +371,54 @@ export function ExpensesPage() {
               />
             </div>
             <div className="field">
+              <label htmlFor="exp-gst">{t('expenses.gst')}</label>
+              <input
+                id="exp-gst"
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.gstAmount ?? ''}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    gstAmount: e.target.value ? Number(e.target.value) : undefined,
+                  }))
+                }
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="exp-supplier">{t('expenses.supplier')}</label>
+              <input
+                id="exp-supplier"
+                value={form.supplier ?? ''}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    supplier: e.target.value || undefined,
+                  }))
+                }
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="exp-pay">{t('expenses.paymentStatus')}</label>
+              <select
+                id="exp-pay"
+                value={form.paymentStatus ?? 'UNPAID'}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    paymentStatus: e.target.value as ExpenseCreate['paymentStatus'],
+                  }))
+                }
+              >
+                {PAYMENT_OPTIONS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
               <label htmlFor="exp-date">{t('common.date')}</label>
               <input
                 id="exp-date"
@@ -234,6 +444,15 @@ export function ExpensesPage() {
                     receiptNumber: e.target.value || undefined,
                   }))
                 }
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="exp-file">{t('expenses.receiptFile')}</label>
+              <input
+                id="exp-file"
+                type="file"
+                accept="image/*,.pdf"
+                onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)}
               />
             </div>
           </div>

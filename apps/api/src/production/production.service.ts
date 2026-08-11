@@ -20,10 +20,19 @@ export interface ProductionEntryDto {
   animalId: string | null;
   groupId: string | null;
   batchId: string | null;
+  herdBatchId: string | null;
+  animalTag: string | null;
+  animalName: string | null;
+  herdBatchName: string | null;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
 }
+
+type ProductionWithRelations = ProductionEntry & {
+  animal?: { tag: string; name: string | null } | null;
+  herdBatch?: { name: string } | null;
+};
 
 @Injectable()
 export class ProductionService {
@@ -52,6 +61,10 @@ export class ProductionService {
     const [rows, total] = await Promise.all([
       this.prisma.productionEntry.findMany({
         where,
+        include: {
+          animal: { select: { tag: true, name: true } },
+          herdBatch: { select: { name: true } },
+        },
         orderBy: { entryDate: 'desc' },
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
@@ -83,7 +96,12 @@ export class ProductionService {
         animalId: input.animalId,
         groupId: input.groupId,
         batchId: input.batchId,
+        herdBatchId: input.herdBatchId,
         notes: input.notes,
+      },
+      include: {
+        animal: { select: { tag: true, name: true } },
+        herdBatch: { select: { name: true } },
       },
     });
 
@@ -100,7 +118,7 @@ export class ProductionService {
   }
 }
 
-function toDto(r: ProductionEntry): ProductionEntryDto {
+function toDto(r: ProductionWithRelations): ProductionEntryDto {
   return {
     id: r.id,
     farmId: r.farmId,
@@ -112,6 +130,10 @@ function toDto(r: ProductionEntry): ProductionEntryDto {
     animalId: r.animalId,
     groupId: r.groupId,
     batchId: r.batchId,
+    herdBatchId: r.herdBatchId,
+    animalTag: r.animal?.tag ?? null,
+    animalName: r.animal?.name ?? null,
+    herdBatchName: r.herdBatch?.name ?? null,
     notes: r.notes,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),

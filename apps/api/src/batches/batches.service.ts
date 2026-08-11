@@ -4,16 +4,24 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type {
+  BatchFeedCreate,
+  BatchHarvestCreate,
   BatchIllnessCreate,
   BatchMortalityCreate,
+  BatchSamplingCreate,
+  BatchWaterQualityCreate,
   HerdBatchCreate,
   HerdBatchListQuery,
   HerdBatchUpdate,
   PageResult,
 } from '@farm/contracts';
 import type {
+  BatchFeedEvent,
+  BatchHarvestEvent,
   BatchIllnessEvent,
   BatchMortalityEvent,
+  BatchSamplingEvent,
+  BatchWaterQualityLog,
   HerdBatch,
 } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
@@ -55,6 +63,51 @@ export interface MortalityDto {
   count: number;
   reason: string | null;
   occurredAt: string;
+  createdAt: string;
+}
+
+export interface WaterQualityDto {
+  id: string;
+  batchId: string;
+  recordedAt: string;
+  temperatureC: number | null;
+  ph: number | null;
+  dissolvedO2: number | null;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface SamplingDto {
+  id: string;
+  batchId: string;
+  sampledAt: string;
+  sampleCount: number;
+  totalWeightGrams: number;
+  estimatedCount: number;
+  avgWeightGrams: number;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface HarvestDto {
+  id: string;
+  batchId: string;
+  quantityKg: number;
+  fishCount: number | null;
+  quality: string | null;
+  occurredAt: string;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface FeedDto {
+  id: string;
+  batchId: string;
+  quantityKg: number;
+  feedType: string | null;
+  inventoryItemId: string | null;
+  occurredAt: string;
+  notes: string | null;
   createdAt: string;
 }
 
@@ -305,6 +358,249 @@ export class BatchesService {
     return toMortalityDto(row);
   }
 
+  async listWaterQuality(
+    user: RequestUser,
+    batchId: string,
+  ): Promise<WaterQualityDto[]> {
+    await this.requireFishBatch(user.farmId, batchId);
+    const rows = await this.prisma.batchWaterQualityLog.findMany({
+      where: { batchId, farmId: user.farmId },
+      orderBy: { recordedAt: 'desc' },
+    });
+    return rows.map(toWaterQualityDto);
+  }
+
+  async addWaterQuality(
+    user: RequestUser,
+    batchId: string,
+    input: BatchWaterQualityCreate,
+    requestId?: string,
+  ): Promise<WaterQualityDto> {
+    await this.requireFishBatch(user.farmId, batchId);
+    const row = await this.prisma.batchWaterQualityLog.create({
+      data: {
+        farmId: user.farmId,
+        batchId,
+        recordedAt: input.recordedAt,
+        temperatureC: input.temperatureC,
+        ph: input.ph,
+        dissolvedO2: input.dissolvedO2,
+        notes: input.notes,
+      },
+    });
+
+    await this.audit.record({
+      farmId: user.farmId,
+      userId: user.id,
+      action: 'batches.water-quality',
+      entityType: 'herdBatch',
+      entityId: batchId,
+      requestId,
+    });
+
+    return toWaterQualityDto(row);
+  }
+
+  async listSampling(user: RequestUser, batchId: string): Promise<SamplingDto[]> {
+    await this.requireFishBatch(user.farmId, batchId);
+    const rows = await this.prisma.batchSamplingEvent.findMany({
+      where: { batchId, farmId: user.farmId },
+      orderBy: { sampledAt: 'desc' },
+    });
+    return rows.map(toSamplingDto);
+  }
+
+  async addSampling(
+    user: RequestUser,
+    batchId: string,
+    input: BatchSamplingCreate,
+    requestId?: string,
+  ): Promise<SamplingDto> {
+    const batch = await this.requireFishBatch(user.farmId, batchId);
+    const avgWeightGrams = input.totalWeightGrams / input.sampleCount;
+    const estimatedCount = input.estimatedCount ?? batch.currentCount;
+
+    const row = await this.prisma.$transaction(async (tx) => {
+      if (input.estimatedCount !== undefined) {
+        await tx.herdBatch.update({
+          where: { id: batchId },
+          data: { currentCount: input.estimatedCount },
+        });
+      }
+      return tx.batchSamplingEvent.create({
+        data: {
+          farmId: user.farmId,
+          batchId,
+          sampledAt: input.sampledAt,
+          sampleCount: input.sampleCount,
+          totalWeightGrams: input.totalWeightGrams,
+          estimatedCount,
+          avgWeightGrams,
+          notes: input.notes,
+        },
+      });
+    });
+
+    await this.audit.record({
+      farmId: user.farmId,
+      userId: user.id,
+      action: 'batches.sampling',
+      entityType: 'herdBatch',
+      entityId: batchId,
+      metadata: { avgWeightGrams, estimatedCount },
+      requestId,
+    });
+
+    return toSamplingDto(row);
+  }
+
+  async listHarvest(user: RequestUser, batchId: string): Promise<HarvestDto[]> {
+    await this.requireFishBatch(user.farmId, batchId);
+    const rows = await this.prisma.batchHarvestEvent.findMany({
+      where: { batchId, farmId: user.farmId },
+      orderBy: { occurredAt: 'desc' },
+    });
+    return rows.map(toHarvestDto);
+  }
+
+  async addHarvest(
+    user: RequestUser,
+    batchId: string,
+    input: BatchHarvestCreate,
+    requestId?: string,
+  ): Promise<HarvestDto> {
+    const batch = await this.requireFishBatch(user.farmId, batchId);
+    const reduce =
+      input.reduceHeadcount === true && input.fishCount !== undefined;
+
+    if (reduce && input.fishCount! > batch.currentCount) {
+      throw new BadRequestException({
+        code: 'HARVEST_EXCEEDS_COUNT',
+        message: 'Harvest fish count cannot exceed current headcount',
+      });
+    }
+
+    const row = await this.prisma.$transaction(async (tx) => {
+      if (reduce) {
+        await tx.herdBatch.update({
+          where: { id: batchId },
+          data: { currentCount: batch.currentCount - input.fishCount! },
+        });
+      }
+      return tx.batchHarvestEvent.create({
+        data: {
+          farmId: user.farmId,
+          batchId,
+          quantityKg: input.quantityKg,
+          fishCount: input.fishCount,
+          quality: input.quality,
+          occurredAt: input.occurredAt,
+          notes: input.notes,
+        },
+      });
+    });
+
+    await this.audit.record({
+      farmId: user.farmId,
+      userId: user.id,
+      action: 'batches.harvest',
+      entityType: 'herdBatch',
+      entityId: batchId,
+      metadata: {
+        quantityKg: input.quantityKg,
+        fishCount: input.fishCount,
+        reduceHeadcount: reduce,
+      },
+      requestId,
+    });
+
+    return toHarvestDto(row);
+  }
+
+  async listFeed(user: RequestUser, batchId: string): Promise<FeedDto[]> {
+    await this.requireBatch(user.farmId, batchId);
+    const rows = await this.prisma.batchFeedEvent.findMany({
+      where: { batchId, farmId: user.farmId },
+      orderBy: { occurredAt: 'desc' },
+    });
+    return rows.map(toFeedDto);
+  }
+
+  async addFeed(
+    user: RequestUser,
+    batchId: string,
+    input: BatchFeedCreate,
+    requestId?: string,
+  ): Promise<FeedDto> {
+    await this.requireBatch(user.farmId, batchId);
+
+    const row = await this.prisma.$transaction(async (tx) => {
+      if (input.inventoryItemId) {
+        const item = await tx.inventoryItem.findFirst({
+          where: {
+            id: input.inventoryItemId,
+            farmId: user.farmId,
+            deletedAt: null,
+          },
+        });
+        if (!item) {
+          throw new NotFoundException({
+            code: 'INVENTORY_NOT_FOUND',
+            message: 'Inventory item not found',
+          });
+        }
+        const stock = Number(item.currentStock);
+        if (input.quantityKg > stock) {
+          throw new BadRequestException({
+            code: 'INSUFFICIENT_STOCK',
+            message: 'Feed quantity exceeds current inventory stock',
+          });
+        }
+        await tx.inventoryItem.update({
+          where: { id: item.id },
+          data: { currentStock: stock - input.quantityKg },
+        });
+        await tx.stockMovement.create({
+          data: {
+            farmId: user.farmId,
+            itemId: item.id,
+            type: 'OUT',
+            quantity: input.quantityKg,
+            reason: `Feed for batch ${batchId}`,
+            userId: user.id,
+          },
+        });
+      }
+
+      return tx.batchFeedEvent.create({
+        data: {
+          farmId: user.farmId,
+          batchId,
+          quantityKg: input.quantityKg,
+          feedType: input.feedType,
+          inventoryItemId: input.inventoryItemId,
+          occurredAt: input.occurredAt,
+          notes: input.notes,
+        },
+      });
+    });
+
+    await this.audit.record({
+      farmId: user.farmId,
+      userId: user.id,
+      action: 'batches.feed',
+      entityType: 'herdBatch',
+      entityId: batchId,
+      metadata: {
+        quantityKg: input.quantityKg,
+        inventoryItemId: input.inventoryItemId,
+      },
+      requestId,
+    });
+
+    return toFeedDto(row);
+  }
+
   private async requireBatch(farmId: string, id: string): Promise<HerdBatch> {
     const batch = await this.prisma.herdBatch.findFirst({
       where: { id, farmId, deletedAt: null },
@@ -313,6 +609,20 @@ export class BatchesService {
       throw new NotFoundException({
         code: 'BATCH_NOT_FOUND',
         message: 'Herd batch not found',
+      });
+    }
+    return batch;
+  }
+
+  private async requireFishBatch(
+    farmId: string,
+    id: string,
+  ): Promise<HerdBatch> {
+    const batch = await this.requireBatch(farmId, id);
+    if (batch.kind !== 'FISH') {
+      throw new BadRequestException({
+        code: 'BATCH_KIND_REQUIRED',
+        message: 'This operation is only available for FISH batches',
       });
     }
     return batch;
@@ -368,6 +678,59 @@ function toMortalityDto(row: BatchMortalityEvent): MortalityDto {
     count: row.count,
     reason: row.reason,
     occurredAt: row.occurredAt.toISOString(),
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function toWaterQualityDto(row: BatchWaterQualityLog): WaterQualityDto {
+  return {
+    id: row.id,
+    batchId: row.batchId,
+    recordedAt: row.recordedAt.toISOString(),
+    temperatureC: row.temperatureC !== null ? Number(row.temperatureC) : null,
+    ph: row.ph !== null ? Number(row.ph) : null,
+    dissolvedO2: row.dissolvedO2 !== null ? Number(row.dissolvedO2) : null,
+    notes: row.notes,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function toSamplingDto(row: BatchSamplingEvent): SamplingDto {
+  return {
+    id: row.id,
+    batchId: row.batchId,
+    sampledAt: row.sampledAt.toISOString(),
+    sampleCount: row.sampleCount,
+    totalWeightGrams: Number(row.totalWeightGrams),
+    estimatedCount: row.estimatedCount,
+    avgWeightGrams: Number(row.avgWeightGrams),
+    notes: row.notes,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function toHarvestDto(row: BatchHarvestEvent): HarvestDto {
+  return {
+    id: row.id,
+    batchId: row.batchId,
+    quantityKg: Number(row.quantityKg),
+    fishCount: row.fishCount,
+    quality: row.quality,
+    occurredAt: row.occurredAt.toISOString(),
+    notes: row.notes,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function toFeedDto(row: BatchFeedEvent): FeedDto {
+  return {
+    id: row.id,
+    batchId: row.batchId,
+    quantityKg: Number(row.quantityKg),
+    feedType: row.feedType,
+    inventoryItemId: row.inventoryItemId,
+    occurredAt: row.occurredAt.toISOString(),
+    notes: row.notes,
     createdAt: row.createdAt.toISOString(),
   };
 }

@@ -9,6 +9,10 @@ export interface HealthRecordDto {
   title: string;
   animalId: string | null;
   groupId: string | null;
+  herdBatchId?: string | null;
+  animalTag?: string | null;
+  animalName?: string | null;
+  herdBatchName?: string | null;
   performedAt: string;
   nextDueAt: string | null;
   notes: string | null;

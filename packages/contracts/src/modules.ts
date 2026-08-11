@@ -92,6 +92,9 @@ export const expenseCreateSchema = z.object({
   expenseDate: z.coerce.date(),
   description: z.string().min(1).max(500),
   receiptNumber: z.string().max(80).optional(),
+  gstAmount: z.number().nonnegative().optional(),
+  supplier: z.string().max(120).optional(),
+  paymentStatus: z.enum(['UNPAID', 'PAID', 'PARTIAL']).optional(),
 });
 export type ExpenseCreate = z.infer<typeof expenseCreateSchema>;
 
@@ -108,6 +111,30 @@ export const expenseListQuerySchema = z.object({
   category: z.enum(EXPENSE_CATEGORIES).optional(),
 });
 export type ExpenseListQuery = z.infer<typeof expenseListQuerySchema>;
+
+export const expenseBudgetUpsertSchema = z.object({
+  category: z.enum(EXPENSE_CATEGORIES),
+  year: z.number().int().min(2000).max(2100),
+  month: z.number().int().min(1).max(12),
+  amount: z.number().nonnegative(),
+});
+export type ExpenseBudgetUpsert = z.infer<typeof expenseBudgetUpsertSchema>;
+
+export const expenseBudgetQuerySchema = z.object({
+  year: z.coerce.number().int().min(2000).max(2100),
+  month: z.coerce.number().int().min(1).max(12),
+});
+export type ExpenseBudgetQuery = z.infer<typeof expenseBudgetQuerySchema>;
+
+export const recurringExpenseCreateSchema = z.object({
+  category: z.enum(EXPENSE_CATEGORIES),
+  amount: z.number().positive(),
+  description: z.string().min(1).max(500),
+  supplier: z.string().max(120).optional(),
+  gstAmount: z.number().nonnegative().optional(),
+  dayOfMonth: z.number().int().min(1).max(28).default(1),
+});
+export type RecurringExpenseCreate = z.infer<typeof recurringExpenseCreateSchema>;
 
 // ---- Revenue ----
 export const revenueCreateSchema = z.object({
@@ -149,6 +176,7 @@ export const inventoryCreateSchema = z.object({
   unit: z.string().min(1).max(20),
   currentStock: z.number().nonnegative(),
   minimumStock: z.number().nonnegative(),
+  unitCost: z.number().nonnegative().optional(),
   expiryDate: z.coerce.date().optional(),
   supplier: z.string().max(120).optional(),
   batchLotNumber: z.string().max(80).optional(),
@@ -174,12 +202,20 @@ export const restockCreateSchema = z.object({
 });
 export type RestockCreate = z.infer<typeof restockCreateSchema>;
 
+export const stockMovementCreateSchema = z.object({
+  type: z.enum(['IN', 'OUT', 'ADJUST']),
+  quantity: z.number().positive(),
+  reason: z.string().max(500).optional(),
+});
+export type StockMovementCreate = z.infer<typeof stockMovementCreateSchema>;
+
 // ---- Health ----
 export const healthCreateSchema = z.object({
   type: z.enum(HEALTH_RECORD_TYPES),
   title: z.string().min(1).max(120),
   animalId: z.string().uuid().optional(),
   groupId: z.string().uuid().optional(),
+  herdBatchId: z.string().uuid().optional(),
   performedAt: z.coerce.date(),
   nextDueAt: z.coerce.date().optional(),
   notes: z.string().max(2000).optional(),
@@ -248,6 +284,7 @@ export const productionCreateSchema = z.object({
   animalId: z.string().uuid().optional(),
   groupId: z.string().uuid().optional(),
   batchId: z.string().uuid().optional(),
+  herdBatchId: z.string().uuid().optional(),
   notes: z.string().max(2000).optional(),
 });
 export type ProductionCreate = z.infer<typeof productionCreateSchema>;
@@ -384,3 +421,48 @@ export const herdMonthlyReportQuerySchema = z.object({
   kind: z.enum(HERD_BATCH_KINDS).optional(),
 });
 export type HerdMonthlyReportQuery = z.infer<typeof herdMonthlyReportQuerySchema>;
+
+export const batchWaterQualityCreateSchema = z.object({
+  recordedAt: z.coerce.date().default(() => new Date()),
+  temperatureC: z.number().optional(),
+  ph: z.number().optional(),
+  dissolvedO2: z.number().optional(),
+  notes: z.string().max(500).optional(),
+});
+export type BatchWaterQualityCreate = z.infer<typeof batchWaterQualityCreateSchema>;
+
+export const batchSamplingCreateSchema = z.object({
+  sampledAt: z.coerce.date().default(() => new Date()),
+  sampleCount: z.number().int().positive(),
+  totalWeightGrams: z.number().positive(),
+  estimatedCount: z.number().int().positive().optional(),
+  notes: z.string().max(500).optional(),
+});
+export type BatchSamplingCreate = z.infer<typeof batchSamplingCreateSchema>;
+
+export const batchHarvestCreateSchema = z.object({
+  quantityKg: z.number().positive(),
+  fishCount: z.number().int().positive().optional(),
+  quality: z.enum(QUALITY_GRADES).optional(),
+  occurredAt: z.coerce.date().default(() => new Date()),
+  notes: z.string().max(500).optional(),
+  reduceHeadcount: z.boolean().optional(),
+});
+export type BatchHarvestCreate = z.infer<typeof batchHarvestCreateSchema>;
+
+export const batchFeedCreateSchema = z.object({
+  quantityKg: z.number().positive(),
+  feedType: z.string().max(80).optional(),
+  inventoryItemId: z.string().uuid().optional(),
+  occurredAt: z.coerce.date().default(() => new Date()),
+  notes: z.string().max(500).optional(),
+});
+export type BatchFeedCreate = z.infer<typeof batchFeedCreateSchema>;
+
+export const farmMemberCreateSchema = z.object({
+  email: z.string().email(),
+  name: z.string().min(1).max(120),
+  role: z.enum(['ADMIN', 'MANAGER', 'WORKER']),
+  password: z.string().min(8).max(128),
+});
+export type FarmMemberCreate = z.infer<typeof farmMemberCreateSchema>;

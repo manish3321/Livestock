@@ -15,6 +15,7 @@ import { SpeciesGlyph } from '../../components/ModuleIcon';
 import { ErrorState, LoadingState } from '../../components/PageState';
 import { StatusChip } from '../../components/StatusChip';
 import { downloadAnimalsCsv, listAnimals } from '../../api/animals';
+import { downloadTablePdf } from '../../lib/pdf';
 
 export function AnimalsListPage() {
   const { t } = useTranslation();
@@ -47,13 +48,43 @@ export function AnimalsListPage() {
         </div>
         <div className="page-actions">
           {can('export:data') && (
-            <button
-              className="btn secondary"
-              type="button"
-              onClick={() => void downloadAnimalsCsv()}
-            >
-              {t('animals.exportCsv')}
-            </button>
+            <>
+              <button
+                className="btn secondary"
+                type="button"
+                onClick={() => void downloadAnimalsCsv()}
+              >
+                {t('animals.exportCsv')}
+              </button>
+              <button
+                className="btn secondary"
+                type="button"
+                disabled={!query.data?.items.length}
+                onClick={() => {
+                  const rows = query.data?.items ?? [];
+                  downloadTablePdf(
+                    t('batches.breedingStock'),
+                    'breeding-animals.pdf',
+                    [
+                      t('animals.tag'),
+                      t('animals.species'),
+                      t('animals.breed'),
+                      t('animals.status'),
+                      t('animals.weight'),
+                    ],
+                    rows.map((r) => [
+                      r.tag,
+                      SPECIES_LABEL[r.species] ?? r.species,
+                      r.breed,
+                      ANIMAL_STATUS_LABEL[r.status] ?? r.status,
+                      r.currentWeightKg != null ? String(r.currentWeightKg) : '—',
+                    ]),
+                  );
+                }}
+              >
+                {t('animals.exportPdf')}
+              </button>
+            </>
           )}
         </div>
       </div>

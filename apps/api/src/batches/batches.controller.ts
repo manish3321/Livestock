@@ -13,15 +13,23 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  batchFeedCreateSchema,
+  batchHarvestCreateSchema,
   batchIllnessCreateSchema,
   batchMortalityCreateSchema,
+  batchSamplingCreateSchema,
+  batchWaterQualityCreateSchema,
   herdBatchCreateSchema,
   herdBatchListQuerySchema,
   herdBatchUpdateSchema,
 } from '@farm/contracts';
 import type {
+  BatchFeedCreate,
+  BatchHarvestCreate,
   BatchIllnessCreate,
   BatchMortalityCreate,
+  BatchSamplingCreate,
+  BatchWaterQualityCreate,
   HerdBatchCreate,
   HerdBatchListQuery,
   HerdBatchUpdate,
@@ -32,9 +40,13 @@ import type { RequestUser } from '../common/types';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import {
   BatchesService,
+  type FeedDto,
+  type HarvestDto,
   type HerdBatchDto,
   type IllnessDto,
   type MortalityDto,
+  type SamplingDto,
+  type WaterQualityDto,
 } from './batches.service';
 
 @ApiTags('batches')
@@ -139,5 +151,94 @@ export class BatchesController {
     @Headers('x-request-id') requestId?: string,
   ): Promise<MortalityDto> {
     return this.batches.addMortality(user, id, body, requestId);
+  }
+
+  @Get(':id/water-quality')
+  @RequirePermissions('animals:read')
+  @ApiOperation({ summary: 'List water quality logs for a FISH batch' })
+  listWaterQuality(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<WaterQualityDto[]> {
+    return this.batches.listWaterQuality(user, id);
+  }
+
+  @Post(':id/water-quality')
+  @RequirePermissions('animals:write')
+  @ApiOperation({ summary: 'Log water quality for a FISH batch' })
+  addWaterQuality(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(batchWaterQualityCreateSchema))
+    body: BatchWaterQualityCreate,
+    @Headers('x-request-id') requestId?: string,
+  ): Promise<WaterQualityDto> {
+    return this.batches.addWaterQuality(user, id, body, requestId);
+  }
+
+  @Get(':id/sampling')
+  @RequirePermissions('animals:read')
+  @ApiOperation({ summary: 'List sampling events for a FISH batch' })
+  listSampling(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<SamplingDto[]> {
+    return this.batches.listSampling(user, id);
+  }
+
+  @Post(':id/sampling')
+  @RequirePermissions('animals:write')
+  @ApiOperation({ summary: 'Log sampling for a FISH batch' })
+  addSampling(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(batchSamplingCreateSchema)) body: BatchSamplingCreate,
+    @Headers('x-request-id') requestId?: string,
+  ): Promise<SamplingDto> {
+    return this.batches.addSampling(user, id, body, requestId);
+  }
+
+  @Get(':id/harvest')
+  @RequirePermissions('animals:read')
+  @ApiOperation({ summary: 'List harvest events for a FISH batch' })
+  listHarvest(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<HarvestDto[]> {
+    return this.batches.listHarvest(user, id);
+  }
+
+  @Post(':id/harvest')
+  @RequirePermissions('animals:write')
+  @ApiOperation({ summary: 'Log harvest for a FISH batch' })
+  addHarvest(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(batchHarvestCreateSchema)) body: BatchHarvestCreate,
+    @Headers('x-request-id') requestId?: string,
+  ): Promise<HarvestDto> {
+    return this.batches.addHarvest(user, id, body, requestId);
+  }
+
+  @Get(':id/feed')
+  @RequirePermissions('animals:read')
+  @ApiOperation({ summary: 'List feed events for a batch' })
+  listFeed(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<FeedDto[]> {
+    return this.batches.listFeed(user, id);
+  }
+
+  @Post(':id/feed')
+  @RequirePermissions('animals:write')
+  @ApiOperation({ summary: 'Log feed for a batch' })
+  addFeed(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(batchFeedCreateSchema)) body: BatchFeedCreate,
+    @Headers('x-request-id') requestId?: string,
+  ): Promise<FeedDto> {
+    return this.batches.addFeed(user, id, body, requestId);
   }
 }

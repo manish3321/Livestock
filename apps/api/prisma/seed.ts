@@ -19,6 +19,7 @@ import {
   HealthRecordType,
   ProductionType,
   QualityGrade,
+  HerdBatchKind,
 } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
@@ -259,6 +260,40 @@ async function main(): Promise<void> {
         },
       });
     }
+    if (h.kind === HerdBatchKind.FISH) {
+      await prisma.batchWaterQualityLog.create({
+        data: {
+          farmId: farm.id,
+          batchId: created.id,
+          recordedAt: new Date(),
+          temperatureC: 28.5,
+          ph: 7.2,
+          dissolvedO2: 5.5,
+          notes: 'Seed water sample',
+        },
+      });
+      await prisma.batchSamplingEvent.create({
+        data: {
+          farmId: farm.id,
+          batchId: created.id,
+          sampledAt: new Date(),
+          sampleCount: 20,
+          totalWeightGrams: 5000,
+          estimatedCount: h.count,
+          avgWeightGrams: 250,
+        },
+      });
+    }
+    await prisma.batchFeedEvent.create({
+      data: {
+        farmId: farm.id,
+        batchId: created.id,
+        quantityKg: 25,
+        feedType: 'Mixed feed',
+        occurredAt: new Date(),
+        notes: 'Seed feed log',
+      },
+    });
   }
 
   // ---- Groups ----
@@ -414,6 +449,7 @@ async function main(): Promise<void> {
           unit: 'kg',
           currentStock: 40,
           minimumStock: 100,
+          unitCost: 55,
         },
         {
           farmId: farm.id,
@@ -422,6 +458,8 @@ async function main(): Promise<void> {
           unit: 'ml',
           currentStock: 200,
           minimumStock: 50,
+          unitCost: 12,
+          expiryDate: new Date(Date.now() + 20 * 86_400_000),
         },
         {
           farmId: farm.id,
@@ -430,8 +468,38 @@ async function main(): Promise<void> {
           unit: 'dose',
           currentStock: 20,
           minimumStock: 50,
+          unitCost: 8,
+          expiryDate: new Date(Date.now() + 15 * 86_400_000),
         },
       ],
+    });
+  }
+
+  const now = new Date();
+  const budgetCount = await prisma.expenseBudget.count({ where: { farmId: farm.id } });
+  if (budgetCount === 0) {
+    await prisma.expenseBudget.create({
+      data: {
+        farmId: farm.id,
+        category: ExpenseCategory.FEED,
+        year: now.getUTCFullYear(),
+        month: now.getUTCMonth() + 1,
+        amount: 80000,
+      },
+    });
+  }
+
+  const recurringCount = await prisma.recurringExpense.count({ where: { farmId: farm.id } });
+  if (recurringCount === 0) {
+    await prisma.recurringExpense.create({
+      data: {
+        farmId: farm.id,
+        category: ExpenseCategory.LABOR,
+        amount: 45000,
+        description: 'Monthly farm wages',
+        dayOfMonth: 1,
+        active: true,
+      },
     });
   }
 

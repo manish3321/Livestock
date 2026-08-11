@@ -74,6 +74,8 @@ export function DashboardPage() {
     healthOverdue: [],
     inventoryCritical: [],
     pendingApprovals: [],
+    inventoryExpiring: [],
+    unpaidRevenue: [],
   };
   const activity = data.recentActivity ?? [];
   const maxSpecies = Math.max(1, ...species.map((s) => s.count));
@@ -181,6 +183,18 @@ export function DashboardPage() {
         </div>
       </div>
 
+      {showFinance && data.financeTrend && data.financeTrend.length > 0 && (
+        <div className="card section-block">
+          <div className="section-head">
+            <div>
+              <h2 className="section-title">{t('dashboard.financeTrend')}</h2>
+              <p className="section-hint">{t('dashboard.financeTrendHint')}</p>
+            </div>
+          </div>
+          <FinanceTrendChart data={data.financeTrend} />
+        </div>
+      )}
+
       <div className="detail-grid section-block">
         <div className="card">
           <div className="section-head">
@@ -239,6 +253,20 @@ export function DashboardPage() {
               items={alerts.pendingApprovals}
               status="PENDING"
             />
+            <AlertBlock
+              title={t('dashboard.inventoryExpiring')}
+              count={(alerts.inventoryExpiring ?? []).length}
+              items={alerts.inventoryExpiring ?? []}
+              status="LOW"
+            />
+            {showFinance && (
+              <AlertBlock
+                title={t('dashboard.unpaidRevenue')}
+                count={(alerts.unpaidRevenue ?? []).length}
+                items={alerts.unpaidRevenue ?? []}
+                status="PENDING"
+              />
+            )}
           </div>
         </div>
       </div>
@@ -265,6 +293,70 @@ export function DashboardPage() {
             ))}
           </ul>
         )}
+      </div>
+    </div>
+  );
+}
+
+function FinanceTrendChart({
+  data,
+}: {
+  data: Array<{ month: string; revenue: number; expenses: number }>;
+}) {
+  const max = Math.max(1, ...data.flatMap((d) => [d.revenue, d.expenses]));
+  const w = 560;
+  const h = 160;
+  const pad = 28;
+  const innerW = w - pad * 2;
+  const innerH = h - pad * 2;
+  const step = innerW / Math.max(1, data.length - 1);
+
+  const revPoints = data
+    .map((d, i) => {
+      const x = pad + i * step;
+      const y = pad + innerH - (d.revenue / max) * innerH;
+      return `${x},${y}`;
+    })
+    .join(' ');
+  const expPoints = data
+    .map((d, i) => {
+      const x = pad + i * step;
+      const y = pad + innerH - (d.expenses / max) * innerH;
+      return `${x},${y}`;
+    })
+    .join(' ');
+
+  return (
+    <div className="trend-chart">
+      <svg viewBox={`0 0 ${w} ${h}`} role="img" aria-label="Revenue vs expenses">
+        <polyline
+          fill="none"
+          stroke="var(--color-brand, #2d5532)"
+          strokeWidth="3"
+          points={revPoints}
+        />
+        <polyline
+          fill="none"
+          stroke="var(--color-danger, #b45309)"
+          strokeWidth="3"
+          points={expPoints}
+        />
+        {data.map((d, i) => (
+          <text
+            key={d.month}
+            x={pad + i * step}
+            y={h - 6}
+            textAnchor="middle"
+            fontSize="10"
+            fill="currentColor"
+          >
+            {d.month.slice(5)}
+          </text>
+        ))}
+      </svg>
+      <div className="trend-legend">
+        <span className="trend-legend-rev">Revenue</span>
+        <span className="trend-legend-exp">Expenses</span>
       </div>
     </div>
   );

@@ -16,6 +16,8 @@
     "@farm/design-tokens": "workspace:*",
     "@tanstack/react-query": "^5.59.0",
     "i18next": "^24.0.0",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-i18next": "^15.1.0",

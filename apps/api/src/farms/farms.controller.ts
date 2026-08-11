@@ -1,7 +1,18 @@
-import { Controller, Get, NotFoundException } from '@nestjs/common';
+import {
+  Body,
+  ConflictException,
+  Controller,
+  Get,
+  NotFoundException,
+  Post,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { farmMemberCreateSchema } from '@farm/contracts';
+import type { FarmMemberCreate } from '@farm/contracts';
+import * as bcrypt from 'bcryptjs';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/types';
+import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { PrismaService } from '../prisma/prisma.service';
 
 @ApiTags('farms')
@@ -33,5 +44,48 @@ export class FarmsController {
       isActive: m.user.isActive,
       role: m.role,
     }));
+  }
+
+  @Post('me/members')
+  @RequirePermissions('users:manage')
+  @ApiOperation({ summary: 'Create a farm member (admin)' })
+  async createMember(
+    @CurrentUser() user: RequestUser,
+    @Body(new ZodValidationPipe(farmMemberCreateSchema)) body: FarmMemberCreate,
+  ) {
+    const existing = await this.prisma.user.findUnique({ where: { email: body.email } });
+    if (existing) {
+      throw new ConflictException({
+        code: 'EMAIL_TAKEN',
+        message: 'A user with this email already exists',
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(body.password, 10);
+    const created = await this.prisma.$transaction(async (tx) => {
+      const newUser = await tx.user.create({
+        data: {
+          email: body.email,
+          name: body.name,
+          passwordHash,
+        },
+      });
+      await tx.farmMembership.create({
+        data: {
+          userId: newUser.id,
+          farmId: user.farmId,
+          role: body.role,
+        },
+      });
+      return newUser;
+    });
+
+    return {
+      userId: created.id,
+      email: created.email,
+      name: created.name,
+      role: body.role,
+      isActive: created.isActive,
+    };
   }
 }

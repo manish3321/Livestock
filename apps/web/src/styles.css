@@ -884,6 +884,45 @@ button {
   letter-spacing: -0.02em;
 }
 
+.trend-chart {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.trend-chart svg {
+  width: 100%;
+  max-width: 560px;
+  height: auto;
+  display: block;
+}
+
+.trend-legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 12px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.trend-legend-rev::before,
+.trend-legend-exp::before {
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 3px;
+  margin-right: 8px;
+  vertical-align: middle;
+  border-radius: 2px;
+}
+
+.trend-legend-rev::before {
+  background: var(--color-brand, #2d5532);
+}
+
+.trend-legend-exp::before {
+  background: var(--color-danger, #b45309);
+}
+
 .bar-list {
   list-style: none;
   margin: 0;

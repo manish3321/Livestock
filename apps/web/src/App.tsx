@@ -20,6 +20,7 @@ import { InventoryPage } from './pages/inventory/InventoryPage';
 import { HealthPage } from './pages/health/HealthPage';
 import { BreedingPage } from './pages/breeding/BreedingPage';
 import { ProductionPage } from './pages/production/ProductionPage';
+import { AdminAuditPage, AdminMembersPage } from './pages/admin/AdminPages';
 import { ReportsPage } from './pages/reports/ReportsPage';
 
 export function App() {
@@ -86,6 +87,9 @@ export function App() {
             <Route element={<RequireModule module="reports" />}>
               <Route path="/reports" element={<ReportsPage />} />
             </Route>
+
+            <Route path="/admin/members" element={<AdminMembersPage />} />
+            <Route path="/admin/audit" element={<AdminAuditPage />} />
 
             <Route path="/forbidden" element={<ForbiddenPage />} />
             <Route path="*" element={<NotFoundPage />} />

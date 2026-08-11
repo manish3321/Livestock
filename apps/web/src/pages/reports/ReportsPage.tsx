@@ -16,6 +16,7 @@ import {
   type ReportSummary,
 } from '../../api/reports';
 import { ErrorState, LoadingState } from '../../components/PageState';
+import { downloadTablePdf } from '../../lib/pdf';
 
 type ReportKind = 'farm-overview' | 'animal-inventory' | 'health-summary';
 
@@ -156,13 +157,48 @@ export function ReportsPage() {
             {t('reports.viewMonthly')}
           </button>
           {can('export:data') && (
-            <button
-              className="btn secondary"
-              type="button"
-              onClick={() => void downloadHerdMonthlyCsv(monthlyQuery)}
-            >
-              {t('reports.downloadMonthlyCsv')}
-            </button>
+            <>
+              <button
+                className="btn secondary"
+                type="button"
+                onClick={() => void downloadHerdMonthlyCsv(monthlyQuery)}
+              >
+                {t('reports.downloadMonthlyCsv')}
+              </button>
+              <button
+                className="btn secondary"
+                type="button"
+                disabled={!monthly.data?.rows.length}
+                onClick={() => {
+                  const data = monthly.data;
+                  if (!data) return;
+                  downloadTablePdf(
+                    `${t('reports.monthlyHerd')} ${year}-${String(month).padStart(2, '0')}`,
+                    `herd-monthly-${year}-${String(month).padStart(2, '0')}.pdf`,
+                    [
+                      t('reports.kind'),
+                      t('reports.category'),
+                      t('reports.batchName'),
+                      t('reports.current'),
+                      t('reports.dead'),
+                      t('reports.diedThisMonth'),
+                      t('reports.sickThisMonth'),
+                    ],
+                    data.rows.map((row) => [
+                      row.kind,
+                      row.category,
+                      row.name,
+                      row.currentCount,
+                      row.deadCount,
+                      row.diedThisMonth,
+                      row.sickLoggedThisMonth,
+                    ]),
+                  );
+                }}
+              >
+                {t('reports.downloadMonthlyPdf')}
+              </button>
+            </>
           )}
         </div>
 

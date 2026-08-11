@@ -63,6 +63,14 @@ model Farm {
   herdBatches      HerdBatch[]
   batchIllness     BatchIllnessEvent[]
   batchMortality   BatchMortalityEvent[]
+  batchWaterLogs   BatchWaterQualityLog[]
+  batchSamplings   BatchSamplingEvent[]
+  batchHarvests    BatchHarvestEvent[]
+  batchFeeds       BatchFeedEvent[]
+  expenseBudgets   ExpenseBudget[]
+  recurringExpenses RecurringExpense[]
+  stockMovements   StockMovement[]
+  notificationLogs NotificationLog[]
 }
 
 model FarmMembership {
@@ -352,9 +360,15 @@ model HerdBatch {
   updatedAt      DateTime      @updatedAt
   deletedAt      DateTime?
 
-  farm      Farm                 @relation(fields: [farmId], references: [id], onDelete: Cascade)
-  illness   BatchIllnessEvent[]
-  mortality BatchMortalityEvent[]
+  farm         Farm                  @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  illness      BatchIllnessEvent[]
+  mortality    BatchMortalityEvent[]
+  waterQuality BatchWaterQualityLog[]
+  samplings    BatchSamplingEvent[]
+  harvests     BatchHarvestEvent[]
+  feeds        BatchFeedEvent[]
+  health       HealthRecord[]
+  production   ProductionEntry[]
 
   @@index([farmId, kind])
   @@index([farmId, category])
@@ -394,6 +408,76 @@ model BatchMortalityEvent {
   @@index([farmId, occurredAt])
 }
 
+model BatchWaterQualityLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  farmId       String   @db.Uuid
+  batchId      String   @db.Uuid
+  recordedAt   DateTime
+  temperatureC Decimal? @db.Decimal(5, 2)
+  ph           Decimal? @db.Decimal(4, 2)
+  dissolvedO2  Decimal? @db.Decimal(5, 2)
+  notes        String?
+  createdAt    DateTime @default(now())
+
+  farm  Farm      @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  batch HerdBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId, recordedAt])
+}
+
+model BatchSamplingEvent {
+  id               String   @id @default(uuid()) @db.Uuid
+  farmId           String   @db.Uuid
+  batchId          String   @db.Uuid
+  sampledAt        DateTime
+  sampleCount      Int
+  totalWeightGrams Decimal  @db.Decimal(10, 2)
+  estimatedCount   Int
+  avgWeightGrams   Decimal  @db.Decimal(8, 2)
+  notes            String?
+  createdAt        DateTime @default(now())
+
+  farm  Farm      @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  batch HerdBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId, sampledAt])
+}
+
+model BatchHarvestEvent {
+  id          String        @id @default(uuid()) @db.Uuid
+  farmId      String        @db.Uuid
+  batchId     String        @db.Uuid
+  quantityKg  Decimal       @db.Decimal(12, 2)
+  fishCount   Int?
+  quality     QualityGrade?
+  occurredAt  DateTime
+  notes       String?
+  createdAt   DateTime      @default(now())
+
+  farm  Farm      @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  batch HerdBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId, occurredAt])
+}
+
+model BatchFeedEvent {
+  id              String   @id @default(uuid()) @db.Uuid
+  farmId          String   @db.Uuid
+  batchId         String   @db.Uuid
+  quantityKg      Decimal  @db.Decimal(12, 2)
+  feedType        String?
+  inventoryItemId String?  @db.Uuid
+  occurredAt      DateTime
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  farm          Farm           @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  batch         HerdBatch      @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+
+  @@index([batchId, occurredAt])
+}
+
 // ---------------------------------------------------------------------------
 // Expenses (approval workflow)
 // ---------------------------------------------------------------------------
@@ -426,6 +510,11 @@ model Expense {
   expenseDate     DateTime
   description     String
   receiptNumber   String?
+  receiptUrl      String?
+  receiptStorageKey String?
+  gstAmount       Decimal?        @db.Decimal(12, 2)
+  supplier        String?
+  paymentStatus   ExpensePaymentStatus @default(UNPAID)
   status          ApprovalStatus  @default(PENDING)
   submittedById   String          @db.Uuid
   reviewedById    String?         @db.Uuid
@@ -438,6 +527,48 @@ model Expense {
 
   @@index([farmId, status])
   @@index([farmId, expenseDate])
+}
+
+enum ExpensePaymentStatus {
+  UNPAID
+  PAID
+  PARTIAL
+}
+
+model ExpenseBudget {
+  id        String          @id @default(uuid()) @db.Uuid
+  farmId    String          @db.Uuid
+  category  ExpenseCategory
+  year      Int
+  month     Int
+  amount    Decimal         @db.Decimal(12, 2)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@unique([farmId, category, year, month])
+  @@index([farmId, year, month])
+}
+
+model RecurringExpense {
+  id          String          @id @default(uuid()) @db.Uuid
+  farmId      String          @db.Uuid
+  category    ExpenseCategory
+  amount      Decimal         @db.Decimal(12, 2)
+  description String
+  supplier    String?
+  gstAmount   Decimal?        @db.Decimal(12, 2)
+  dayOfMonth  Int             @default(1)
+  active      Boolean         @default(true)
+  lastGeneratedYear  Int?
+  lastGeneratedMonth Int?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@index([farmId, active])
 }
 
 // ---------------------------------------------------------------------------
@@ -501,6 +632,7 @@ model InventoryItem {
   unit            String
   currentStock    Decimal           @db.Decimal(12, 2)
   minimumStock    Decimal           @db.Decimal(12, 2)
+  unitCost        Decimal?          @db.Decimal(12, 2)
   expiryDate      DateTime?
   supplier        String?
   batchLotNumber  String?
@@ -509,10 +641,35 @@ model InventoryItem {
   updatedAt       DateTime          @updatedAt
   deletedAt       DateTime?
 
-  farm    Farm             @relation(fields: [farmId], references: [id], onDelete: Cascade)
-  restock RestockRequest[]
+  farm      Farm             @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  restock   RestockRequest[]
+  movements StockMovement[]
+  feeds     BatchFeedEvent[]
 
   @@index([farmId, category])
+}
+
+enum StockMovementType {
+  IN
+  OUT
+  ADJUST
+}
+
+model StockMovement {
+  id        String            @id @default(uuid()) @db.Uuid
+  farmId    String            @db.Uuid
+  itemId    String            @db.Uuid
+  type      StockMovementType
+  quantity  Decimal           @db.Decimal(12, 2)
+  reason    String?
+  userId    String            @db.Uuid
+  createdAt DateTime          @default(now())
+
+  farm Farm          @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  item InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId, createdAt])
+  @@index([farmId, createdAt])
 }
 
 enum RestockStatus {
@@ -559,19 +716,22 @@ model HealthRecord {
   title       String
   animalId    String?          @db.Uuid
   groupId     String?          @db.Uuid
+  herdBatchId String?          @db.Uuid
   performedAt DateTime
   nextDueAt   DateTime?
   notes       String?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
-  farm   Farm         @relation(fields: [farmId], references: [id], onDelete: Cascade)
-  animal Animal?      @relation(fields: [animalId], references: [id], onDelete: SetNull)
-  group  AnimalGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  farm      Farm         @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal    Animal?      @relation(fields: [animalId], references: [id], onDelete: SetNull)
+  group     AnimalGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  herdBatch HerdBatch?   @relation(fields: [herdBatchId], references: [id], onDelete: SetNull)
 
   @@index([farmId, nextDueAt])
   @@index([animalId])
   @@index([groupId])
+  @@index([herdBatchId])
 }
 
 // ---------------------------------------------------------------------------
@@ -642,17 +802,34 @@ model ProductionEntry {
   animalId    String?        @db.Uuid
   groupId     String?        @db.Uuid
   batchId     String?        @db.Uuid
+  herdBatchId String?        @db.Uuid
   notes       String?
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
-  farm   Farm         @relation(fields: [farmId], references: [id], onDelete: Cascade)
-  animal Animal?      @relation(fields: [animalId], references: [id], onDelete: SetNull)
-  group  AnimalGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  batch  FishBatch?   @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  farm      Farm         @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal    Animal?      @relation(fields: [animalId], references: [id], onDelete: SetNull)
+  group     AnimalGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  batch     FishBatch?   @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  herdBatch HerdBatch?   @relation(fields: [herdBatchId], references: [id], onDelete: SetNull)
 
   @@index([farmId, entryDate])
   @@index([farmId, type])
+  @@index([herdBatchId])
+}
+
+model NotificationLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  farmId    String   @db.Uuid
+  channel   String   @default("email")
+  subject   String
+  body      String
+  sent      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@index([farmId, createdAt])
 }
 
 // ---------------------------------------------------------------------------

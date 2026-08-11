@@ -26,7 +26,7 @@ const NAV_GROUPS: { labelKey: string; modules: ModuleKey[] }[] = [
 
 /** Role-aware shell: grouped menu for clearer adult scanning + modern look. */
 export function AppLayout() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, can } = useAuth();
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
 
@@ -65,6 +65,18 @@ export function AppLayout() {
             </div>
           );
         })}
+
+        {(can('users:manage') || can('audit:read')) && (
+          <div className="nav-group">
+            <div className="nav-group-label">{t('nav.group.admin')}</div>
+            {can('users:manage') && (
+              <NavLink to="/admin/members">{t('nav.members')}</NavLink>
+            )}
+            {can('audit:read') && (
+              <NavLink to="/admin/audit">{t('nav.audit')}</NavLink>
+            )}
+          </div>
+        )}
 
         <div className="sidebar-footer">
           <div className="sidebar-user">

@@ -1,6 +1,10 @@
 import type {
+  BatchFeedCreate,
+  BatchHarvestCreate,
   BatchIllnessCreate,
   BatchMortalityCreate,
+  BatchSamplingCreate,
+  BatchWaterQualityCreate,
   HerdBatchCreate,
   HerdBatchListQuery,
   HerdBatchUpdate,
@@ -48,6 +52,51 @@ export interface MortalityDto {
   createdAt: string;
 }
 
+export interface WaterQualityDto {
+  id: string;
+  batchId: string;
+  recordedAt: string;
+  temperatureC: number | null;
+  ph: number | null;
+  dissolvedO2: number | null;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface SamplingDto {
+  id: string;
+  batchId: string;
+  sampledAt: string;
+  sampleCount: number;
+  totalWeightGrams: number;
+  estimatedCount: number;
+  avgWeightGrams: number;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface HarvestDto {
+  id: string;
+  batchId: string;
+  quantityKg: number;
+  fishCount: number | null;
+  quality: string | null;
+  occurredAt: string;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface FeedDto {
+  id: string;
+  batchId: string;
+  quantityKg: number;
+  feedType: string | null;
+  inventoryItemId: string | null;
+  occurredAt: string;
+  notes: string | null;
+  createdAt: string;
+}
+
 export function listBatches(
   query: Partial<HerdBatchListQuery> = {},
 ): Promise<PageResult<HerdBatchDto>> {
@@ -90,6 +139,59 @@ export function addMortality(
   body: BatchMortalityCreate,
 ): Promise<MortalityDto> {
   return api(`/v1/batches/${batchId}/mortality`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function listWaterQuality(batchId: string): Promise<WaterQualityDto[]> {
+  return api(`/v1/batches/${batchId}/water-quality`);
+}
+
+export function addWaterQuality(
+  batchId: string,
+  body: BatchWaterQualityCreate,
+): Promise<WaterQualityDto> {
+  return api(`/v1/batches/${batchId}/water-quality`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function listSampling(batchId: string): Promise<SamplingDto[]> {
+  return api(`/v1/batches/${batchId}/sampling`);
+}
+
+export function addSampling(
+  batchId: string,
+  body: BatchSamplingCreate,
+): Promise<SamplingDto> {
+  return api(`/v1/batches/${batchId}/sampling`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function listHarvest(batchId: string): Promise<HarvestDto[]> {
+  return api(`/v1/batches/${batchId}/harvest`);
+}
+
+export function addHarvest(
+  batchId: string,
+  body: BatchHarvestCreate,
+): Promise<HarvestDto> {
+  return api(`/v1/batches/${batchId}/harvest`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function listFeed(batchId: string): Promise<FeedDto[]> {
+  return api(`/v1/batches/${batchId}/feed`);
+}
+
+export function addFeed(batchId: string, body: BatchFeedCreate): Promise<FeedDto> {
+  return api(`/v1/batches/${batchId}/feed`, {
     method: 'POST',
     body: JSON.stringify(body),
   });
