@@ -34,7 +34,6 @@ import type {
   RecurringExpenseCreate,
 } from '@farm/contracts';
 import type { Response } from 'express';
-import { memoryStorage } from 'multer';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/types';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
@@ -139,7 +138,7 @@ export class ExpensesController {
 
   @Post(':id/receipt')
   @RequirePermissions('expenses:submit')
-  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Upload expense receipt file' })
   uploadReceipt(
