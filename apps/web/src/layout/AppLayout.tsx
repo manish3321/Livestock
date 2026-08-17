@@ -24,7 +24,24 @@ const NAV_GROUPS: { labelKey: string; modules: ModuleKey[] }[] = [
   },
 ];
 
-/** Role-aware shell: grouped menu for clearer adult scanning + modern look. */
+function FarmMark() {
+  return (
+    <span className="brand-mark" aria-hidden="true">
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <rect width="28" height="28" rx="8" fill="currentColor" />
+        <path
+          d="M8 18.5c2.2-4.2 4.6-6.5 6-6.5s3.8 2.3 6 6.5"
+          stroke="#F4F1EA"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+        />
+        <circle cx="14" cy="10" r="2.2" fill="#F4F1EA" />
+      </svg>
+    </span>
+  );
+}
+
+/** Role-aware shell: light pasture sidebar + top bar. */
 export function AppLayout() {
   const { user, signOut, can } = useAuth();
   const { t, i18n } = useTranslation();
@@ -38,12 +55,21 @@ export function AppLayout() {
     navigate('/login');
   };
 
+  const today = new Intl.DateTimeFormat(i18n.language === 'ne' ? 'ne-NP' : 'en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  }).format(new Date());
+
   return (
     <div className="app-shell">
       <nav className="sidebar" aria-label={t('appName')}>
         <div className="sidebar-brand">
-          {t('appName')}
-          <span>{user.farmName}</span>
+          <FarmMark />
+          <div>
+            {t('appName')}
+            <span>{user.farmName}</span>
+          </div>
         </div>
 
         {NAV_GROUPS.map((group) => {
@@ -77,27 +103,35 @@ export function AppLayout() {
             )}
           </div>
         )}
-
-        <div className="sidebar-footer">
-          <div className="sidebar-user">
-            <strong>{user.name}</strong>
-            {t(`common.role.${user.role}`)}
-          </div>
-          <button
-            className="btn secondary"
-            type="button"
-            onClick={() => setLocale(i18n.language === 'en' ? 'ne' : 'en')}
-            aria-label="Switch language"
-          >
-            {i18n.language === 'en' ? 'नेपाली' : 'English'}
-          </button>
-          <button className="btn secondary" type="button" onClick={() => void handleSignOut()}>
-            {t('nav.logout')}
-          </button>
-        </div>
       </nav>
       <div className="main">
-        <main className="content rise-in" style={{ paddingTop: 'var(--space-xl)' }}>
+        <header className="topbar">
+          <div className="topbar-meta">
+            <strong>{user.farmName}</strong>
+            <span>{today}</span>
+          </div>
+          <div className="topbar-actions">
+            <div className="topbar-user">
+              <span className="avatar">{user.name.slice(0, 1).toUpperCase()}</span>
+              <span>
+                <strong>{user.name}</strong>
+                {t(`common.role.${user.role}`)}
+              </span>
+            </div>
+            <button
+              className="btn ghost"
+              type="button"
+              onClick={() => setLocale(i18n.language === 'en' ? 'ne' : 'en')}
+              aria-label="Switch language"
+            >
+              {i18n.language === 'en' ? 'नेपाली' : 'English'}
+            </button>
+            <button className="btn ghost" type="button" onClick={() => void handleSignOut()}>
+              {t('nav.logout')}
+            </button>
+          </div>
+        </header>
+        <main className="content rise-in">
           <Outlet />
         </main>
       </div>

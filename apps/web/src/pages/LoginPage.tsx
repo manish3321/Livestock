@@ -31,6 +31,7 @@ export function LoginPage() {
   return (
     <div className="login-wrap">
       <section className="login-hero">
+        <p className="login-kicker">{t('appName')}</p>
         <h1>{t('login.heroTitle')}</h1>
         <p>{t('login.heroBody')}</p>
         <ul className="login-points">
@@ -41,6 +42,7 @@ export function LoginPage() {
       </section>
       <div className="login-panel">
         <form className="card login-card" onSubmit={(e) => void onSubmit(e)}>
+          <p className="login-kicker muted">{t('appName')}</p>
           <h1>{t('login.title')}</h1>
           <p style={{ color: 'var(--color-text-secondary)', marginTop: 0, fontSize: '1.05rem' }}>
             {t('login.subtitle')}

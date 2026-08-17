@@ -7,21 +7,24 @@
  */
 
 export const palette = {
-  // Brand (Behance deep forest green)
-  green800: '#0A3D2C',
-  green700: '#0F5132',
-  green600: '#1B6B45',
-  green100: '#E3F2EA',
-  // Cream / warm neutrals
-  cream: '#F6F3EC',
-  creamDark: '#EDE8DC',
-  gray900: '#1A1C19',
-  gray700: '#3D433E',
-  gray500: '#6B736E',
-  gray300: '#D4D0C6',
-  gray100: '#F0ECE3',
-  gray50: '#F6F3EC',
-  white: '#FFFFFF',
+  // Brand — moss / pasture
+  green800: '#163A2A',
+  green700: '#1F5C3B',
+  green600: '#2E7A4F',
+  green100: '#E6F3EA',
+  // Linen / warm paper
+  cream: '#F4F1EA',
+  creamDark: '#E7E1D4',
+  gray900: '#1C211D',
+  gray700: '#3E463F',
+  gray500: '#6A726B',
+  gray300: '#D5CFC3',
+  gray100: '#EEE9DF',
+  gray50: '#F4F1EA',
+  white: '#FFFdf8',
+  // Accent
+  terracotta: '#C45C26',
+  terracottaDark: '#A3491C',
   // Signals
   red700: '#C62828',
   red100: '#FFEBEE',
@@ -41,6 +44,8 @@ export const color = {
   brand: palette.green700,
   brandStrong: palette.green800,
   brandSubtle: palette.green100,
+  accent: palette.terracotta,
+  accentStrong: palette.terracottaDark,
   textPrimary: palette.gray900,
   textSecondary: palette.gray700,
   textMuted: palette.gray500,
@@ -111,8 +116,8 @@ export const spacing = {
 
 export const radius = {
   sm: 8,
-  md: 14,
-  lg: 22,
+  md: 12,
+  lg: 18,
   pill: 999,
 } as const;
 
