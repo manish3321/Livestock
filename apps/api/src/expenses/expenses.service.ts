@@ -41,6 +41,8 @@ export interface ExpenseDto {
   reviewedById: string | null;
   reviewedAt: string | null;
   reviewNote: string | null;
+  animalId: string | null;
+  herdBatchId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -126,6 +128,8 @@ export class ExpensesService {
         paymentStatus: input.paymentStatus ?? 'UNPAID',
         status,
         submittedById: user.id,
+        animalId: input.animalId,
+        herdBatchId: input.herdBatchId,
       },
     });
 
@@ -445,6 +449,8 @@ function toDto(e: Expense): ExpenseDto {
     reviewedById: e.reviewedById,
     reviewedAt: e.reviewedAt?.toISOString() ?? null,
     reviewNote: e.reviewNote,
+    animalId: e.animalId,
+    herdBatchId: e.herdBatchId,
     createdAt: e.createdAt.toISOString(),
     updatedAt: e.updatedAt.toISOString(),
   };

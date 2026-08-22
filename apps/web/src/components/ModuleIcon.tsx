@@ -42,6 +42,13 @@ export function ModuleIcon({ module, size = 22 }: { module: ModuleKey; size?: nu
           <path {...stroke} d="M3 12h3" />
         </svg>
       );
+    case 'scan':
+      return (
+        <svg {...props}>
+          <path {...stroke} d="M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3" />
+          <rect {...stroke} x="8" y="8" width="8" height="8" rx="1" />
+        </svg>
+      );
     case 'expenses':
       return (
         <svg {...props}>

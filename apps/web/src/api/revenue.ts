@@ -23,6 +23,8 @@ export interface RevenueDto {
   paymentStatus: PaymentStatus;
   invoiceNumber: string;
   notes: string | null;
+  animalId: string | null;
+  herdBatchId: string | null;
   createdAt: string;
   updatedAt: string;
 }

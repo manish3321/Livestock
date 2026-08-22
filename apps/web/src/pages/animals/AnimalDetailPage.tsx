@@ -26,8 +26,11 @@ import {
   createAnimal,
   deleteAnimal,
   getAnimal,
+  getAnimalEconomics,
   updateAnimal,
 } from '../../api/animals';
+import { QrPrintCard } from '../../components/QrPrintCard';
+import { animalScanUrl } from '../../lib/qr';
 
 export function AnimalDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -41,6 +44,12 @@ export function AnimalDetailPage() {
   const query = useQuery({
     queryKey: ['animal', id],
     queryFn: () => getAnimal(id!),
+    enabled: Boolean(id),
+  });
+
+  const economicsQ = useQuery({
+    queryKey: ['animal', id, 'economics'],
+    queryFn: () => getAnimalEconomics(id!),
     enabled: Boolean(id),
   });
 
@@ -94,6 +103,9 @@ export function AnimalDetailPage() {
               </div>
             </div>
             <div className="page-actions">
+              <Link className="btn secondary" to={`/scan/a/${animal.id}`}>
+                {t('qr.openScan')}
+              </Link>
               {can('animals:write') && (
                 <Link className="btn secondary" to={`/animals/stock/${animal.id}/edit`}>
                   {t('common.edit')}
@@ -116,6 +128,23 @@ export function AnimalDetailPage() {
           </div>
         </div>
       </div>
+
+      {economicsQ.data && (
+        <div className="stats-grid" style={{ marginBottom: 24 }}>
+          <div className="stat-card">
+            <span className="stat-label">{t('qr.invested')}</span>
+            <span className="stat-value">{formatNPR(economicsQ.data.investedTotal)}</span>
+          </div>
+          <div className="stat-card">
+            <span className="stat-label">{t('qr.earned')}</span>
+            <span className="stat-value">{formatNPR(economicsQ.data.earnedTotal)}</span>
+          </div>
+          <div className="stat-card">
+            <span className="stat-label">{t('qr.net')}</span>
+            <span className="stat-value">{formatNPR(economicsQ.data.net)}</span>
+          </div>
+        </div>
+      )}
 
       <div className="detail-grid">
         <div className="card">
@@ -152,6 +181,10 @@ export function AnimalDetailPage() {
               </dd>
             </div>
             <div>
+              <dt>{t('animals.breedingStock')}</dt>
+              <dd>{animal.breedingStock ? t('common.yes') : t('common.no')}</dd>
+            </div>
+            <div>
               <dt>{t('animals.weight')}</dt>
               <dd>
                 {animal.currentWeightKg != null ? `${animal.currentWeightKg} kg` : '—'}
@@ -165,6 +198,12 @@ export function AnimalDetailPage() {
             </>
           )}
         </div>
+
+        <QrPrintCard
+          title={`${animal.tag}${animal.name ? ` · ${animal.name}` : ''}`}
+          subtitle={SPECIES_LABEL[animal.species]}
+          url={animalScanUrl(animal.id)}
+        />
 
         <div className="card">
           <h2>{t('animals.weightHistory')}</h2>
@@ -238,6 +277,7 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
     species: 'BUFFALO',
     gender: 'FEMALE',
     status: 'ACTIVE',
+    breedingStock: true,
     tag: 'BUF001',
   });
   const [error, setError] = useState<string | null>(null);
@@ -255,6 +295,7 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
         source: a.source ?? undefined,
         motherTag: a.motherTag ?? undefined,
         status: a.status,
+        breedingStock: a.breedingStock,
         notes: a.notes ?? undefined,
         purchaseCost: a.purchaseCost ?? undefined,
         dateOfBirth: a.dateOfBirth ? new Date(a.dateOfBirth) : undefined,
@@ -278,6 +319,7 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
         source: form.source as AnimalSource | undefined,
         motherTag: form.motherTag,
         status: (form.status ?? 'ACTIVE') as AnimalStatus,
+        breedingStock: form.breedingStock ?? true,
         notes: form.notes,
         purchaseCost: form.purchaseCost,
         dateOfBirth: form.dateOfBirth,
@@ -463,6 +505,17 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
                 set('purchaseCost', e.target.value ? Number(e.target.value) : undefined)
               }
             />
+          </div>
+          <div className="field">
+            <label htmlFor="breedingStock">{t('animals.breedingStock')}</label>
+            <select
+              id="breedingStock"
+              value={form.breedingStock === false ? 'no' : 'yes'}
+              onChange={(e) => set('breedingStock', e.target.value === 'yes')}
+            >
+              <option value="yes">{t('common.yes')}</option>
+              <option value="no">{t('common.no')}</option>
+            </select>
           </div>
         </div>
 

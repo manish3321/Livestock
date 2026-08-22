@@ -25,6 +25,8 @@ export interface RevenueDto {
   paymentStatus: string;
   invoiceNumber: string;
   notes: string | null;
+  animalId: string | null;
+  herdBatchId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -89,6 +91,8 @@ export class RevenueService {
         paymentStatus: input.paymentStatus,
         invoiceNumber,
         notes: input.notes,
+        animalId: input.animalId,
+        herdBatchId: input.herdBatchId,
       },
     });
 
@@ -135,6 +139,8 @@ export class RevenueService {
           ? { paymentStatus: input.paymentStatus }
           : {}),
         ...(input.notes !== undefined ? { notes: input.notes } : {}),
+        ...(input.animalId !== undefined ? { animalId: input.animalId } : {}),
+        ...(input.herdBatchId !== undefined ? { herdBatchId: input.herdBatchId } : {}),
       },
     });
 
@@ -208,6 +214,8 @@ function toDto(r: Revenue): RevenueDto {
     paymentStatus: r.paymentStatus,
     invoiceNumber: r.invoiceNumber,
     notes: r.notes,
+    animalId: r.animalId,
+    herdBatchId: r.herdBatchId,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
   };

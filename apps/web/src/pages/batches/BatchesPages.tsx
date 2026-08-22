@@ -8,6 +8,7 @@ import {
   QUALITY_GRADES_FISH,
   SPECIES,
   SPECIES_LABEL,
+  formatNPR,
   type HerdBatchKind,
   type IllnessCondition,
 } from '@farm/contracts';
@@ -21,6 +22,7 @@ import {
   addWaterQuality,
   createBatch,
   getBatch,
+  getBatchEconomics,
   listBatches,
   listFeed,
   listHarvest,
@@ -31,7 +33,9 @@ import {
 } from '../../api/batches';
 import { listInventory } from '../../api/inventory';
 import { ErrorState, LoadingState } from '../../components/PageState';
+import { QrPrintCard } from '../../components/QrPrintCard';
 import { StatusChip } from '../../components/StatusChip';
+import { batchScanUrl } from '../../lib/qr';
 
 function ageLabel(from: number | null, to: number | null, t: (k: string) => string): string {
   if (from == null && to == null) return t('batches.anyAge');
@@ -313,6 +317,11 @@ export function BatchDetailPage() {
     queryFn: () => getBatch(id!),
     enabled: Boolean(id),
   });
+  const economicsQ = useQuery({
+    queryKey: ['batch', id, 'economics'],
+    queryFn: () => getBatchEconomics(id!),
+    enabled: Boolean(id),
+  });
   const illnessQ = useQuery({
     queryKey: ['batch', id, 'illness'],
     queryFn: () => listIllness(id!),
@@ -460,20 +469,29 @@ export function BatchDetailPage() {
       </Link>
       <div className="animal-hero">
         <div style={{ width: '100%' }}>
-          <h1>{b.name}</h1>
-          <div className="chip-row">
-            <span
-              className="meta-pill"
-              style={{ background: 'rgba(255,255,255,0.18)', color: '#fff' }}
-            >
-              {b.category}
-            </span>
-            <span
-              className="meta-pill"
-              style={{ background: 'rgba(255,255,255,0.18)', color: '#fff' }}
-            >
-              {ageLabel(b.ageFromMonths, b.ageToMonths, t)}
-            </span>
+          <div className="page-header" style={{ marginBottom: 0, alignItems: 'flex-end' }}>
+            <div>
+              <h1>{b.name}</h1>
+              <div className="chip-row">
+                <span
+                  className="meta-pill"
+                  style={{ background: 'rgba(255,255,255,0.18)', color: '#fff' }}
+                >
+                  {b.category}
+                </span>
+                <span
+                  className="meta-pill"
+                  style={{ background: 'rgba(255,255,255,0.18)', color: '#fff' }}
+                >
+                  {ageLabel(b.ageFromMonths, b.ageToMonths, t)}
+                </span>
+              </div>
+            </div>
+            <div className="page-actions">
+              <Link className="btn secondary" to={`/scan/b/${b.id}`}>
+                {t('qr.openScan')}
+              </Link>
+            </div>
           </div>
         </div>
       </div>
@@ -495,6 +513,18 @@ export function BatchDetailPage() {
           <span className="stat-label">{t('batches.initial')}</span>
           <span className="stat-value">{b.initialCount}</span>
         </div>
+        {economicsQ.data && (
+          <>
+            <div className="stat-card">
+              <span className="stat-label">{t('qr.invested')}</span>
+              <span className="stat-value">{formatNPR(economicsQ.data.investedTotal)}</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">{t('qr.earned')}</span>
+              <span className="stat-value">{formatNPR(economicsQ.data.earnedTotal)}</span>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="detail-grid">
@@ -571,6 +601,12 @@ export function BatchDetailPage() {
             <p className="muted">{t('common.empty')}</p>
           )}
         </div>
+
+        <QrPrintCard
+          title={b.name}
+          subtitle={`${b.kind} · ${b.category}`}
+          url={batchScanUrl(b.id)}
+        />
 
         <div className="card">
           <h2>{t('batches.deaths')}</h2>

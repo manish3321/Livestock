@@ -1,4 +1,5 @@
 import type {
+  BatchEconomicsDto,
   BatchFeedCreate,
   BatchHarvestCreate,
   BatchIllnessCreate,
@@ -105,6 +106,10 @@ export function listBatches(
 
 export function getBatch(id: string): Promise<HerdBatchDto> {
   return api(`/v1/batches/${id}`);
+}
+
+export function getBatchEconomics(id: string): Promise<BatchEconomicsDto> {
+  return api(`/v1/batches/${id}/economics`);
 }
 
 export function createBatch(body: HerdBatchCreate): Promise<HerdBatchDto> {

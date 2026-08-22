@@ -12,7 +12,7 @@ const NAV_GROUPS: { labelKey: string; modules: ModuleKey[] }[] = [
   },
   {
     labelKey: 'nav.group.farm',
-    modules: ['animals', 'groups', 'fish', 'health', 'breeding', 'production', 'inventory'],
+    modules: ['animals', 'groups', 'fish', 'scan', 'health', 'breeding', 'production', 'inventory'],
   },
   {
     labelKey: 'nav.group.money',

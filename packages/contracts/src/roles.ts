@@ -9,12 +9,13 @@
 export const ROLES = ['ADMIN', 'MANAGER', 'WORKER'] as const;
 export type Role = (typeof ROLES)[number];
 
-/** The 12 product modules. Keys are stable identifiers used in routes. */
+/** Product modules. Keys are stable identifiers used in routes. */
 export const MODULES = [
   'dashboard',
   'animals',
   'groups',
   'fish',
+  'scan',
   'expenses',
   'revenue',
   'pnl',
@@ -124,6 +125,7 @@ export const MODULE_ACCESS: Record<ModuleKey, readonly Role[]> = {
   animals: ['ADMIN', 'MANAGER', 'WORKER'],
   groups: ['ADMIN', 'MANAGER', 'WORKER'],
   fish: ['ADMIN', 'MANAGER', 'WORKER'],
+  scan: ['ADMIN', 'MANAGER', 'WORKER'],
   expenses: ['ADMIN', 'MANAGER', 'WORKER'],
   revenue: ['ADMIN', 'MANAGER'],
   pnl: ['ADMIN', 'MANAGER'],

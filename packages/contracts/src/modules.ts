@@ -95,6 +95,8 @@ export const expenseCreateSchema = z.object({
   gstAmount: z.number().nonnegative().optional(),
   supplier: z.string().max(120).optional(),
   paymentStatus: z.enum(['UNPAID', 'PAID', 'PARTIAL']).optional(),
+  animalId: z.string().uuid().optional(),
+  herdBatchId: z.string().uuid().optional(),
 });
 export type ExpenseCreate = z.infer<typeof expenseCreateSchema>;
 
@@ -148,6 +150,8 @@ export const revenueCreateSchema = z.object({
   paymentTerms: z.string().max(200).optional(),
   paymentStatus: z.enum(PAYMENT_STATUSES).default('PENDING'),
   notes: z.string().max(2000).optional(),
+  animalId: z.string().uuid().optional(),
+  herdBatchId: z.string().uuid().optional(),
 });
 export type RevenueCreate = z.infer<typeof revenueCreateSchema>;
 export const revenueUpdateSchema = revenueCreateSchema.partial();
@@ -216,6 +220,7 @@ export const healthCreateSchema = z.object({
   animalId: z.string().uuid().optional(),
   groupId: z.string().uuid().optional(),
   herdBatchId: z.string().uuid().optional(),
+  cost: z.number().nonnegative().optional(),
   performedAt: z.coerce.date(),
   nextDueAt: z.coerce.date().optional(),
   notes: z.string().max(2000).optional(),

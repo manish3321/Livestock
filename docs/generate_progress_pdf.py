@@ -1,4 +1,4 @@
-"""Generate a progress summary PDF for Farm Management (batch tracking)."""
+"""Generate a daily progress PDF for Farm Management (QR + scan work)."""
 
 from pathlib import Path
 
@@ -13,7 +13,7 @@ class Doc(FPDF):
             return
         self.set_font("Helvetica", "I", 9)
         self.set_text_color(90, 110, 90)
-        self.cell(0, 8, "Farm Management - Progress Summary", align="L")
+        self.cell(0, 8, "Farm Management - Daily Update (22 Aug 2026)", align="L")
         self.cell(0, 8, f"Page {self.page_no()}", align="R", new_x="LMARGIN", new_y="NEXT")
         self.set_draw_color(45, 90, 55)
         self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
@@ -23,7 +23,7 @@ class Doc(FPDF):
         self.set_y(-12)
         self.set_font("Helvetica", "", 8)
         self.set_text_color(120, 120, 120)
-        self.cell(0, 8, "Generated for local project review - Jul 2026", align="C")
+        self.cell(0, 8, "Daily update only - 22 Aug 2026 - QR & animal economics", align="C")
 
 
 def h1(pdf: Doc, text: str) -> None:
@@ -62,8 +62,6 @@ def mono_box(pdf: Doc, lines: list[str]) -> None:
     pdf.set_font("Courier", "", 8.5)
     pdf.set_text_color(30, 45, 30)
     start_y = pdf.get_y()
-    content = "\n".join(lines)
-    # estimate height
     line_h = 4.2
     h = line_h * len(lines) + 6
     if pdf.get_y() + h > pdf.h - pdf.b_margin:
@@ -82,7 +80,7 @@ def main() -> None:
     pdf.set_auto_page_break(auto=True, margin=16)
     pdf.add_page()
 
-    # Cover / title
+    # Cover
     pdf.set_fill_color(34, 85, 50)
     pdf.rect(0, 0, 210, 42, style="F")
     pdf.set_y(14)
@@ -90,215 +88,142 @@ def main() -> None:
     pdf.set_text_color(255, 255, 255)
     pdf.cell(0, 10, "Farm Management System", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 12)
-    pdf.cell(0, 8, "Progress Summary & How Things Work", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 8, "Daily Progress - QR Codes & Scan Hub", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.set_y(48)
     pdf.set_text_color(80, 80, 80)
     pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 6, "Date: 30 July 2026  |  Stack: NestJS + Prisma + React (Vite) + PostgreSQL", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 6, "Focus: Category / age batch tracking + monthly herd reports", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(
+        0,
+        6,
+        "Date: 22 August 2026  |  Scope: today's work only",
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+    pdf.cell(
+        0,
+        6,
+        "Focus: Printable QR, animal/batch economics, in-app camera scan + popup",
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
     pdf.ln(4)
 
-    h1(pdf, "1. What has been done")
+    h1(pdf, "1. What we did today")
     body(
         pdf,
-        "The farm ERP already had the 12 web modules (dashboard, animals, poultry groups, "
-        "fish, expenses, revenue, P&L, inventory, health, breeding, production, reports). "
-        "The latest completed feature replaces livestock-first individual listing with "
-        "named category/age batches for livestock, poultry, and fish - with illness and "
-        "mortality logging and downloadable monthly CSV reports.",
+        "Implemented ear-tag / collar QR for breeding livestock (buffalo, cow, pig, goat) "
+        "and optional shed/pond QR for poultry and fish batches. Scanning shows invested vs "
+        "earned totals and quick actions. Added a dedicated Scan QR section with live camera "
+        "and a popup results sheet.",
     )
 
-    h2(pdf, "1.1 Platform foundation (already in place)")
+    h2(pdf, "1.1 Data model & migration")
     for t in [
-        "Monorepo: apps/api, apps/web, packages/contracts, packages/design-tokens",
-        "Auth: JWT login + refresh; roles Admin / Manager / Worker with RBAC",
-        "Local PostgreSQL + Prisma migrations and seed users",
-        "Web UI: forest-green farm look, English + Nepali (en/ne)",
-        "Modules for money (expenses approval, revenue, P&L) and operations (inventory, health, production)",
+        "Animal.breedingStock (boolean, default true) - mark breeding parents",
+        "Expense.animalId + Expense.herdBatchId - attribute spend to one animal or batch",
+        "Revenue.animalId + Revenue.herdBatchId - attribute milk/sales earnings",
+        "HealthRecord.cost - optional NPR cost for vaccines / treatments",
+        "Migration: 20260822120000_animal_qr_economics",
     ]:
         bullet(pdf, t)
 
-    h2(pdf, "1.2 Category / age batch tracking (this pass - complete)")
+    h2(pdf, "1.2 Economics APIs")
     for t in [
-        "Prisma models: HerdBatch, BatchIllnessEvent, BatchMortalityEvent (+ migration)",
-        "Unified batch kinds: LIVESTOCK | POULTRY | FISH with category, age range, counts",
-        "Nest batches API: CRUD, illness log, mortality log, filters by kind/category",
-        "Dashboard headcounts from sum of batch currentCount (by kind:category)",
-        "Monthly herd report JSON + CSV (year, month, optional kind)",
-        "Seed: example batches + illness/mortality; 1-2 breeding animals kept",
-        "Web: /animals, /groups, /fish use shared batch cards; /batches/:id for detail",
-        "Individuals demoted to Breeding stock at /animals/stock",
-        "Reports UI: month/kind picker + Download monthly CSV",
-        "Shared Zod schemas in @farm/contracts + en/ne copy for batches/reports",
+        "GET /v1/animals/:id/economics - purchase + expenses + health cost vs revenue",
+        "GET /v1/batches/:id/economics - batch expenses + health cost vs revenue",
+        "Invested = purchase (animals only) + linked expenses + health costs",
+        "Earned = linked revenue; Net = earned - invested",
+        "Expense / revenue / health create DTOs accept animalId or herdBatchId",
     ]:
         bullet(pdf, t)
 
-    h2(pdf, "1.3 Out of scope (not done this pass)")
+    h2(pdf, "1.3 Printable QR codes")
     for t in [
-        "Photo marketplace-style cards for individual animals",
-        "Changes to expense / revenue / P&L business logic",
+        "QR on animal detail (/animals/stock/:id) and batch detail (/batches/:id)",
+        "Encoded URL: {origin}/scan/a/{animalId} or {origin}/scan/b/{batchId}",
+        "Print opens a clean printable page (title, QR image, URL)",
+        "Not one QR per chicken - poultry/fish use shed/pond (batch) QR instead",
+    ]:
+        bullet(pdf, t)
+
+    h2(pdf, "1.4 Scan QR hub + popup")
+    for t in [
+        "New module/nav item: Scan QR -> /scan (Admin, Manager, Worker)",
+        "Live camera scanner (html5-qrcode); environment-facing camera",
+        "On decode: stop camera and open popup with economics + quick actions",
+        "Manual lookup by animal tag or batch name if camera unavailable",
+        "Deep links /scan/a/:id and /scan/b/:id also open the same popup",
+        "Quick actions: open detail, add expense/health/revenue, breeding, toggle breedingStock",
+        "en + ne copy for all new QR / scan strings",
     ]:
         bullet(pdf, t)
 
     pdf.add_page()
-    h1(pdf, "2. Domain model")
-    body(
-        pdf,
-        "Primary unit of tracking is a named HerdBatch (e.g. \"Buffalo 2024 calves\", age 0-12 months). "
-        "Illness and deaths are count-based on the batch, not on named animals. "
-        "Optional Animal records remain only for breeding parents.",
-    )
+    h1(pdf, "2. How it works")
 
+    h2(pdf, "2.1 Print -> scan -> popup")
     mono_box(
         pdf,
         [
-            "  HerdBatch",
-            "  ---------",
-            "  kind              LIVESTOCK | POULTRY | FISH",
-            "  category          e.g. BUFFALO, LAYER, ROHU",
-            "  name              user label",
-            "  ageFrom/ToMonths  optional age band",
-            "  initialCount      starting headcount",
-            "  currentCount      live headcount now",
-            "  deadCount         cumulative deaths",
+            "  Print QR on animal / batch detail",
+            "       |",
+            "       v",
+            "  URL encodes /scan/a/:id  or  /scan/b/:id",
+            "       |",
+            "       +--> Phone system camera opens deep link --> popup",
+            "       |",
+            "       +--> In-app Scan QR (/scan) camera reads QR --> popup",
+            "       |",
+            "       +--> Manual tag / batch name lookup --> popup",
+            "                |",
+            "                v",
+            "  Popup loads economics API + shows invested / earned / net",
+            "  + quick links (expense, health, revenue, breeding)",
+        ],
+    )
+
+    h2(pdf, "2.2 Linking money & health to a QR target")
+    mono_box(
+        pdf,
+        [
+            "  From popup: Add expense / health / revenue",
+            "       |",
+            "       v",
+            "  Form opens with ?animalId=... or ?herdBatchId=... prefilled",
+            "       |",
+            "       v",
+            "  Create stores animalId or herdBatchId on the row",
+            "       |",
+            "       v",
+            "  Next scan: economics totals include that amount",
+        ],
+    )
+
+    h2(pdf, "2.3 Economics formula")
+    mono_box(
+        pdf,
+        [
+            "  Animal",
+            "    Invested = purchaseCost + SUM(expenses) + SUM(health.cost)",
+            "    Earned   = SUM(revenue)",
+            "    Net      = Earned - Invested",
             "",
-            "  BatchIllnessEvent     condition + count + date",
-            "  BatchMortalityEvent   count + reason + date  --> reduces currentCount",
-            "",
-            "  Animal (optional) --> BreedingRecord.motherId  (breeding parents only)",
-        ],
-    )
-
-    h2(pdf, "Illness conditions (fixed vocabulary)")
-    body(
-        pdf,
-        "FMD, Mastitis, Newcastle, Parasites, Injury, Respiratory, Digestive, Skin, Other "
-        "(extensible as string values in practice via the shared list in contracts).",
-    )
-
-    pdf.add_page()
-    h1(pdf, "3. How things work - workflows")
-
-    h2(pdf, "3.1 Daily / ops workflow (batches)")
-    mono_box(
-        pdf,
-        [
-            "  [Login] --> [Home dashboard]",
-            "                 |",
-            "                 +--> Livestock (/animals)  --+--> batch cards by category",
-            "                 +--> Poultry  (/groups)    --+",
-            "                 +--> Fish     (/fish)      --+--> open Batch detail",
-            "                                                      |",
-            "                              +------------------------+------------------+",
-            "                              |                        |                  |",
-            "                         Log sick               Log death          Breeding stock",
-            "                    (condition + count)     (count + reason)     (/animals/stock)",
-            "                              |                        |",
-            "                              v                        v",
-            "                    BatchIllnessEvent      BatchMortalityEvent",
-            "                    (sick by condition)   currentCount -= deaths",
-            "                                          deadCount   += deaths",
-        ],
-    )
-
-    h2(pdf, "3.2 Create a new batch")
-    mono_box(
-        pdf,
-        [
-            "  User opens Livestock / Poultry / Fish",
-            "       |",
-            "       v",
-            "  Add batch: name, category, age from-to (months), initial count",
-            "       |",
-            "       v",
-            "  POST /v1/batches  -->  HerdBatch created",
-            "       |",
-            "       v",
-            "  Redirect to /batches/:id  (counts, illness, deaths)",
-        ],
-    )
-
-    h2(pdf, "3.3 Monthly report workflow")
-    mono_box(
-        pdf,
-        [
-            "  Reports page",
-            "       |",
-            "       +--> pick Year + Month + Kind (All / Livestock / Poultry / Fish)",
-            "       |",
-            "       +--> View monthly summary",
-            "       |         GET /v1/reports/herd-monthly?year=&month=&kind=",
-            "       |         --> JSON: totals + per-batch rows",
-            "       |             (current, dead, diedThisMonth, sickLoggedThisMonth,",
-            "       |              sickByCondition)",
-            "       |",
-            "       +--> Download monthly CSV",
-            "                 GET /v1/reports/herd-monthly.csv",
-            "                 --> file: herd-monthly-YYYY-MM.csv",
+            "  Batch (shed / pond)",
+            "    Invested = SUM(expenses) + SUM(health.cost)",
+            "    Earned   = SUM(revenue)",
+            "    Net      = Earned - Invested",
         ],
     )
 
     pdf.add_page()
-    h2(pdf, "3.4 Breeding (optional individuals)")
-    mono_box(
-        pdf,
-        [
-            "  Breeding page",
-            "       |",
-            "       +--> copy explains parents are optional tagged animals",
-            "       |",
-            "       +--> Manage breeding stock --> /animals/stock",
-            "       |                              (list / add / edit Animal)",
-            "       |",
-            "       +--> Add mating: select mother (FEMALE animals), type, dates",
-            "                        --> BreedingRecord linked via motherId",
-            "",
-            "  Note: headcount for the farm comes from batches, not from Animal list size.",
-        ],
-    )
-
-    h2(pdf, "3.5 Dashboard snapshot")
-    mono_box(
-        pdf,
-        [
-            "  GET dashboard summary",
-            "       |",
-            "       +--> animalCount = SUM(HerdBatch.currentCount)",
-            "       +--> speciesDistribution = group by \"kind:category\"",
-            "       +--> alerts: health overdue, inventory critical, pending approvals",
-            "       +--> finance tiles (if role can finance:read)",
-        ],
-    )
-
-    h2(pdf, "3.6 Request path (technical)")
-    mono_box(
-        pdf,
-        [
-            "  Browser (Vite :5173)",
-            "       |  proxy /v1",
-            "       v",
-            "  Nest API (:4000)  -- JWT RBAC -->  Batches / Reports / Dashboard modules",
-            "       |",
-            "       v",
-            "  Prisma  -->  PostgreSQL (farm DB)",
-            "",
-            "  Shared types & Zod DTOs live in packages/contracts (@farm/contracts).",
-        ],
-    )
-
-    pdf.add_page()
-    h1(pdf, "4. Key screens & routes")
+    h1(pdf, "3. Screens & routes added today")
     rows = [
-        ("/dashboard", "Home snapshot (batch headcounts)"),
-        ("/animals", "Livestock batches (primary)"),
-        ("/animals/stock", "Breeding stock (optional individuals)"),
-        ("/groups", "Poultry batches"),
-        ("/fish", "Fish batches"),
-        ("/batches/:id", "Batch detail - sick / death logs"),
-        ("/breeding", "Mating records + link to stock"),
-        ("/reports", "Monthly herd report + other summaries"),
-        ("/expenses, /revenue, /pnl", "Money modules (unchanged this pass)"),
-        ("/inventory, /health, /production", "Ops modules (unchanged this pass)"),
+        ("/scan", "Scan hub - camera + manual lookup"),
+        ("/scan/a/:id", "Animal QR deep link -> popup"),
+        ("/scan/b/:id", "Batch QR deep link -> popup"),
+        ("/animals/stock/:id", "QR print card + economics tiles"),
+        ("/batches/:id", "Shed/pond QR print + invested/earned"),
+        ("/expenses, /health, /revenue", "Optional animal / batch link fields"),
     ]
     pdf.set_font("Helvetica", "B", 10)
     pdf.set_fill_color(34, 85, 50)
@@ -319,41 +244,22 @@ def main() -> None:
 
     pdf.set_x(pdf.l_margin)
     pdf.ln(4)
-    h2(pdf, "Main API endpoints (batches / reports)")
+    h2(pdf, "API endpoints added today")
     for t in [
-        "GET/POST /v1/batches - list / create",
-        "GET/PATCH/DELETE /v1/batches/:id",
-        "GET/POST /v1/batches/:id/illness",
-        "GET/POST /v1/batches/:id/mortality",
-        "GET /v1/reports/herd-monthly",
-        "GET /v1/reports/herd-monthly.csv",
+        "GET /v1/animals/:id/economics",
+        "GET /v1/batches/:id/economics",
+        "POST expense / revenue / health now accept animalId and herdBatchId",
+        "Health create accepts optional cost",
     ]:
         bullet(pdf, t)
 
-    pdf.set_x(pdf.l_margin)
-    pdf.ln(2)
-    h1(pdf, "5. How to run locally")
-    mono_box(
-        pdf,
-        [
-            "  pnpm install",
-            "  pnpm --filter @farm/contracts build",
-            "  # PostgreSQL running; apps/api/.env configured",
-            "  pnpm --filter @farm/api db:migrate",
-            "  pnpm --filter @farm/api db:seed",
-            "  pnpm dev:api     # http://localhost:4000",
-            "  pnpm dev:web     # http://localhost:5173",
-            "",
-            "  Login: admin@farm.local  /  ChangeMe123!",
-        ],
-    )
-
-    h2(pdf, "Suggested next checks")
+    h2(pdf, "How to try today's work")
     for t in [
-        "Create a livestock batch, log sick and a death, confirm counts update",
-        "Download monthly CSV for current month",
-        "Open Breeding stock and confirm it is separate from Livestock batches",
-        "Switch language to Nepali and spot-check batch/report labels",
+        "Apply migration (already: animal_qr_economics) and restart API if needed",
+        "Open a breeding animal -> Print QR; open a poultry/fish batch -> Print QR",
+        "Go to Scan QR, allow camera, scan the printout -> check popup totals",
+        "From popup add an expense linked to that animal; scan again and confirm invested rose",
+        "Camera needs HTTPS or localhost; use tag lookup if camera is blocked",
     ]:
         bullet(pdf, t)
 
@@ -363,8 +269,9 @@ def main() -> None:
     pdf.multi_cell(
         0,
         5,
-        "This document summarizes work completed through the Category / age batch tracking "
-        "pass. It does not replace docs/architecture.md, docs/rbac.md, or the OpenAPI docs at /docs.",
+        "This PDF covers only work completed on 22 August 2026 (QR codes, economics linking, "
+        "and the Scan QR hub). Earlier features (batches, money modules, etc.) are unchanged "
+        "and are not restated here.",
     )
 
     pdf.output(str(OUT))

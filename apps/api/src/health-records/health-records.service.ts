@@ -21,6 +21,7 @@ export interface HealthRecordDto {
   animalTag: string | null;
   animalName: string | null;
   herdBatchName: string | null;
+  cost: number | null;
   performedAt: string;
   nextDueAt: string | null;
   notes: string | null;
@@ -122,6 +123,7 @@ export class HealthRecordsService {
         animalId: input.animalId,
         groupId: input.groupId,
         herdBatchId: input.herdBatchId,
+        cost: input.cost,
         performedAt: input.performedAt,
         nextDueAt,
         notes: input.notes,
@@ -159,6 +161,7 @@ export class HealthRecordsService {
         ...(input.animalId !== undefined ? { animalId: input.animalId } : {}),
         ...(input.groupId !== undefined ? { groupId: input.groupId } : {}),
         ...(input.herdBatchId !== undefined ? { herdBatchId: input.herdBatchId } : {}),
+        ...(input.cost !== undefined ? { cost: input.cost } : {}),
         ...(input.performedAt !== undefined ? { performedAt: input.performedAt } : {}),
         ...(input.nextDueAt !== undefined ? { nextDueAt: input.nextDueAt } : {}),
         ...(input.notes !== undefined ? { notes: input.notes } : {}),
@@ -216,6 +219,7 @@ function toDto(r: HealthWithRelations): HealthRecordDto {
     animalTag: r.animal?.tag ?? null,
     animalName: r.animal?.name ?? null,
     herdBatchName: r.herdBatch?.name ?? null,
+    cost: r.cost != null ? Number(r.cost) : null,
     performedAt: r.performedAt.toISOString(),
     nextDueAt: r.nextDueAt?.toISOString() ?? null,
     notes: r.notes,

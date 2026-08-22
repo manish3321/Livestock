@@ -1,9 +1,11 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   HEALTH_RECORD_TYPES,
   formatDate,
+  formatNPR,
   type HealthCreate,
   type HealthListQuery,
 } from '@farm/contracts';
@@ -21,6 +23,7 @@ export function HealthPage() {
   const { t } = useTranslation();
   const { can } = useAuth();
   const qc = useQueryClient();
+  const [searchParams] = useSearchParams();
   const [due, setDue] = useState<DueFilter>('all');
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<Partial<HealthCreate>>({
@@ -28,6 +31,19 @@ export function HealthPage() {
     performedAt: new Date(),
   });
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const animalId = searchParams.get('animalId') ?? undefined;
+    const herdBatchId = searchParams.get('herdBatchId') ?? undefined;
+    if (animalId || herdBatchId) {
+      setShowForm(true);
+      setForm((prev) => ({
+        ...prev,
+        animalId: animalId || undefined,
+        herdBatchId: herdBatchId || undefined,
+      }));
+    }
+  }, [searchParams]);
 
   const query = useQuery({
     queryKey: ['health-records', due],
@@ -85,6 +101,7 @@ export function HealthPage() {
         title: form.title!,
         animalId: form.animalId || undefined,
         herdBatchId: form.herdBatchId || undefined,
+        cost: form.cost,
         performedAt: form.performedAt ?? new Date(),
         nextDueAt: form.nextDueAt,
         notes: form.notes,
@@ -120,6 +137,11 @@ export function HealthPage() {
         key: 'source',
         header: t('health.source'),
         render: (row) => resolveSource(row),
+      },
+      {
+        key: 'cost',
+        header: t('health.cost'),
+        render: (row) => (row.cost != null ? formatNPR(row.cost) : '—'),
       },
     ],
     [t, animalById, batchById],
@@ -259,6 +281,22 @@ export function HealthPage() {
                   setForm((prev) => ({
                     ...prev,
                     nextDueAt: e.target.value ? new Date(e.target.value) : undefined,
+                  }))
+                }
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="health-cost">{t('health.cost')}</label>
+              <input
+                id="health-cost"
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.cost ?? ''}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    cost: e.target.value ? Number(e.target.value) : undefined,
                   }))
                 }
               />

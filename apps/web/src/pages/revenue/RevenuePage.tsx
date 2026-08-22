@@ -1,4 +1,5 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -8,6 +9,8 @@ import {
   formatNPR,
   type RevenueCreate,
 } from '@farm/contracts';
+import { listAnimals } from '../../api/animals';
+import { listBatches } from '../../api/batches';
 import { createRevenue, listRevenue, type RevenueDto } from '../../api/revenue';
 import { useAuth } from '../../auth/auth-context';
 import { DataTable, type Column } from '../../components/DataTable';
@@ -26,6 +29,7 @@ export function RevenuePage() {
   const { t } = useTranslation();
   const { can } = useAuth();
   const qc = useQueryClient();
+  const [searchParams] = useSearchParams();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<Partial<RevenueCreate>>({
     source: 'MILK',
@@ -34,6 +38,28 @@ export function RevenuePage() {
     revenueDate: new Date(),
   });
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const animalId = searchParams.get('animalId') ?? undefined;
+    const herdBatchId = searchParams.get('herdBatchId') ?? undefined;
+    if (animalId || herdBatchId) {
+      setShowForm(true);
+      setForm((prev) => ({
+        ...prev,
+        animalId: animalId || undefined,
+        herdBatchId: herdBatchId || undefined,
+      }));
+    }
+  }, [searchParams]);
+
+  const animalsQ = useQuery({
+    queryKey: ['animals', 'revenue-select'],
+    queryFn: () => listAnimals({ pageSize: 200 }),
+  });
+  const batchesQ = useQuery({
+    queryKey: ['batches', 'revenue-select'],
+    queryFn: () => listBatches({ pageSize: 200 }),
+  });
 
   const query = useQuery({
     queryKey: ['revenue'],
@@ -52,6 +78,8 @@ export function RevenuePage() {
         buyerContact: form.buyerContact,
         paymentStatus: form.paymentStatus ?? 'PENDING',
         notes: form.notes,
+        animalId: form.animalId || undefined,
+        herdBatchId: form.herdBatchId || undefined,
       }),
     onSuccess: () => {
       setShowForm(false);
@@ -256,6 +284,47 @@ export function RevenuePage() {
                   }))
                 }
               />
+            </div>
+            <div className="field">
+              <label htmlFor="rev-animal">{t('revenue.animal')}</label>
+              <select
+                id="rev-animal"
+                value={form.animalId ?? ''}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    animalId: e.target.value || undefined,
+                  }))
+                }
+              >
+                <option value="">{t('revenue.selectAnimal')}</option>
+                {(animalsQ.data?.items ?? []).map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.tag}
+                    {a.name ? ` · ${a.name}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="rev-batch">{t('revenue.herdBatch')}</label>
+              <select
+                id="rev-batch"
+                value={form.herdBatchId ?? ''}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    herdBatchId: e.target.value || undefined,
+                  }))
+                }
+              >
+                <option value="">{t('revenue.selectBatch')}</option>
+                {(batchesQ.data?.items ?? []).map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name} ({b.kind})
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
           {error && <p className="error-text">{error}</p>}

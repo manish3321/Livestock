@@ -22,6 +22,8 @@ import { BreedingPage } from './pages/breeding/BreedingPage';
 import { ProductionPage } from './pages/production/ProductionPage';
 import { AdminAuditPage, AdminMembersPage } from './pages/admin/AdminPages';
 import { ReportsPage } from './pages/reports/ReportsPage';
+import { AnimalScanPage, BatchScanPage } from './pages/scan/ScanPages';
+import { ScanHubPage } from './pages/scan/ScanHubPage';
 
 export function App() {
   return (
@@ -42,6 +44,12 @@ export function App() {
               <Route path="/animals/stock/new" element={<AnimalFormPage mode="create" />} />
               <Route path="/animals/stock/:id" element={<AnimalDetailPage />} />
               <Route path="/animals/stock/:id/edit" element={<AnimalFormPage mode="edit" />} />
+            </Route>
+
+            <Route element={<RequireModule module="scan" />}>
+              <Route path="/scan" element={<ScanHubPage />} />
+              <Route path="/scan/a/:id" element={<AnimalScanPage />} />
+              <Route path="/scan/b/:id" element={<BatchScanPage />} />
             </Route>
 
             <Route element={<RequireModule module="groups" />}>

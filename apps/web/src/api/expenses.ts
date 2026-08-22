@@ -28,6 +28,8 @@ export interface ExpenseDto {
   reviewedById: string | null;
   reviewedAt: string | null;
   reviewNote: string | null;
+  animalId: string | null;
+  herdBatchId: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -55,6 +55,8 @@ export const animalCreateSchema = z.object({
   /** Initial weight in kg when creating; stored as first weight history entry. */
   initialWeightKg: z.number().positive().max(5000).optional(),
   status: z.enum(ANIMAL_STATUSES).default('ACTIVE'),
+  /** When true, animal can be used as a breeding parent. */
+  breedingStock: z.boolean().optional(),
   notes: z.string().max(2000).optional(),
 });
 export type AnimalCreate = z.infer<typeof animalCreateSchema>;
@@ -102,6 +104,7 @@ export interface AnimalDto {
   purchaseDate: string | null;
   purchaseCost: number | null;
   status: AnimalStatus;
+  breedingStock: boolean;
   notes: string | null;
   /** Latest weight from history, if any. */
   currentWeightKg: number | null;
@@ -113,6 +116,42 @@ export interface AnimalDto {
 
 export interface AnimalDetailDto extends AnimalDto {
   weights: WeightRecordDto[];
+}
+
+/** Invested vs earned summary for an animal (QR / detail economics). */
+export interface AnimalEconomicsDto {
+  animalId: string;
+  tag: string;
+  name: string | null;
+  species: Species;
+  breedingStock: boolean;
+  purchaseCost: number;
+  expenseTotal: number;
+  healthCostTotal: number;
+  investedTotal: number;
+  revenueTotal: number;
+  earnedTotal: number;
+  net: number;
+  expenseCount: number;
+  revenueCount: number;
+  healthCount: number;
+}
+
+export interface BatchEconomicsDto {
+  batchId: string;
+  name: string;
+  kind: string;
+  category: string;
+  currentCount: number;
+  expenseTotal: number;
+  healthCostTotal: number;
+  investedTotal: number;
+  revenueTotal: number;
+  earnedTotal: number;
+  net: number;
+  expenseCount: number;
+  revenueCount: number;
+  healthCount: number;
 }
 
 export const weightCreateSchema = z.object({

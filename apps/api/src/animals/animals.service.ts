@@ -7,6 +7,7 @@ import type {
   AnimalCreate,
   AnimalDetailDto,
   AnimalDto,
+  AnimalEconomicsDto,
   AnimalListQuery,
   AnimalUpdate,
   PageResult,
@@ -114,6 +115,7 @@ export class AnimalsService {
           purchaseDate: data.purchaseDate,
           purchaseCost: data.purchaseCost,
           status: data.status,
+          breedingStock: data.breedingStock ?? true,
           notes: data.notes,
           version: 1,
         },
@@ -264,6 +266,53 @@ export class AnimalsService {
     return toWeightDto(record);
   }
 
+  async economics(user: RequestUser, id: string): Promise<AnimalEconomicsDto> {
+    const animal = await this.requireAnimal(user.farmId, id);
+
+    const [expenseAgg, revenueAgg, healthAgg] = await Promise.all([
+      this.prisma.expense.aggregate({
+        where: { farmId: user.farmId, animalId: id },
+        _sum: { amount: true },
+        _count: true,
+      }),
+      this.prisma.revenue.aggregate({
+        where: { farmId: user.farmId, animalId: id },
+        _sum: { amount: true },
+        _count: true,
+      }),
+      this.prisma.healthRecord.aggregate({
+        where: { farmId: user.farmId, animalId: id },
+        _sum: { cost: true },
+        _count: true,
+      }),
+    ]);
+
+    const purchaseCost = animal.purchaseCost ? Number(animal.purchaseCost) : 0;
+    const expenseTotal = expenseAgg._sum.amount ? Number(expenseAgg._sum.amount) : 0;
+    const healthCostTotal = healthAgg._sum.cost ? Number(healthAgg._sum.cost) : 0;
+    const revenueTotal = revenueAgg._sum.amount ? Number(revenueAgg._sum.amount) : 0;
+    const investedTotal = purchaseCost + expenseTotal + healthCostTotal;
+    const earnedTotal = revenueTotal;
+
+    return {
+      animalId: animal.id,
+      tag: animal.tag,
+      name: animal.name,
+      species: animal.species,
+      breedingStock: animal.breedingStock,
+      purchaseCost,
+      expenseTotal,
+      healthCostTotal,
+      investedTotal,
+      revenueTotal,
+      earnedTotal,
+      net: earnedTotal - investedTotal,
+      expenseCount: expenseAgg._count,
+      revenueCount: revenueAgg._count,
+      healthCount: healthAgg._count,
+    };
+  }
+
   async exportCsv(user: RequestUser): Promise<string> {
     const animals = await this.prisma.animal.findMany({
       where: { farmId: user.farmId, deletedAt: null },
@@ -284,6 +333,7 @@ export class AnimalsService {
       'dateOfBirth',
       'purchaseDate',
       'purchaseCost',
+      'breedingStock',
       'currentWeightKg',
       'notes',
     ].join(',');
@@ -302,6 +352,7 @@ export class AnimalsService {
         a.dateOfBirth?.toISOString().slice(0, 10) ?? '',
         a.purchaseDate?.toISOString().slice(0, 10) ?? '',
         a.purchaseCost ? Number(a.purchaseCost) : '',
+        a.breedingStock ? 'yes' : 'no',
         a.weights[0] ? Number(a.weights[0].weightKg) : '',
         csv(a.notes),
       ].join(','),
@@ -340,6 +391,7 @@ function toDto(
     purchaseDate: animal.purchaseDate?.toISOString() ?? null,
     purchaseCost: animal.purchaseCost ? Number(animal.purchaseCost) : null,
     status: animal.status,
+    breedingStock: animal.breedingStock,
     notes: animal.notes,
     currentWeightKg: latestWeight ? Number(latestWeight.weightKg) : null,
     version: animal.version,

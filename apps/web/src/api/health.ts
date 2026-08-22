@@ -13,6 +13,7 @@ export interface HealthRecordDto {
   animalTag?: string | null;
   animalName?: string | null;
   herdBatchName?: string | null;
+  cost: number | null;
   performedAt: string;
   nextDueAt: string | null;
   notes: string | null;

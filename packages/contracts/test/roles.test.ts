@@ -8,8 +8,8 @@ import {
 } from '../src/roles';
 
 describe('RBAC permission map', () => {
-  it('covers all 12 modules', () => {
-    expect(MODULES).toHaveLength(12);
+  it('covers all modules', () => {
+    expect(MODULES).toHaveLength(13);
     for (const m of MODULES) {
       expect(MODULE_ACCESS[m].length).toBeGreaterThan(0);
     }

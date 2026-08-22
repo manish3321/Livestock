@@ -1,4 +1,5 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -10,6 +11,8 @@ import {
   type ExpenseCategory,
   type ExpenseCreate,
 } from '@farm/contracts';
+import { listAnimals } from '../../api/animals';
+import { listBatches } from '../../api/batches';
 import {
   createExpense,
   generateRecurringMonth,
@@ -31,6 +34,7 @@ export function ExpensesPage() {
   const { t } = useTranslation();
   const { can } = useAuth();
   const qc = useQueryClient();
+  const [searchParams] = useSearchParams();
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
@@ -45,6 +49,28 @@ export function ExpensesPage() {
   const [budgetCategory, setBudgetCategory] = useState<ExpenseCategory>('FEED');
   const [budgetAmount, setBudgetAmount] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const animalId = searchParams.get('animalId') ?? undefined;
+    const herdBatchId = searchParams.get('herdBatchId') ?? undefined;
+    if (animalId || herdBatchId) {
+      setShowForm(true);
+      setForm((prev) => ({
+        ...prev,
+        animalId: animalId || undefined,
+        herdBatchId: herdBatchId || undefined,
+      }));
+    }
+  }, [searchParams]);
+
+  const animalsQ = useQuery({
+    queryKey: ['animals', 'expense-select'],
+    queryFn: () => listAnimals({ pageSize: 200 }),
+  });
+  const batchesQ = useQuery({
+    queryKey: ['batches', 'expense-select'],
+    queryFn: () => listBatches({ pageSize: 200 }),
+  });
 
   const query = useQuery({
     queryKey: ['expenses', status],
@@ -79,6 +105,8 @@ export function ExpensesPage() {
         gstAmount: form.gstAmount,
         supplier: form.supplier,
         paymentStatus: form.paymentStatus ?? 'UNPAID',
+        animalId: form.animalId || undefined,
+        herdBatchId: form.herdBatchId || undefined,
       });
       if (receiptFile) {
         await uploadExpenseReceipt(created.id, receiptFile);
@@ -445,6 +473,47 @@ export function ExpensesPage() {
                   }))
                 }
               />
+            </div>
+            <div className="field">
+              <label htmlFor="exp-animal">{t('expenses.animal')}</label>
+              <select
+                id="exp-animal"
+                value={form.animalId ?? ''}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    animalId: e.target.value || undefined,
+                  }))
+                }
+              >
+                <option value="">{t('expenses.selectAnimal')}</option>
+                {(animalsQ.data?.items ?? []).map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.tag}
+                    {a.name ? ` · ${a.name}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="exp-batch">{t('expenses.herdBatch')}</label>
+              <select
+                id="exp-batch"
+                value={form.herdBatchId ?? ''}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    herdBatchId: e.target.value || undefined,
+                  }))
+                }
+              >
+                <option value="">{t('expenses.selectBatch')}</option>
+                {(batchesQ.data?.items ?? []).map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name} ({b.kind})
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="field">
               <label htmlFor="exp-file">{t('expenses.receiptFile')}</label>

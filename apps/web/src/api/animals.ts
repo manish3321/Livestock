@@ -2,6 +2,7 @@ import type {
   AnimalCreate,
   AnimalDetailDto,
   AnimalDto,
+  AnimalEconomicsDto,
   AnimalListQuery,
   AnimalUpdate,
   PageResult,
@@ -23,6 +24,10 @@ export function listAnimals(
 
 export function getAnimal(id: string): Promise<AnimalDetailDto> {
   return api(`/v1/animals/${id}`);
+}
+
+export function getAnimalEconomics(id: string): Promise<AnimalEconomicsDto> {
+  return api(`/v1/animals/${id}/economics`);
 }
 
 export function createAnimal(body: AnimalCreate): Promise<AnimalDetailDto> {

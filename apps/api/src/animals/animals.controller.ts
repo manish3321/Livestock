@@ -23,6 +23,7 @@ import type {
   AnimalCreate,
   AnimalDetailDto,
   AnimalDto,
+  AnimalEconomicsDto,
   AnimalListQuery,
   AnimalUpdate,
   PageResult,
@@ -74,6 +75,16 @@ export class AnimalsController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<AnimalDetailDto> {
     return this.animals.get(user, id);
+  }
+
+  @Get(':id/economics')
+  @RequirePermissions('animals:read')
+  @ApiOperation({ summary: 'Invested vs earned summary for an animal (QR scan)' })
+  economics(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<AnimalEconomicsDto> {
+    return this.animals.economics(user, id);
   }
 
   @Post()

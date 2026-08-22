@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type {
+  BatchEconomicsDto,
   BatchFeedCreate,
   BatchHarvestCreate,
   BatchIllnessCreate,
@@ -164,6 +165,51 @@ export class BatchesService {
       where: { batchId: id, resolvedAt: null },
     });
     return toDto(batch, illness);
+  }
+
+  async economics(user: RequestUser, id: string): Promise<BatchEconomicsDto> {
+    const batch = await this.requireBatch(user.farmId, id);
+
+    const [expenseAgg, revenueAgg, healthAgg] = await Promise.all([
+      this.prisma.expense.aggregate({
+        where: { farmId: user.farmId, herdBatchId: id },
+        _sum: { amount: true },
+        _count: true,
+      }),
+      this.prisma.revenue.aggregate({
+        where: { farmId: user.farmId, herdBatchId: id },
+        _sum: { amount: true },
+        _count: true,
+      }),
+      this.prisma.healthRecord.aggregate({
+        where: { farmId: user.farmId, herdBatchId: id },
+        _sum: { cost: true },
+        _count: true,
+      }),
+    ]);
+
+    const expenseTotal = expenseAgg._sum.amount ? Number(expenseAgg._sum.amount) : 0;
+    const healthCostTotal = healthAgg._sum.cost ? Number(healthAgg._sum.cost) : 0;
+    const revenueTotal = revenueAgg._sum.amount ? Number(revenueAgg._sum.amount) : 0;
+    const investedTotal = expenseTotal + healthCostTotal;
+    const earnedTotal = revenueTotal;
+
+    return {
+      batchId: batch.id,
+      name: batch.name,
+      kind: batch.kind,
+      category: batch.category,
+      currentCount: batch.currentCount,
+      expenseTotal,
+      healthCostTotal,
+      investedTotal,
+      revenueTotal,
+      earnedTotal,
+      net: earnedTotal - investedTotal,
+      expenseCount: expenseAgg._count,
+      revenueCount: revenueAgg._count,
+      healthCount: healthAgg._count,
+    };
   }
 
   async create(

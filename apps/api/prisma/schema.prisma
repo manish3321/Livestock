@@ -170,36 +170,41 @@ enum AnimalSource {
 }
 
 model Animal {
-  id           String        @id @default(uuid()) @db.Uuid
-  farmId       String        @db.Uuid
-  tag          String
-  name         String?
-  species      Species
-  breed        String
-  dateOfBirth  DateTime?
-  gender       Gender
-  color        String?
-  source       AnimalSource?
-  motherTag    String?
-  purchaseDate DateTime?
-  purchaseCost Decimal?      @db.Decimal(12, 2)
-  status       AnimalStatus  @default(ACTIVE)
-  notes        String?
-  version      Int           @default(1)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  deletedAt    DateTime?
+  id             String        @id @default(uuid()) @db.Uuid
+  farmId         String        @db.Uuid
+  tag            String
+  name           String?
+  species        Species
+  breed          String
+  dateOfBirth    DateTime?
+  gender         Gender
+  color          String?
+  source         AnimalSource?
+  motherTag      String?
+  purchaseDate   DateTime?
+  purchaseCost   Decimal?      @db.Decimal(12, 2)
+  status         AnimalStatus  @default(ACTIVE)
+  /** When true, animal can be used as a breeding parent. */
+  breedingStock  Boolean       @default(true)
+  notes          String?
+  version        Int           @default(1)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
 
-  farm     Farm             @relation(fields: [farmId], references: [id], onDelete: Cascade)
-  weights  WeightRecord[]
-  health   HealthRecord[]
-  breeding BreedingRecord[]
+  farm       Farm              @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  weights    WeightRecord[]
+  health     HealthRecord[]
+  breeding   BreedingRecord[]
   production ProductionEntry[]
+  expenses   Expense[]
+  revenues   Revenue[]
 
   @@unique([farmId, tag])
   @@index([farmId, updatedAt])
   @@index([farmId, species])
   @@index([farmId, status])
+  @@index([farmId, breedingStock])
 }
 
 model WeightRecord {
@@ -369,6 +374,8 @@ model HerdBatch {
   feeds        BatchFeedEvent[]
   health       HealthRecord[]
   production   ProductionEntry[]
+  expenses     Expense[]
+  revenues     Revenue[]
 
   @@index([farmId, kind])
   @@index([farmId, category])
@@ -520,13 +527,19 @@ model Expense {
   reviewedById    String?         @db.Uuid
   reviewedAt      DateTime?
   reviewNote      String?
+  animalId        String?         @db.Uuid
+  herdBatchId     String?         @db.Uuid
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
-  farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  farm      Farm       @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal    Animal?    @relation(fields: [animalId], references: [id], onDelete: SetNull)
+  herdBatch HerdBatch? @relation(fields: [herdBatchId], references: [id], onDelete: SetNull)
 
   @@index([farmId, status])
   @@index([farmId, expenseDate])
+  @@index([animalId])
+  @@index([herdBatchId])
 }
 
 enum ExpensePaymentStatus {
@@ -603,13 +616,19 @@ model Revenue {
   paymentStatus PaymentStatus @default(PENDING)
   invoiceNumber String
   notes         String?
+  animalId      String?       @db.Uuid
+  herdBatchId   String?       @db.Uuid
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  farm      Farm       @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal    Animal?    @relation(fields: [animalId], references: [id], onDelete: SetNull)
+  herdBatch HerdBatch? @relation(fields: [herdBatchId], references: [id], onDelete: SetNull)
 
   @@unique([farmId, invoiceNumber])
   @@index([farmId, revenueDate])
+  @@index([animalId])
+  @@index([herdBatchId])
 }
 
 // ---------------------------------------------------------------------------
@@ -717,6 +736,8 @@ model HealthRecord {
   animalId    String?          @db.Uuid
   groupId     String?          @db.Uuid
   herdBatchId String?          @db.Uuid
+  /** Optional cost of this health event (NPR). */
+  cost        Decimal?         @db.Decimal(12, 2)
   performedAt DateTime
   nextDueAt   DateTime?
   notes       String?
