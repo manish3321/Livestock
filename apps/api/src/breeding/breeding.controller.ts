@@ -12,13 +12,13 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   breedingCreateSchema,
+  breedingListQuerySchema,
   breedingUpdateSchema,
-  pageQuerySchema,
 } from '@farm/contracts';
 import type {
   BreedingCreate,
+  BreedingListQuery,
   BreedingUpdate,
-  PageQuery,
   PageResult,
 } from '@farm/contracts';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
@@ -36,7 +36,7 @@ export class BreedingController {
   @ApiOperation({ summary: 'List breeding records' })
   list(
     @CurrentUser() user: RequestUser,
-    @Query(new ZodValidationPipe(pageQuerySchema)) query: PageQuery,
+    @Query(new ZodValidationPipe(breedingListQuerySchema)) query: BreedingListQuery,
   ): Promise<PageResult<BreedingRecordDto>> {
     return this.breeding.list(user, query);
   }

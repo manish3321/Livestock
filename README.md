@@ -15,7 +15,7 @@ Web admin dashboard for a mixed farm (livestock, poultry, fish) in Nepal. Built 
 ## Prerequisites
 
 - Node.js 22+, pnpm 11 (`corepack enable`)
-- Docker (for local PostgreSQL) — or any PostgreSQL 16+ instance
+- Docker (for local PostgreSQL and MongoDB) — or any PostgreSQL 16+ instance. Mongo is used for file storage (receipts/exports) when `STORAGE_DRIVER=mongodb`.
 
 ## Getting started
 
@@ -24,9 +24,10 @@ pnpm install
 pnpm --filter @farm/contracts build
 pnpm --filter @farm/design-tokens build
 
-# Database
-docker compose up -d db
+# Database (Postgres) + MongoDB (file storage)
+docker compose up -d db mongo
 cp apps/api/.env.example apps/api/.env   # then set JWT_SECRET
+# Set STORAGE_DRIVER=mongodb to store receipts in GridFS (default is local disk)
 pnpm --filter @farm/api db:generate
 pnpm --filter @farm/api db:migrate       # applies prisma/migrations
 pnpm --filter @farm/api db:seed          # farm + admin/manager/worker users
@@ -55,7 +56,8 @@ CI (GitHub Actions) runs the same steps on every push/PR.
 - [docs/architecture.md](docs/architecture.md) — system design and module boundaries
 - [docs/rbac.md](docs/rbac.md) — roles, permissions, and navigation
 - [docs/deployment.md](docs/deployment.md) — DigitalOcean deployment runbook
-- [docs/Farm-Management-Progress-Summary.pdf](docs/Farm-Management-Progress-Summary.pdf) — progress summary and workflows
+- [docs/Farm-Management-Progress-Summary.pdf](docs/Farm-Management-Progress-Summary.pdf) — daily progress (latest: QR & scan, 22 Aug 2026)
+- [docs/Farm-Management-Daily-Update-2026-08-22.pdf](docs/Farm-Management-Daily-Update-2026-08-22.pdf) — same update (dated copy)
 
 ## Status
 

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { pageQuerySchema } from './common';
 import {
   APPROVAL_STATUSES,
   EXPENSE_CATEGORIES,
@@ -272,6 +273,11 @@ export const breedingUpdateSchema = z.object({
   fatherTagOrAi: z.string().max(80).optional(),
 });
 export type BreedingUpdate = z.infer<typeof breedingUpdateSchema>;
+
+export const breedingListQuerySchema = pageQuerySchema.extend({
+  motherId: z.string().uuid().optional(),
+});
+export type BreedingListQuery = z.infer<typeof breedingListQuerySchema>;
 
 // ---- Production ----
 export const PRODUCTION_TYPES = ['MILK', 'EGGS', 'FISH'] as const;

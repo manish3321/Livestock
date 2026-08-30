@@ -1,10 +1,11 @@
-"""Generate a daily progress PDF for Farm Management (QR + scan work)."""
+"""Generate a daily progress PDF for Farm Management (22 Aug 2026 work)."""
 
 from pathlib import Path
 
 from fpdf import FPDF
 
 OUT = Path(__file__).resolve().parent / "Farm-Management-Progress-Summary.pdf"
+OUT_DATED = Path(__file__).resolve().parent / "Farm-Management-Daily-Update-2026-08-22.pdf"
 
 
 class Doc(FPDF):
@@ -23,7 +24,12 @@ class Doc(FPDF):
         self.set_y(-12)
         self.set_font("Helvetica", "", 8)
         self.set_text_color(120, 120, 120)
-        self.cell(0, 8, "Daily update only - 22 Aug 2026 - QR & animal economics", align="C")
+        self.cell(
+            0,
+            8,
+            "Daily update only - 22 Aug 2026 - QR, economics, scan, breeding history",
+            align="C",
+        )
 
 
 def h1(pdf: Doc, text: str) -> None:
@@ -88,7 +94,14 @@ def main() -> None:
     pdf.set_text_color(255, 255, 255)
     pdf.cell(0, 10, "Farm Management System", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 12)
-    pdf.cell(0, 8, "Daily Progress - QR Codes & Scan Hub", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(
+        0,
+        8,
+        "Daily Progress - QR, Economics, Scan & Breeding",
+        align="C",
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
     pdf.set_y(48)
     pdf.set_text_color(80, 80, 80)
     pdf.set_font("Helvetica", "", 10)
@@ -102,7 +115,7 @@ def main() -> None:
     pdf.cell(
         0,
         6,
-        "Focus: Printable QR, animal/batch economics, in-app camera scan + popup",
+        "Focus: QR tags, invested/earned, Scan hub popup, breeding history on animal page",
         new_x="LMARGIN",
         new_y="NEXT",
     )
@@ -111,50 +124,47 @@ def main() -> None:
     h1(pdf, "1. What we did today")
     body(
         pdf,
-        "Implemented ear-tag / collar QR for breeding livestock (buffalo, cow, pig, goat) "
-        "and optional shed/pond QR for poultry and fish batches. Scanning shows invested vs "
-        "earned totals and quick actions. Added a dedicated Scan QR section with live camera "
-        "and a popup results sheet.",
+        "Added printable QR for breeding livestock and shed/pond batches, animal/batch "
+        "economics (invested vs earned), an in-app Scan QR hub with camera + popup, and "
+        "breeding history on the breeding-stock animal detail page.",
     )
 
     h2(pdf, "1.1 Data model & migration")
     for t in [
-        "Animal.breedingStock (boolean, default true) - mark breeding parents",
-        "Expense.animalId + Expense.herdBatchId - attribute spend to one animal or batch",
-        "Revenue.animalId + Revenue.herdBatchId - attribute milk/sales earnings",
-        "HealthRecord.cost - optional NPR cost for vaccines / treatments",
+        "Animal.breedingStock - flag breeding parents",
+        "Expense / Revenue animalId + herdBatchId - attribute money to a target",
+        "HealthRecord.cost - optional vaccine/treatment cost (NPR)",
         "Migration: 20260822120000_animal_qr_economics",
     ]:
         bullet(pdf, t)
 
     h2(pdf, "1.2 Economics APIs")
     for t in [
-        "GET /v1/animals/:id/economics - purchase + expenses + health cost vs revenue",
-        "GET /v1/batches/:id/economics - batch expenses + health cost vs revenue",
-        "Invested = purchase (animals only) + linked expenses + health costs",
+        "GET /v1/animals/:id/economics and GET /v1/batches/:id/economics",
+        "Invested = purchase (animals) + linked expenses + health costs",
         "Earned = linked revenue; Net = earned - invested",
-        "Expense / revenue / health create DTOs accept animalId or herdBatchId",
+        "Expense / revenue / health forms can link animal or batch (incl. deep links)",
     ]:
         bullet(pdf, t)
 
-    h2(pdf, "1.3 Printable QR codes")
+    h2(pdf, "1.3 Printable QR + Scan hub")
     for t in [
-        "QR on animal detail (/animals/stock/:id) and batch detail (/batches/:id)",
-        "Encoded URL: {origin}/scan/a/{animalId} or {origin}/scan/b/{batchId}",
-        "Print opens a clean printable page (title, QR image, URL)",
-        "Not one QR per chicken - poultry/fish use shed/pond (batch) QR instead",
-    ]:
-        bullet(pdf, t)
-
-    h2(pdf, "1.4 Scan QR hub + popup")
-    for t in [
-        "New module/nav item: Scan QR -> /scan (Admin, Manager, Worker)",
-        "Live camera scanner (html5-qrcode); environment-facing camera",
-        "On decode: stop camera and open popup with economics + quick actions",
+        "QR on /animals/stock/:id and /batches/:id (Print QR)",
+        "URL: /scan/a/:id (animal) or /scan/b/:id (batch)",
+        "Nav module Scan QR -> /scan with live camera (html5-qrcode)",
+        "Popup shows economics + quick actions (expense, health, revenue, breeding)",
         "Manual lookup by animal tag or batch name if camera unavailable",
-        "Deep links /scan/a/:id and /scan/b/:id also open the same popup",
-        "Quick actions: open detail, add expense/health/revenue, breeding, toggle breedingStock",
-        "en + ne copy for all new QR / scan strings",
+        "en + ne copy for QR / scan strings",
+    ]:
+        bullet(pdf, t)
+
+    h2(pdf, "1.4 Breeding history on animal detail")
+    for t in [
+        "Breeding history card on /animals/stock/:id (was missing before)",
+        "Shows mating type, mating/due dates, days left, status, offspring, father/AI",
+        "GET /v1/breeding?motherId= filters records for that animal",
+        "Add mating opens /breeding?animalId= with mother preselected",
+        "DTO includes motherTag + daysRemaining for list/UI",
     ]:
         bullet(pdf, t)
 
@@ -168,34 +178,28 @@ def main() -> None:
             "  Print QR on animal / batch detail",
             "       |",
             "       v",
-            "  URL encodes /scan/a/:id  or  /scan/b/:id",
+            "  Encodes /scan/a/:id  or  /scan/b/:id",
             "       |",
-            "       +--> Phone system camera opens deep link --> popup",
-            "       |",
-            "       +--> In-app Scan QR (/scan) camera reads QR --> popup",
-            "       |",
-            "       +--> Manual tag / batch name lookup --> popup",
+            "       +--> Phone camera deep link --> popup",
+            "       +--> In-app Scan QR camera --> popup",
+            "       +--> Manual tag / batch lookup --> popup",
             "                |",
             "                v",
-            "  Popup loads economics API + shows invested / earned / net",
-            "  + quick links (expense, health, revenue, breeding)",
+            "  Economics API + quick actions",
         ],
     )
 
-    h2(pdf, "2.2 Linking money & health to a QR target")
+    h2(pdf, "2.2 Animal page layout (today)")
     mono_box(
         pdf,
         [
-            "  From popup: Add expense / health / revenue",
-            "       |",
-            "       v",
-            "  Form opens with ?animalId=... or ?herdBatchId=... prefilled",
-            "       |",
-            "       v",
-            "  Create stores animalId or herdBatchId on the row",
-            "       |",
-            "       v",
-            "  Next scan: economics totals include that amount",
+            "  /animals/stock/:id",
+            "    - Hero + QR / Edit / Delete",
+            "    - Invested / Earned / Net tiles",
+            "    - Basic information (incl. Breeding stock Yes/No)",
+            "    - Printable QR card",
+            "    - Weight history",
+            "    - Breeding history (NEW) + Add mating link",
         ],
     )
 
@@ -203,27 +207,22 @@ def main() -> None:
     mono_box(
         pdf,
         [
-            "  Animal",
-            "    Invested = purchaseCost + SUM(expenses) + SUM(health.cost)",
-            "    Earned   = SUM(revenue)",
-            "    Net      = Earned - Invested",
-            "",
-            "  Batch (shed / pond)",
-            "    Invested = SUM(expenses) + SUM(health.cost)",
-            "    Earned   = SUM(revenue)",
-            "    Net      = Earned - Invested",
+            "  Animal: Invested = purchase + expenses + health.cost",
+            "          Earned   = revenue;  Net = Earned - Invested",
+            "  Batch:  Invested = expenses + health.cost (no purchase)",
+            "          Earned   = revenue;  Net = Earned - Invested",
         ],
     )
 
     pdf.add_page()
-    h1(pdf, "3. Screens & routes added today")
+    h1(pdf, "3. Screens & APIs added/changed today")
     rows = [
-        ("/scan", "Scan hub - camera + manual lookup"),
-        ("/scan/a/:id", "Animal QR deep link -> popup"),
-        ("/scan/b/:id", "Batch QR deep link -> popup"),
-        ("/animals/stock/:id", "QR print card + economics tiles"),
-        ("/batches/:id", "Shed/pond QR print + invested/earned"),
-        ("/expenses, /health, /revenue", "Optional animal / batch link fields"),
+        ("/scan", "Scan hub - camera + lookup + popup"),
+        ("/scan/a/:id, /scan/b/:id", "QR deep links -> same popup"),
+        ("/animals/stock/:id", "QR, economics tiles, breeding history"),
+        ("/batches/:id", "Shed/pond QR + invested/earned"),
+        ("/breeding?animalId=", "Add mating prefilled for mother"),
+        ("/expenses, /health, /revenue", "Optional animal / batch link"),
     ]
     pdf.set_font("Helvetica", "B", 10)
     pdf.set_fill_color(34, 85, 50)
@@ -244,21 +243,21 @@ def main() -> None:
 
     pdf.set_x(pdf.l_margin)
     pdf.ln(4)
-    h2(pdf, "API endpoints added today")
+    h2(pdf, "API endpoints")
     for t in [
         "GET /v1/animals/:id/economics",
         "GET /v1/batches/:id/economics",
-        "POST expense / revenue / health now accept animalId and herdBatchId",
-        "Health create accepts optional cost",
+        "GET /v1/breeding?motherId= (filter for animal page)",
+        "POST expense/revenue/health accept animalId / herdBatchId; health cost optional",
     ]:
         bullet(pdf, t)
 
-    h2(pdf, "How to try today's work")
+    h2(pdf, "How to try")
     for t in [
-        "Apply migration (already: animal_qr_economics) and restart API if needed",
-        "Open a breeding animal -> Print QR; open a poultry/fish batch -> Print QR",
-        "Go to Scan QR, allow camera, scan the printout -> check popup totals",
-        "From popup add an expense linked to that animal; scan again and confirm invested rose",
+        "Open breeding animal -> see economics + QR + Breeding history card",
+        "Add mating from animal page if history is empty",
+        "Open Scan QR, look up BUF001 (or scan a printout) -> popup totals",
+        "Link an expense to the animal; refresh economics / scan again",
         "Camera needs HTTPS or localhost; use tag lookup if camera is blocked",
     ]:
         bullet(pdf, t)
@@ -269,13 +268,14 @@ def main() -> None:
     pdf.multi_cell(
         0,
         5,
-        "This PDF covers only work completed on 22 August 2026 (QR codes, economics linking, "
-        "and the Scan QR hub). Earlier features (batches, money modules, etc.) are unchanged "
-        "and are not restated here.",
+        "This PDF covers only work completed on 22 August 2026. Earlier features "
+        "(batches, money modules, etc.) are not restated here.",
     )
 
     pdf.output(str(OUT))
+    OUT_DATED.write_bytes(OUT.read_bytes())
     print(f"Wrote {OUT}")
+    print(f"Wrote {OUT_DATED}")
 
 
 if __name__ == "__main__":

@@ -29,6 +29,7 @@ import {
   getAnimalEconomics,
   updateAnimal,
 } from '../../api/animals';
+import { listBreeding } from '../../api/breeding';
 import { QrPrintCard } from '../../components/QrPrintCard';
 import { animalScanUrl } from '../../lib/qr';
 
@@ -51,6 +52,12 @@ export function AnimalDetailPage() {
     queryKey: ['animal', id, 'economics'],
     queryFn: () => getAnimalEconomics(id!),
     enabled: Boolean(id),
+  });
+
+  const breedingQ = useQuery({
+    queryKey: ['breeding', 'mother', id],
+    queryFn: () => listBreeding({ motherId: id!, pageSize: 50 }),
+    enabled: Boolean(id) && can('breeding:read'),
   });
 
   const weightMutation = useMutation({
@@ -256,6 +263,80 @@ export function AnimalDetailPage() {
             </table>
           )}
         </div>
+
+        {can('breeding:read') && (
+          <div className="card">
+            <div className="page-header" style={{ marginBottom: 12 }}>
+              <h2 style={{ margin: 0 }}>{t('animals.breedingHistory')}</h2>
+              {can('breeding:write') && animal.gender === 'FEMALE' && (
+                <Link className="btn secondary" to={`/breeding?animalId=${animal.id}`}>
+                  {t('breeding.add')}
+                </Link>
+              )}
+            </div>
+            {!animal.breedingStock && (
+              <p className="muted">{t('animals.notBreedingStock')}</p>
+            )}
+            {breedingQ.isLoading && <LoadingState />}
+            {breedingQ.isError && (
+              <ErrorState onRetry={() => void breedingQ.refetch()} />
+            )}
+            {breedingQ.data && breedingQ.data.items.length === 0 && (
+              <p className="muted">{t('animals.noBreedingRecords')}</p>
+            )}
+            {breedingQ.data && breedingQ.data.items.length > 0 && (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>{t('breeding.matingType')}</th>
+                    <th>{t('breeding.matingDate')}</th>
+                    <th>{t('breeding.dueDate')}</th>
+                    <th>{t('breeding.daysRemaining')}</th>
+                    <th>{t('breeding.status')}</th>
+                    <th>{t('breeding.offspringTag')}</th>
+                    <th>{t('breeding.fatherTagOrAi')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {breedingQ.data.items.map((row) => {
+                    const days =
+                      row.daysRemaining ??
+                      Math.ceil(
+                        (new Date(row.dueDate).getTime() - Date.now()) /
+                          (1000 * 60 * 60 * 24),
+                      );
+                    return (
+                      <tr key={row.id}>
+                        <td>{row.matingType}</td>
+                        <td>{formatDate(row.matingDate)}</td>
+                        <td>{formatDate(row.dueDate)}</td>
+                        <td>
+                          {row.pregnancyStatus === 'DELIVERED' ||
+                          row.pregnancyStatus === 'FAILED'
+                            ? '—'
+                            : days}
+                        </td>
+                        <td>
+                          <StatusChip
+                            status={
+                              row.pregnancyStatus === 'FAILED' ? 'SICK' : 'PREGNANT'
+                            }
+                            label={row.pregnancyStatus}
+                          />
+                        </td>
+                        <td>{row.offspringTag ?? '—'}</td>
+                        <td>{row.fatherTagOrAi ?? '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+            <p style={{ marginTop: 12 }}>
+              <Link to={`/breeding?animalId=${animal.id}`}>{t('animals.openBreeding')}</Link>
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

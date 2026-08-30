@@ -1,8 +1,8 @@
 version: "3.9"
 
 # Local development + DigitalOcean deployment parity.
-# Usage: docker compose up -d db  (local dev: run api/web with pnpm)
-#        docker compose up -d     (full stack)
+# Usage: docker compose up -d db mongo  (local dev: run api/web with pnpm)
+#        docker compose up -d             (full stack)
 services:
   db:
     image: postgres:16-alpine
@@ -21,6 +21,19 @@ services:
       timeout: 3s
       retries: 10
 
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   api:
     build:
       context: .
@@ -35,6 +48,9 @@ services:
       DATABASE_URL: postgresql://farm:farm@db:5432/farm?schema=public
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/farm}
+      MONGODB_BUCKET: ${MONGODB_BUCKET:-farm-files}
     ports:
       - "4000:4000"
 
@@ -50,3 +66,4 @@ services:
 
 volumes:
   db-data:
+  mongo-data:

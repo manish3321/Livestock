@@ -11,7 +11,7 @@ flowchart LR
     api[NestJS API v1]
     pg[(PostgreSQL)]
   end
-  storage[Supabase Storage]
+  storage[(MongoDB GridFS)]
   fcm[Firebase Cloud Messaging]
 
   web -->|"JWT REST"| api
@@ -41,7 +41,7 @@ pnpm workspaces. Shared packages:
 | `reports` | Farm overview, inventory, health summary, monthly herd JSON + CSV |
 | `health` | `/health/live`, `/health/ready` probes |
 | `notifications` | `NotificationPort` — logging adapter now, FCM adapter when push lands |
-| `storage` | `StoragePort` — local disk or Supabase Storage driver |
+| `storage` | `StoragePort` — local disk or MongoDB GridFS driver |
 
 Every domain table carries `farmId`; every query is farm-scoped from the JWT, so farms are isolated even with shared infrastructure. Mutations write `AuditEvent` rows with the request id.
 
@@ -64,4 +64,4 @@ Primary routes: `/animals` (livestock batches), `/groups` (poultry), `/fish`, `/
 
 - **JWT + rotating refresh tokens** over server sessions: refresh reuse detection revokes stolen chains.
 - **Batch headcounts over individual lists** for day-to-day farm ops; individuals remain for breeding only.
-- **Ports for storage/notifications**: Supabase and Firebase are reachable adapters, not hard dependencies, keeping local dev and tests offline-capable.
+- **Ports for storage/notifications**: MongoDB GridFS and Firebase are reachable adapters, not hard dependencies, keeping local dev and tests offline-capable.

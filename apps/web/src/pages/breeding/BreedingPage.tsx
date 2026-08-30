@@ -1,5 +1,5 @@
-import { FormEvent, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -25,6 +25,7 @@ export function BreedingPage() {
   const { t } = useTranslation();
   const { can } = useAuth();
   const qc = useQueryClient();
+  const [searchParams] = useSearchParams();
   const [showForm, setShowForm] = useState(false);
   const [deliveryId, setDeliveryId] = useState<string | null>(null);
   const [birthDate, setBirthDate] = useState('');
@@ -36,9 +37,21 @@ export function BreedingPage() {
   });
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    const animalId = searchParams.get('animalId') ?? undefined;
+    if (animalId) {
+      setShowForm(true);
+      setForm((prev) => ({ ...prev, motherId: animalId }));
+    }
+  }, [searchParams]);
+
   const query = useQuery({
-    queryKey: ['breeding'],
-    queryFn: () => listBreeding({ pageSize: 100 }),
+    queryKey: ['breeding', searchParams.get('animalId')],
+    queryFn: () =>
+      listBreeding({
+        pageSize: 100,
+        motherId: searchParams.get('animalId') || undefined,
+      }),
   });
 
   const mothers = useQuery({
@@ -66,6 +79,7 @@ export function BreedingPage() {
         matingDate: new Date(),
       });
       void qc.invalidateQueries({ queryKey: ['breeding'] });
+      void qc.invalidateQueries({ queryKey: ['breeding', 'mother'] });
     },
     onError: (err: Error) => setError(err.message),
   });
@@ -78,6 +92,7 @@ export function BreedingPage() {
       setBirthDate('');
       setOffspringTag('');
       void qc.invalidateQueries({ queryKey: ['breeding'] });
+      void qc.invalidateQueries({ queryKey: ['breeding', 'mother'] });
     },
   });
 

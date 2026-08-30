@@ -1,4 +1,9 @@
-import type { BreedingCreate, BreedingUpdate, PageResult } from '@farm/contracts';
+import type {
+  BreedingCreate,
+  BreedingListQuery,
+  BreedingUpdate,
+  PageResult,
+} from '@farm/contracts';
 import { api } from './client';
 import { toQuery } from './query';
 
@@ -21,7 +26,7 @@ export interface BreedingDto {
 }
 
 export function listBreeding(
-  query: { page?: number; pageSize?: number } = {},
+  query: Partial<BreedingListQuery> = {},
 ): Promise<PageResult<BreedingDto>> {
   return api(`/v1/breeding${toQuery(query)}`);
 }

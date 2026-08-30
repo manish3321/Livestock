@@ -8,11 +8,18 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   ACCESS_TOKEN_TTL_SEC: z.coerce.number().int().min(60).default(900),
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).default(30),
-  STORAGE_DRIVER: z.enum(['local', 'supabase']).default('local'),
-  SUPABASE_URL: z.string().optional().default(''),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().optional().default(''),
-  SUPABASE_BUCKET: z.string().optional().default('farm-files'),
+  STORAGE_DRIVER: z.enum(['local', 'mongodb']).default('local'),
+  MONGODB_URI: z.string().optional().default(''),
+  MONGODB_BUCKET: z.string().optional().default('farm-files'),
   FCM_SERVICE_ACCOUNT_JSON: z.string().optional().default(''),
+}).superRefine((data, ctx) => {
+  if (data.STORAGE_DRIVER === 'mongodb' && !data.MONGODB_URI) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['MONGODB_URI'],
+      message: 'required when STORAGE_DRIVER=mongodb',
+    });
+  }
 });
 
 export type Env = z.infer<typeof envSchema>;

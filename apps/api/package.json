@@ -28,6 +28,7 @@
     "@prisma/client": "^6.0.0",
     "bcryptjs": "^2.4.3",
     "helmet": "^8.0.0",
+    "mongodb": "^7.6.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "zod": "^3.25.0"

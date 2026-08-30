@@ -2,12 +2,12 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import {
   GESTATION_DAYS,
   type BreedingCreate,
+  type BreedingListQuery,
   type BreedingUpdate,
-  type PageQuery,
   type PageResult,
   type Species,
 } from '@farm/contracts';
-import type { BreedingRecord } from '@prisma/client';
+import type { Animal, BreedingRecord } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
@@ -16,6 +16,7 @@ export interface BreedingRecordDto {
   id: string;
   farmId: string;
   motherId: string;
+  motherTag: string | null;
   matingType: string;
   fatherTagOrAi: string | null;
   matingDate: string;
@@ -24,9 +25,14 @@ export interface BreedingRecordDto {
   birthDate: string | null;
   offspringTag: string | null;
   notes: string | null;
+  daysRemaining: number | null;
   createdAt: string;
   updatedAt: string;
 }
+
+type BreedingWithMother = BreedingRecord & {
+  mother?: Pick<Animal, 'tag'> | null;
+};
 
 @Injectable()
 export class BreedingService {
@@ -37,12 +43,16 @@ export class BreedingService {
 
   async list(
     user: RequestUser,
-    query: PageQuery,
+    query: BreedingListQuery,
   ): Promise<PageResult<BreedingRecordDto>> {
-    const where = { farmId: user.farmId };
+    const where = {
+      farmId: user.farmId,
+      ...(query.motherId ? { motherId: query.motherId } : {}),
+    };
     const [rows, total] = await Promise.all([
       this.prisma.breedingRecord.findMany({
         where,
+        include: { mother: { select: { tag: true } } },
         orderBy: { dueDate: 'asc' },
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
@@ -87,6 +97,7 @@ export class BreedingService {
         pregnancyStatus: input.pregnancyStatus,
         notes: input.notes,
       },
+      include: { mother: { select: { tag: true } } },
     });
 
     await this.audit.record({
@@ -131,6 +142,7 @@ export class BreedingService {
           ? { fatherTagOrAi: input.fatherTagOrAi }
           : {}),
       },
+      include: { mother: { select: { tag: true } } },
     });
 
     await this.audit.record({
@@ -146,11 +158,17 @@ export class BreedingService {
   }
 }
 
-function toDto(r: BreedingRecord): BreedingRecordDto {
+function daysRemaining(dueDate: Date, pregnancyStatus: string): number | null {
+  if (pregnancyStatus === 'DELIVERED' || pregnancyStatus === 'FAILED') return null;
+  return Math.ceil((dueDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+}
+
+function toDto(r: BreedingWithMother): BreedingRecordDto {
   return {
     id: r.id,
     farmId: r.farmId,
     motherId: r.motherId,
+    motherTag: r.mother?.tag ?? null,
     matingType: r.matingType,
     fatherTagOrAi: r.fatherTagOrAi,
     matingDate: r.matingDate.toISOString(),
@@ -159,6 +177,7 @@ function toDto(r: BreedingRecord): BreedingRecordDto {
     birthDate: r.birthDate?.toISOString() ?? null,
     offspringTag: r.offspringTag,
     notes: r.notes,
+    daysRemaining: daysRemaining(r.dueDate, r.pregnancyStatus),
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
   };
