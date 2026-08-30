@@ -102,6 +102,30 @@ export function PnlPage() {
               <span className="stat-label">{t('pnl.margin')}</span>
               <span className="stat-value">{formatNPR(query.data.totals.margin)}</span>
             </div>
+            <div className="stat-card">
+              <span className="stat-label">{t('pnl.feedPercent')}</span>
+              <span className="stat-value">
+                {query.data.feedPercentOfRevenue != null
+                  ? `${Math.round(query.data.feedPercentOfRevenue * 100)}%`
+                  : '—'}
+              </span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">{t('pnl.healthPercent')}</span>
+              <span className="stat-value">
+                {query.data.healthPercentOfRevenue != null
+                  ? `${Math.round(query.data.healthPercentOfRevenue * 100)}%`
+                  : '—'}
+              </span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">{t('pnl.profitPerAnimal')}</span>
+              <span className="stat-value">
+                {query.data.profitPerAnimal != null
+                  ? formatNPR(query.data.profitPerAnimal)
+                  : '—'}
+              </span>
+            </div>
           </div>
           <DataTable
             columns={columns}

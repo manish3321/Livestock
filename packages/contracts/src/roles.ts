@@ -23,6 +23,7 @@ export const MODULES = [
   'health',
   'breeding',
   'production',
+  'feed',
   'reports',
 ] as const;
 export type ModuleKey = (typeof MODULES)[number];
@@ -42,6 +43,8 @@ export const PERMISSIONS = [
   'breeding:write',
   'production:read',
   'production:write',
+  'feed:read',
+  'feed:write',
   // Inventory
   'inventory:read',
   'inventory:write',
@@ -79,6 +82,8 @@ const WORKER_PERMISSIONS: Permission[] = [
   'breeding:write',
   'production:read',
   'production:write',
+  'feed:read',
+  'feed:write',
   'inventory:read',
   'inventory:restock-request',
   'expenses:read',
@@ -133,6 +138,7 @@ export const MODULE_ACCESS: Record<ModuleKey, readonly Role[]> = {
   health: ['ADMIN', 'MANAGER', 'WORKER'],
   breeding: ['ADMIN', 'MANAGER', 'WORKER'],
   production: ['ADMIN', 'MANAGER', 'WORKER'],
+  feed: ['ADMIN', 'MANAGER', 'WORKER'],
   reports: ['ADMIN', 'MANAGER'],
 };
 

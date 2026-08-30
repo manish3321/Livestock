@@ -23,6 +23,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { PnlModule } from './pnl/pnl.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductionModule } from './production/production.module';
+import { FeedModule } from './feed/feed.module';
 import { ReportsModule } from './reports/reports.module';
 import { RevenueModule } from './revenue/revenue.module';
 import { StorageModule } from './storage/storage.module';
@@ -49,6 +50,7 @@ import { SyncModule } from './sync/sync.module';
     HealthRecordsModule,
     BreedingModule,
     ProductionModule,
+    FeedModule,
     DashboardModule,
     PnlModule,
     ReportsModule,

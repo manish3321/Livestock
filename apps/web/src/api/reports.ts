@@ -34,3 +34,27 @@ export async function downloadAnimalInventoryCsv(
   a.click();
   URL.revokeObjectURL(url);
 }
+
+export function getPeriodReport(
+  kind: 'daily' | 'weekly' | 'quarterly' | 'annual',
+  date?: Date,
+): Promise<ReportSummary> {
+  return api(`/v1/reports/period${toQuery({ kind, date })}`);
+}
+
+export async function downloadPeriodCsv(
+  kind: 'daily' | 'weekly' | 'quarterly' | 'annual',
+): Promise<void> {
+  const token = getAccessToken();
+  const res = await fetch(`/v1/reports/period.csv${toQuery({ kind })}`, {
+    headers: token ? { authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error('Export failed');
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `period-${kind}-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}

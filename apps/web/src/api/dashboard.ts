@@ -26,6 +26,11 @@ export interface DashboardSummary {
   expenseTotal?: number | null;
   netProfit?: number | null;
   financeTrend?: Array<{ month: string; revenue: number; expenses: number }>;
+  yesterdayProduction?: {
+    milkLiters: number;
+    eggCount: number;
+    fishKg: number;
+  };
   speciesDistribution: DashboardSpeciesCount[];
   alerts: {
     healthOverdue: DashboardAlertItem[];
@@ -33,6 +38,8 @@ export interface DashboardSummary {
     pendingApprovals: DashboardAlertItem[];
     inventoryExpiring?: DashboardAlertItem[];
     unpaidRevenue?: DashboardAlertItem[];
+    dueCalving?: DashboardAlertItem[];
+    vaccineToday?: DashboardAlertItem[];
   };
   recentActivity: DashboardActivityItem[];
 }

@@ -1,18 +1,23 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
   Headers,
   HttpCode,
+  Inject,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
   Query,
   Res,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   animalCreateSchema,
   animalListQuerySchema,
@@ -34,12 +39,16 @@ import type { Response } from 'express';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/types';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import { STORAGE_PORT, type StoragePort } from '../storage/storage.port';
 import { AnimalsService } from './animals.service';
 
 @ApiTags('animals')
 @Controller('animals')
 export class AnimalsController {
-  constructor(private readonly animals: AnimalsService) {}
+  constructor(
+    private readonly animals: AnimalsService,
+    @Inject(STORAGE_PORT) private readonly storage: StoragePort,
+  ) {}
 
   @Get()
   @RequirePermissions('animals:read')
@@ -85,6 +94,50 @@ export class AnimalsController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<AnimalEconomicsDto> {
     return this.animals.economics(user, id);
+  }
+
+  @Get(':id/production-stats')
+  @RequirePermissions('animals:read')
+  @ApiOperation({ summary: 'Milk yield vs own and herd average' })
+  productionStats(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.animals.productionStats(user, id);
+  }
+
+  @Post(':id/photo')
+  @RequirePermissions('animals:write')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Upload animal photo' })
+  uploadPhoto(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: { buffer: Buffer; originalname: string; mimetype: string },
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    if (!file?.buffer) {
+      throw new BadRequestException({
+        code: 'FILE_REQUIRED',
+        message: 'Multipart file field "file" is required',
+      });
+    }
+    return this.animals.uploadPhoto(user, id, file, this.storage, requestId);
+  }
+
+  @Get(':id/photo')
+  @RequirePermissions('animals:read')
+  @ApiOperation({ summary: 'Download animal photo' })
+  async getPhoto(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { buffer, filename } = await this.animals.getPhotoBuffer(user, id, this.storage);
+    res.setHeader('content-type', 'image/jpeg');
+    res.setHeader('content-disposition', `inline; filename="${filename}"`);
+    res.send(buffer);
   }
 
   @Post()

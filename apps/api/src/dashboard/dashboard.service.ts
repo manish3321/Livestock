@@ -17,6 +17,11 @@ export interface DashboardSummary {
   expenseTotal?: number | null;
   netProfit?: number | null;
   financeTrend?: Array<{ month: string; revenue: number; expenses: number }>;
+  yesterdayProduction: {
+    milkLiters: number;
+    eggCount: number;
+    fishKg: number;
+  };
   speciesDistribution: Array<{ species: string; count: number }>;
   alerts: {
     healthOverdue: DashboardAlertItem[];
@@ -24,6 +29,8 @@ export interface DashboardSummary {
     pendingApprovals: DashboardAlertItem[];
     inventoryExpiring?: DashboardAlertItem[];
     unpaidRevenue?: DashboardAlertItem[];
+    dueCalving?: DashboardAlertItem[];
+    vaccineToday?: DashboardAlertItem[];
   };
   recentActivity: Array<{
     id: string;
@@ -163,7 +170,10 @@ export class DashboardService {
     }
 
     const in30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    const [expiring, unpaidRev] = await Promise.all([
+    const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const yesterdayStart = new Date(dayStart.getTime() - 24 * 60 * 60 * 1000);
+    const weekAhead = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const [expiring, unpaidRev, yesterdayProd, dueCalving, vaccineToday] = await Promise.all([
       this.prisma.inventoryItem.findMany({
         where: {
           farmId,
@@ -187,7 +197,36 @@ export class DashboardService {
             },
           })
         : Promise.resolve([]),
+      this.prisma.productionEntry.groupBy({
+        by: ['type'],
+        where: { farmId, entryDate: { gte: yesterdayStart, lt: dayStart } },
+        _sum: { quantity: true },
+      }),
+      this.prisma.breedingRecord.findMany({
+        where: {
+          farmId,
+          pregnancyStatus: { in: ['PREGNANT', 'CONFIRMED'] },
+          dueDate: { gte: now, lte: weekAhead },
+        },
+        orderBy: { dueDate: 'asc' },
+        take: 10,
+        include: { mother: { select: { tag: true, name: true } } },
+      }),
+      this.prisma.healthRecord.findMany({
+        where: {
+          farmId,
+          type: 'VACCINATION',
+          nextDueAt: { gte: dayStart, lt: new Date(dayStart.getTime() + 24 * 60 * 60 * 1000) },
+        },
+        orderBy: { nextDueAt: 'asc' },
+        take: 10,
+        include: { animal: { select: { tag: true } } },
+      }),
     ]);
+
+    const prodByType = Object.fromEntries(
+      yesterdayProd.map((p) => [p.type, Number(p._sum.quantity ?? 0)]),
+    );
 
     return {
       animalCount,
@@ -204,6 +243,11 @@ export class DashboardService {
             netProfit: null,
           }),
       speciesDistribution,
+      yesterdayProduction: {
+        milkLiters: prodByType.MILK ?? 0,
+        eggCount: prodByType.EGGS ?? 0,
+        fishKg: prodByType.FISH ?? 0,
+      },
       alerts: {
         healthOverdue: healthOverdue.map((h) => ({
           id: h.id,
@@ -229,6 +273,18 @@ export class DashboardService {
           title: r.invoiceNumber,
           detail: `NPR ${Number(r.amount)} · ${r.paymentStatus}${r.buyerName ? ` · ${r.buyerName}` : ''}`,
           dueAt: null,
+        })),
+        dueCalving: dueCalving.map((r) => ({
+          id: r.id,
+          title: r.mother.tag,
+          detail: r.mother.name,
+          dueAt: r.dueDate.toISOString(),
+        })),
+        vaccineToday: vaccineToday.map((h) => ({
+          id: h.id,
+          title: h.title,
+          detail: h.animal?.tag ?? h.type,
+          dueAt: h.nextDueAt?.toISOString() ?? null,
         })),
       },
       recentActivity: recent.map((e) => ({

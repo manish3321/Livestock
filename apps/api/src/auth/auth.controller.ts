@@ -11,7 +11,6 @@ import { Throttle } from '@nestjs/throttler';
 import {
   loginRequestSchema,
   refreshRequestSchema,
-  ROLE_PERMISSIONS,
 } from '@farm/contracts';
 import type {
   LoginRequest,
@@ -60,14 +59,8 @@ export class AuthController {
   }
 
   @Get('me')
-  @ApiOperation({ summary: 'Current principal, role, and permission map' })
+  @ApiOperation({ summary: 'Current principal, role, farm mode, and permission map' })
   me(@CurrentUser() user: RequestUser) {
-    return {
-      id: user.id,
-      email: user.email,
-      farmId: user.farmId,
-      role: user.role,
-      permissions: ROLE_PERMISSIONS[user.role],
-    };
+    return this.auth.me(user.id, user.farmId, user.role);
   }
 }

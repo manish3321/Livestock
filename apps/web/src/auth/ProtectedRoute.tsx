@@ -20,3 +20,12 @@ export function RequireModule({ module }: { module: ModuleKey }) {
   }
   return <Outlet />;
 }
+
+/** Commercial-only modules (P&L, reports). Household farms redirect home. */
+export function RequireCommercial() {
+  const { user } = useAuth();
+  if (!user || user.farmMode !== 'COMMERCIAL') {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return <Outlet />;
+}

@@ -15,6 +15,7 @@ export interface ExpenseDto {
   id: string;
   farmId: string;
   category: ExpenseCategory;
+  subcategory?: string | null;
   amount: number;
   expenseDate: string;
   description: string;
@@ -30,6 +31,7 @@ export interface ExpenseDto {
   reviewNote: string | null;
   animalId: string | null;
   herdBatchId: string | null;
+  allocations?: Array<{ animalId: string; animalTag: string | null; amount: number }>;
   createdAt: string;
   updatedAt: string;
 }

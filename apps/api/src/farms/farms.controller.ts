@@ -4,11 +4,22 @@ import {
   Controller,
   Get,
   NotFoundException,
+  Param,
+  ParseUUIDPipe,
+  Patch,
   Post,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { farmMemberCreateSchema } from '@farm/contracts';
-import type { FarmMemberCreate } from '@farm/contracts';
+import {
+  farmMemberCreateSchema,
+  farmMemberUpdateSchema,
+  farmUpdateSchema,
+} from '@farm/contracts';
+import type {
+  FarmMemberCreate,
+  FarmMemberUpdate,
+  FarmUpdate,
+} from '@farm/contracts';
 import * as bcrypt from 'bcryptjs';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/types';
@@ -26,6 +37,25 @@ export class FarmsController {
     const farm = await this.prisma.farm.findUnique({ where: { id: user.farmId } });
     if (!farm) throw new NotFoundException({ code: 'FARM_NOT_FOUND', message: 'Farm not found' });
     return farm;
+  }
+
+  @Patch('me')
+  @RequirePermissions('farm:manage')
+  @ApiOperation({ summary: 'Update farm name, location, and currency' })
+  async updateFarm(
+    @CurrentUser() user: RequestUser,
+    @Body(new ZodValidationPipe(farmUpdateSchema)) body: FarmUpdate,
+  ) {
+    return this.prisma.farm.update({
+      where: { id: user.farmId },
+      data: {
+        ...(body.name !== undefined ? { name: body.name } : {}),
+        ...(body.location !== undefined ? { location: body.location } : {}),
+        ...(body.currency !== undefined ? { currency: body.currency } : {}),
+        ...(body.timezone !== undefined ? { timezone: body.timezone } : {}),
+        ...(body.mode !== undefined ? { mode: body.mode } : {}),
+      },
+    });
   }
 
   @Get('me/members')
@@ -86,6 +116,67 @@ export class FarmsController {
       name: created.name,
       role: body.role,
       isActive: created.isActive,
+    };
+  }
+
+  @Patch('me/members/:userId')
+  @RequirePermissions('users:manage')
+  @ApiOperation({ summary: 'Update member role or active status' })
+  async updateMember(
+    @CurrentUser() user: RequestUser,
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Body(new ZodValidationPipe(farmMemberUpdateSchema)) body: FarmMemberUpdate,
+  ) {
+    const membership = await this.prisma.farmMembership.findFirst({
+      where: { farmId: user.farmId, userId },
+      include: { user: { select: { id: true, email: true, name: true, isActive: true } } },
+    });
+    if (!membership) {
+      throw new NotFoundException({ code: 'MEMBER_NOT_FOUND', message: 'Member not found' });
+    }
+
+    if (body.isActive === false || (body.role && body.role !== 'ADMIN' && membership.role === 'ADMIN')) {
+      const otherAdmins = await this.prisma.farmMembership.count({
+        where: {
+          farmId: user.farmId,
+          role: 'ADMIN',
+          userId: { not: userId },
+          user: { isActive: true },
+        },
+      });
+      if (membership.role === 'ADMIN' && otherAdmins === 0) {
+        throw new ConflictException({
+          code: 'LAST_ADMIN',
+          message: 'Keep at least one active admin on the farm',
+        });
+      }
+    }
+
+    const [updatedUser, updatedMembership] = await this.prisma.$transaction(async (tx) => {
+      const nextUser =
+        body.isActive !== undefined
+          ? await tx.user.update({
+              where: { id: userId },
+              data: { isActive: body.isActive },
+              select: { id: true, email: true, name: true, isActive: true },
+            })
+          : membership.user;
+      const nextMembership =
+        body.role !== undefined
+          ? await tx.farmMembership.update({
+              where: { id: membership.id },
+              data: { role: body.role },
+            })
+          : membership;
+      return [nextUser, nextMembership] as const;
+    });
+
+    return {
+      userId: updatedUser.id,
+      email: updatedUser.email,
+      name: updatedUser.name,
+      isActive: updatedUser.isActive,
+      role: updatedMembership.role,
     };
   }
 }

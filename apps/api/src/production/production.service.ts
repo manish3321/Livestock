@@ -24,6 +24,12 @@ export interface ProductionEntryDto {
   animalTag: string | null;
   animalName: string | null;
   herdBatchName: string | null;
+  milkerName: string | null;
+  appearance: string | null;
+  fatPercent: number | null;
+  snfPercent: number | null;
+  scc: number | null;
+  collectionMethod: string | null;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -97,6 +103,12 @@ export class ProductionService {
         groupId: input.groupId,
         batchId: input.batchId,
         herdBatchId: input.herdBatchId,
+        milkerName: input.milkerName,
+        appearance: input.appearance,
+        fatPercent: input.fatPercent,
+        snfPercent: input.snfPercent,
+        scc: input.scc,
+        collectionMethod: input.collectionMethod,
         notes: input.notes,
       },
       include: {
@@ -134,6 +146,12 @@ function toDto(r: ProductionWithRelations): ProductionEntryDto {
     animalTag: r.animal?.tag ?? null,
     animalName: r.animal?.name ?? null,
     herdBatchName: r.herdBatch?.name ?? null,
+    milkerName: r.milkerName,
+    appearance: r.appearance,
+    fatPercent: r.fatPercent != null ? Number(r.fatPercent) : null,
+    snfPercent: r.snfPercent != null ? Number(r.snfPercent) : null,
+    scc: r.scc,
+    collectionMethod: r.collectionMethod,
     notes: r.notes,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),

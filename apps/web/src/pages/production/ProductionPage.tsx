@@ -15,6 +15,7 @@ import { useAuth } from '../../auth/auth-context';
 import { DataTable, type Column } from '../../components/DataTable';
 import { ErrorState, LoadingState } from '../../components/PageState';
 import { StatusChip } from '../../components/StatusChip';
+import { useFarmMode } from '../../hooks/useFarmMode';
 
 const DEFAULT_UNIT: Record<(typeof PRODUCTION_TYPES)[number], string> = {
   MILK: 'L',
@@ -25,6 +26,7 @@ const DEFAULT_UNIT: Record<(typeof PRODUCTION_TYPES)[number], string> = {
 export function ProductionPage() {
   const { t } = useTranslation();
   const { can } = useAuth();
+  const { commercial } = useFarmMode();
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<Partial<ProductionCreate>>({
@@ -69,6 +71,12 @@ export function ProductionPage() {
         animalId: form.type === 'MILK' ? form.animalId : undefined,
         herdBatchId:
           form.type === 'EGGS' || form.type === 'FISH' ? form.herdBatchId : undefined,
+        milkerName: form.type === 'MILK' ? form.milkerName : undefined,
+        appearance: form.type === 'MILK' ? form.appearance : undefined,
+        fatPercent: form.type === 'MILK' ? form.fatPercent : undefined,
+        snfPercent: form.type === 'MILK' ? form.snfPercent : undefined,
+        scc: form.type === 'MILK' ? form.scc : undefined,
+        collectionMethod: form.type === 'MILK' ? form.collectionMethod : undefined,
         notes: form.notes,
       }),
     onSuccess: () => {
@@ -115,18 +123,32 @@ export function ProductionPage() {
         header: t('production.quantity'),
         render: (row) => `${row.quantity} ${row.unit}`,
       },
-      {
-        key: 'quality',
-        header: t('production.quality'),
-        render: (row) => row.quality ?? '—',
-      },
+      ...(commercial
+        ? ([
+            {
+              key: 'quality',
+              header: t('production.quality'),
+              render: (row: ProductionDto) => row.quality ?? '—',
+            },
+            {
+              key: 'fat',
+              header: t('production.fatPercent'),
+              render: (row: ProductionDto) => row.fatPercent ?? '—',
+            },
+            {
+              key: 'scc',
+              header: t('production.scc'),
+              render: (row: ProductionDto) => row.scc ?? '—',
+            },
+          ] as Column<ProductionDto>[])
+        : []),
       {
         key: 'notes',
         header: t('common.notes'),
         render: (row) => row.notes ?? '—',
       },
     ],
-    [t],
+    [t, commercial],
   );
 
   const onSubmit = (e: FormEvent) => {
@@ -308,6 +330,108 @@ export function ProductionPage() {
                 }
               />
             </div>
+            {form.type === 'MILK' && commercial && (
+              <>
+                <div className="field">
+                  <label htmlFor="prod-milker">{t('production.milkerName')}</label>
+                  <input
+                    id="prod-milker"
+                    value={form.milkerName ?? ''}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, milkerName: e.target.value || undefined }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="prod-app">{t('production.appearance')}</label>
+                  <select
+                    id="prod-app"
+                    value={form.appearance ?? ''}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        appearance: (e.target.value || undefined) as ProductionCreate['appearance'],
+                      }))
+                    }
+                  >
+                    <option value="">—</option>
+                    {(['NORMAL', 'CLOTS', 'BLOOD', 'DISCOLORED'] as const).map((v) => (
+                      <option key={v} value={v}>
+                        {t(`enum.milkAppearance.${v}`)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="prod-fat">{t('production.fatPercent')}</label>
+                  <input
+                    id="prod-fat"
+                    type="number"
+                    min="0"
+                    max="20"
+                    step="0.1"
+                    value={form.fatPercent ?? ''}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        fatPercent: e.target.value ? Number(e.target.value) : undefined,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="prod-snf">{t('production.snfPercent')}</label>
+                  <input
+                    id="prod-snf"
+                    type="number"
+                    min="0"
+                    max="20"
+                    step="0.1"
+                    value={form.snfPercent ?? ''}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        snfPercent: e.target.value ? Number(e.target.value) : undefined,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="prod-scc">{t('production.scc')}</label>
+                  <input
+                    id="prod-scc"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={form.scc ?? ''}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        scc: e.target.value ? Number(e.target.value) : undefined,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="prod-method">{t('production.collectionMethod')}</label>
+                  <select
+                    id="prod-method"
+                    value={form.collectionMethod ?? ''}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        collectionMethod: (e.target.value ||
+                          undefined) as ProductionCreate['collectionMethod'],
+                      }))
+                    }
+                  >
+                    <option value="">—</option>
+                    <option value="HAND">{t('enum.collectionMethod.HAND')}</option>
+                    <option value="MACHINE">{t('enum.collectionMethod.MACHINE')}</option>
+                  </select>
+                </div>
+              </>
+            )}
           </div>
           <div className="field">
             <label htmlFor="prod-notes">{t('common.notes')}</label>

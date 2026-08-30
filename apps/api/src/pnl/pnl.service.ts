@@ -20,6 +20,10 @@ export interface PnlReport {
   totalExpenses: number;
   netProfit: number;
   margin: number;
+  feedPercentOfRevenue: number | null;
+  healthPercentOfRevenue: number | null;
+  profitPerAnimal: number | null;
+  animalCount: number;
   byRevenueSource: PnlStream[];
   byExpenseCategory: Array<{ key: string; amount: number }>;
   lossMakingStreams: string[];
@@ -41,7 +45,7 @@ export class PnlService {
     const year = query.year ?? new Date().getUTCFullYear();
     const { from, to } = periodRange(query.period, year);
 
-    const [revenues, expenses] = await Promise.all([
+    const [revenues, expenses, animalCount] = await Promise.all([
       this.prisma.revenue.findMany({
         where: { farmId: user.farmId, revenueDate: { gte: from, lt: to } },
         select: { source: true, amount: true },
@@ -53,6 +57,9 @@ export class PnlService {
           status: 'APPROVED',
         },
         select: { category: true, amount: true },
+      }),
+      this.prisma.animal.count({
+        where: { farmId: user.farmId, deletedAt: null },
       }),
     ]);
 
@@ -102,6 +109,9 @@ export class PnlService {
       };
     });
 
+    const feedCost = expByCategory.FEED ?? 0;
+    const healthCost = expByCategory.MEDICINE ?? 0;
+
     return {
       period: query.period,
       year,
@@ -111,6 +121,10 @@ export class PnlService {
       totalExpenses,
       netProfit,
       margin,
+      feedPercentOfRevenue: totalRevenue > 0 ? feedCost / totalRevenue : null,
+      healthPercentOfRevenue: totalRevenue > 0 ? healthCost / totalRevenue : null,
+      profitPerAnimal: animalCount > 0 ? netProfit / animalCount : null,
+      animalCount,
       byRevenueSource,
       byExpenseCategory: Object.entries(expByCategory).map(([key, amount]) => ({
         key,

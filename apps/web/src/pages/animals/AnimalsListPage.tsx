@@ -121,11 +121,11 @@ export function AnimalsListPage() {
           aria-label={t('animals.status')}
         >
           <option value="">{t('animals.anyStatus')}</option>
-          {ANIMAL_STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {ANIMAL_STATUS_LABEL[s]}
-            </option>
-          ))}
+              {ANIMAL_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {t(`enum.animalStatus.${s}`, { defaultValue: ANIMAL_STATUS_LABEL[s] })}
+                </option>
+              ))}
         </select>
       </div>
 
@@ -144,7 +144,9 @@ export function AnimalsListPage() {
                   <div className="animal-card-status">
                     <StatusChip
                       status={row.status}
-                      label={ANIMAL_STATUS_LABEL[row.status]}
+                      label={t(`enum.animalStatus.${row.status}`, {
+                        defaultValue: ANIMAL_STATUS_LABEL[row.status],
+                      })}
                     />
                   </div>
                 </div>

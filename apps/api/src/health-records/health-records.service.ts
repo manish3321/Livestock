@@ -22,6 +22,14 @@ export interface HealthRecordDto {
   animalName: string | null;
   herdBatchName: string | null;
   cost: number | null;
+  medicine: string | null;
+  dosage: string | null;
+  method: string | null;
+  vetName: string | null;
+  outcome: string | null;
+  followUpAt: string | null;
+  cmtResult: string | null;
+  milkWithholdUntil: string | null;
   performedAt: string;
   nextDueAt: string | null;
   notes: string | null;
@@ -84,6 +92,28 @@ export class HealthRecordsService {
     };
   }
 
+  async calendar(
+    user: RequestUser,
+    query: import('@farm/contracts').HealthCalendarQuery,
+  ): Promise<HealthRecordDto[]> {
+    const now = new Date();
+    const from = query.from ?? now;
+    const to = query.to ?? new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
+    const rows = await this.prisma.healthRecord.findMany({
+      where: {
+        farmId: user.farmId,
+        nextDueAt: { gte: from, lte: to },
+      },
+      include: {
+        animal: { select: { tag: true, name: true } },
+        herdBatch: { select: { name: true } },
+      },
+      orderBy: { nextDueAt: 'asc' },
+      take: 200,
+    });
+    return rows.map(toDto);
+  }
+
   async get(user: RequestUser, id: string): Promise<HealthRecordDto> {
     const row = await this.prisma.healthRecord.findFirst({
       where: { id, farmId: user.farmId },
@@ -124,6 +154,14 @@ export class HealthRecordsService {
         groupId: input.groupId,
         herdBatchId: input.herdBatchId,
         cost: input.cost,
+        medicine: input.medicine,
+        dosage: input.dosage,
+        method: input.method,
+        vetName: input.vetName,
+        outcome: input.outcome,
+        followUpAt: input.followUpAt,
+        cmtResult: input.cmtResult,
+        milkWithholdUntil: input.milkWithholdUntil,
         performedAt: input.performedAt,
         nextDueAt,
         notes: input.notes,
@@ -165,6 +203,16 @@ export class HealthRecordsService {
         ...(input.performedAt !== undefined ? { performedAt: input.performedAt } : {}),
         ...(input.nextDueAt !== undefined ? { nextDueAt: input.nextDueAt } : {}),
         ...(input.notes !== undefined ? { notes: input.notes } : {}),
+        ...(input.medicine !== undefined ? { medicine: input.medicine } : {}),
+        ...(input.dosage !== undefined ? { dosage: input.dosage } : {}),
+        ...(input.method !== undefined ? { method: input.method } : {}),
+        ...(input.vetName !== undefined ? { vetName: input.vetName } : {}),
+        ...(input.outcome !== undefined ? { outcome: input.outcome } : {}),
+        ...(input.followUpAt !== undefined ? { followUpAt: input.followUpAt } : {}),
+        ...(input.cmtResult !== undefined ? { cmtResult: input.cmtResult } : {}),
+        ...(input.milkWithholdUntil !== undefined
+          ? { milkWithholdUntil: input.milkWithholdUntil }
+          : {}),
       },
       include: {
         animal: { select: { tag: true, name: true } },
@@ -220,6 +268,14 @@ function toDto(r: HealthWithRelations): HealthRecordDto {
     animalName: r.animal?.name ?? null,
     herdBatchName: r.herdBatch?.name ?? null,
     cost: r.cost != null ? Number(r.cost) : null,
+    medicine: r.medicine,
+    dosage: r.dosage,
+    method: r.method,
+    vetName: r.vetName,
+    outcome: r.outcome,
+    followUpAt: r.followUpAt?.toISOString() ?? null,
+    cmtResult: r.cmtResult,
+    milkWithholdUntil: r.milkWithholdUntil?.toISOString() ?? null,
     performedAt: r.performedAt.toISOString(),
     nextDueAt: r.nextDueAt?.toISOString() ?? null,
     notes: r.notes,

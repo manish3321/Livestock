@@ -15,9 +15,11 @@ import { listAnimals } from '../../api/animals';
 import { listBatches } from '../../api/batches';
 import {
   createExpense,
+  createRecurring,
   generateRecurringMonth,
   listBudgets,
   listExpenses,
+  listRecurring,
   reviewExpense,
   uploadExpenseReceipt,
   upsertBudget,
@@ -27,12 +29,14 @@ import { useAuth } from '../../auth/auth-context';
 import { DataTable, type Column } from '../../components/DataTable';
 import { ErrorState, LoadingState } from '../../components/PageState';
 import { StatusChip } from '../../components/StatusChip';
+import { useFarmMode } from '../../hooks/useFarmMode';
 
 const PAYMENT_OPTIONS = ['UNPAID', 'PAID', 'PARTIAL'] as const;
 
 export function ExpensesPage() {
   const { t } = useTranslation();
   const { can } = useAuth();
+  const { commercial } = useFarmMode();
   const qc = useQueryClient();
   const [searchParams] = useSearchParams();
   const now = new Date();
@@ -48,6 +52,15 @@ export function ExpensesPage() {
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [budgetCategory, setBudgetCategory] = useState<ExpenseCategory>('FEED');
   const [budgetAmount, setBudgetAmount] = useState('');
+  const [splits, setSplits] = useState<Array<{ animalId: string; amount: string }>>([
+    { animalId: '', amount: '' },
+  ]);
+  const [recurringForm, setRecurringForm] = useState({
+    category: 'FEED' as ExpenseCategory,
+    amount: '',
+    description: '',
+    dayOfMonth: 1,
+  });
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -83,6 +96,11 @@ export function ExpensesPage() {
     queryFn: () => listBudgets(year, month),
   });
 
+  const recurringQ = useQuery({
+    queryKey: ['expenses', 'recurring'],
+    queryFn: listRecurring,
+  });
+
   const approvedByCategory = useMemo(() => {
     const map = new Map<string, number>();
     for (const row of query.data?.items ?? []) {
@@ -98,6 +116,7 @@ export function ExpensesPage() {
     mutationFn: async () => {
       const created = await createExpense({
         category: form.category!,
+        subcategory: form.subcategory,
         amount: Number(form.amount),
         expenseDate: form.expenseDate ?? new Date(),
         description: form.description!,
@@ -107,6 +126,11 @@ export function ExpensesPage() {
         paymentStatus: form.paymentStatus ?? 'UNPAID',
         animalId: form.animalId || undefined,
         herdBatchId: form.herdBatchId || undefined,
+        allocations: commercial
+          ? splits
+              .filter((s) => s.animalId && Number(s.amount) > 0)
+              .map((s) => ({ animalId: s.animalId, amount: Number(s.amount) }))
+          : undefined,
       });
       if (receiptFile) {
         await uploadExpenseReceipt(created.id, receiptFile);
@@ -117,6 +141,7 @@ export function ExpensesPage() {
       setShowForm(false);
       setError(null);
       setReceiptFile(null);
+      setSplits([{ animalId: '', amount: '' }]);
       setForm({ category: 'FEED', expenseDate: new Date(), paymentStatus: 'UNPAID' });
       void qc.invalidateQueries({ queryKey: ['expenses'] });
     },
@@ -140,6 +165,20 @@ export function ExpensesPage() {
     onSuccess: () => {
       setBudgetAmount('');
       void qc.invalidateQueries({ queryKey: ['expenses', 'budgets'] });
+    },
+  });
+
+  const recurringMut = useMutation({
+    mutationFn: () =>
+      createRecurring({
+        category: recurringForm.category,
+        amount: Number(recurringForm.amount),
+        description: recurringForm.description,
+        dayOfMonth: recurringForm.dayOfMonth,
+      }),
+    onSuccess: () => {
+      setRecurringForm({ category: 'FEED', amount: '', description: '', dayOfMonth: 1 });
+      void qc.invalidateQueries({ queryKey: ['expenses', 'recurring'] });
     },
   });
 
@@ -266,6 +305,8 @@ export function ExpensesPage() {
         </div>
       </div>
 
+      {commercial && (
+      <>
       <div className="card" style={{ marginBottom: 24 }}>
         <h2>{t('expenses.budget')}</h2>
         <p className="muted">
@@ -337,6 +378,87 @@ export function ExpensesPage() {
         )}
       </div>
 
+      <div className="card" style={{ marginBottom: 24 }}>
+        <h2>{t('expenses.recurring')}</h2>
+        {(recurringQ.data ?? []).length === 0 ? (
+          <p className="muted">{t('common.empty')}</p>
+        ) : (
+          <ul className="activity-list">
+            {(recurringQ.data ?? []).map((row) => (
+              <li key={row.id}>
+                <div>
+                  <strong>{t(`enum.expenseCategory.${row.category}`)}</strong>
+                  <span className="muted">
+                    {' · '}
+                    {formatNPR(row.amount)} · {t('expenses.dayOfMonth')} {row.dayOfMonth}
+                  </span>
+                </div>
+                <span className="muted">{row.description}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {can('expenses:submit') && (
+          <form
+            className="inline-form"
+            style={{ flexWrap: 'wrap', marginTop: 16 }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!recurringForm.description || !recurringForm.amount) return;
+              recurringMut.mutate();
+            }}
+          >
+            <select
+              value={recurringForm.category}
+              onChange={(e) =>
+                setRecurringForm((f) => ({
+                  ...f,
+                  category: e.target.value as ExpenseCategory,
+                }))
+              }
+            >
+              {EXPENSE_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {t(`enum.expenseCategory.${c}`)}
+                </option>
+              ))}
+            </select>
+            <input
+              type="number"
+              min={0.01}
+              step={0.01}
+              placeholder={t('expenses.amount')}
+              value={recurringForm.amount}
+              onChange={(e) => setRecurringForm((f) => ({ ...f, amount: e.target.value }))}
+              required
+            />
+            <input
+              placeholder={t('expenses.description')}
+              value={recurringForm.description}
+              onChange={(e) =>
+                setRecurringForm((f) => ({ ...f, description: e.target.value }))
+              }
+              required
+            />
+            <input
+              type="number"
+              min={1}
+              max={28}
+              value={recurringForm.dayOfMonth}
+              onChange={(e) =>
+                setRecurringForm((f) => ({ ...f, dayOfMonth: Number(e.target.value) }))
+              }
+              aria-label={t('expenses.dayOfMonth')}
+            />
+            <button className="btn" type="submit" disabled={recurringMut.isPending}>
+              {t('expenses.addRecurring')}
+            </button>
+          </form>
+        )}
+      </div>
+      </>
+      )}
+
       <div className="toolbar">
         <div className="chip-row">
           <button
@@ -376,11 +498,23 @@ export function ExpensesPage() {
               >
                 {EXPENSE_CATEGORIES.map((c) => (
                   <option key={c} value={c}>
-                    {c}
+                    {t(`enum.expenseCategory.${c}`)}
                   </option>
                 ))}
               </select>
             </div>
+            {commercial && (
+              <div className="field">
+                <label htmlFor="exp-sub">{t('expenses.subcategory')}</label>
+                <input
+                  id="exp-sub"
+                  value={form.subcategory ?? ''}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, subcategory: e.target.value || undefined }))
+                  }
+                />
+              </div>
+            )}
             <div className="field">
               <label htmlFor="exp-amount">{t('expenses.amount')}</label>
               <input
@@ -525,6 +659,49 @@ export function ExpensesPage() {
               />
             </div>
           </div>
+          {commercial && (
+          <div className="field">
+            <label>{t('expenses.split')}</label>
+            {splits.map((row, idx) => (
+              <div key={idx} className="inline-form" style={{ marginBottom: 8 }}>
+                <select
+                  value={row.animalId}
+                  onChange={(e) =>
+                    setSplits((prev) =>
+                      prev.map((s, i) => (i === idx ? { ...s, animalId: e.target.value } : s)),
+                    )
+                  }
+                >
+                  <option value="">{t('expenses.selectAnimal')}</option>
+                  {(animalsQ.data?.items ?? []).map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.tag}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder={t('expenses.amount')}
+                  value={row.amount}
+                  onChange={(e) =>
+                    setSplits((prev) =>
+                      prev.map((s, i) => (i === idx ? { ...s, amount: e.target.value } : s)),
+                    )
+                  }
+                />
+              </div>
+            ))}
+            <button
+              className="btn secondary"
+              type="button"
+              onClick={() => setSplits((prev) => [...prev, { animalId: '', amount: '' }])}
+            >
+              {t('expenses.addSplit')}
+            </button>
+          </div>
+          )}
           <div className="field">
             <label htmlFor="exp-desc">{t('expenses.description')}</label>
             <textarea

@@ -12,8 +12,17 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { healthCreateSchema, healthListQuerySchema } from '@farm/contracts';
-import type { HealthCreate, HealthListQuery, PageResult } from '@farm/contracts';
+import {
+  healthCalendarQuerySchema,
+  healthCreateSchema,
+  healthListQuerySchema,
+} from '@farm/contracts';
+import type {
+  HealthCalendarQuery,
+  HealthCreate,
+  HealthListQuery,
+  PageResult,
+} from '@farm/contracts';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/types';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
@@ -32,6 +41,16 @@ export class HealthRecordsController {
     @Query(new ZodValidationPipe(healthListQuerySchema)) query: HealthListQuery,
   ): Promise<PageResult<HealthRecordDto>> {
     return this.health.list(user, query);
+  }
+
+  @Get('calendar')
+  @RequirePermissions('health:read')
+  @ApiOperation({ summary: 'Preventive calendar — due health events in a date range' })
+  calendar(
+    @CurrentUser() user: RequestUser,
+    @Query(new ZodValidationPipe(healthCalendarQuerySchema)) query: HealthCalendarQuery,
+  ): Promise<HealthRecordDto[]> {
+    return this.health.calendar(user, query);
   }
 
   @Get(':id')

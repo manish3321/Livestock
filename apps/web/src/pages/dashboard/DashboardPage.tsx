@@ -34,10 +34,12 @@ import { getDashboardSummary } from '../../api/dashboard';
 import { ModuleIcon } from '../../components/ModuleIcon';
 import { ErrorState, LoadingState } from '../../components/PageState';
 import { StatusChip } from '../../components/StatusChip';
+import { useFarmMode } from '../../hooks/useFarmMode';
 
 export function DashboardPage() {
   const { t, i18n } = useTranslation();
   const { user, can } = useAuth();
+  const { household, commercial } = useFarmMode();
   const showFinance = can('finance:read');
 
   const query = useQuery({
@@ -82,7 +84,7 @@ export function DashboardPage() {
   const urgentCount =
     alerts.healthOverdue.length + alerts.inventoryCritical.length;
   const shortcuts = (user ? modulesForRole(user.role) : []).filter(
-    (m) => m !== 'dashboard',
+    (m) => m !== 'dashboard' && !(household && (m === 'pnl' || m === 'reports')),
   );
 
   return (
@@ -95,28 +97,30 @@ export function DashboardPage() {
         <p className="greeting-date">{todayLabel}</p>
       </div>
 
-      <section
-        className="weather-strip rise-in rise-in-delay-1"
-        aria-label={t('dashboard.weather')}
-      >
-        <div>
-          <div className="weather-temp">+24°C</div>
-          <div style={{ fontWeight: 700, marginTop: 8, fontSize: '1.05rem' }}>
-            {t('dashboard.farmWeather')} — {user?.farmName ?? 'Farm'}
+      {commercial && (
+        <section
+          className="weather-strip rise-in rise-in-delay-1"
+          aria-label={t('dashboard.weather')}
+        >
+          <div>
+            <div className="weather-temp">+24°C</div>
+            <div style={{ fontWeight: 700, marginTop: 8, fontSize: '1.05rem' }}>
+              {t('dashboard.farmWeather')} — {user?.farmName ?? 'Farm'}
+            </div>
           </div>
-        </div>
-        <div className="weather-meta">
-          <span>
-            {t('dashboard.humidity')}: <strong>62%</strong>
-          </span>
-          <span>
-            {t('dashboard.wind')}: <strong>8 m/s</strong>
-          </span>
-          <span>
-            {t('dashboard.location')}: <strong>Nepal</strong>
-          </span>
-        </div>
-      </section>
+          <div className="weather-meta">
+            <span>
+              {t('dashboard.humidity')}: <strong>62%</strong>
+            </span>
+            <span>
+              {t('dashboard.wind')}: <strong>8 m/s</strong>
+            </span>
+            <span>
+              {t('dashboard.location')}: <strong>Nepal</strong>
+            </span>
+          </div>
+        </section>
+      )}
 
       <div className="section-block rise-in rise-in-delay-2">
         <div className="section-head">
@@ -135,7 +139,46 @@ export function DashboardPage() {
             </Link>
           ))}
         </div>
+        <div className="page-actions" style={{ marginTop: 16 }}>
+          {can('production:write') && (
+            <Link className="btn" to="/production">
+              {t('dashboard.quickAddProduction')}
+            </Link>
+          )}
+          {can('feed:write') && (
+            <Link className="btn secondary" to="/feed">
+              {t('dashboard.quickAddFeed')}
+            </Link>
+          )}
+          {can('health:write') && (
+            <Link className="btn secondary" to="/health">
+              {t('dashboard.quickAddHealth')}
+            </Link>
+          )}
+          {can('expenses:submit') && (
+            <Link className="btn secondary" to="/expenses">
+              {t('dashboard.quickAddExpense')}
+            </Link>
+          )}
+        </div>
       </div>
+
+      {data.yesterdayProduction && (
+        <div className="stats-grid" style={{ marginBottom: 24 }}>
+          <div className="stat-card">
+            <span className="stat-label">{t('dashboard.yesterdayMilk')}</span>
+            <span className="stat-value">{data.yesterdayProduction.milkLiters} L</span>
+          </div>
+          <div className="stat-card">
+            <span className="stat-label">{t('dashboard.yesterdayEggs')}</span>
+            <span className="stat-value">{data.yesterdayProduction.eggCount}</span>
+          </div>
+          <div className="stat-card">
+            <span className="stat-label">{t('dashboard.yesterdayFish')}</span>
+            <span className="stat-value">{data.yesterdayProduction.fishKg} kg</span>
+          </div>
+        </div>
+      )}
 
       {urgentCount > 0 && (
         <Link to="/health" className="urgent-banner">
@@ -183,7 +226,7 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {showFinance && data.financeTrend && data.financeTrend.length > 0 && (
+      {commercial && showFinance && data.financeTrend && data.financeTrend.length > 0 && (
         <div className="card section-block">
           <div className="section-head">
             <div>
@@ -196,6 +239,7 @@ export function DashboardPage() {
       )}
 
       <div className="detail-grid section-block">
+        {!household && (
         <div className="card">
           <div className="section-head">
             <div>
@@ -226,6 +270,7 @@ export function DashboardPage() {
             </ul>
           )}
         </div>
+        )}
 
         <div className="card">
           <div className="section-head">
@@ -247,12 +292,14 @@ export function DashboardPage() {
               items={alerts.inventoryCritical}
               status="CRITICAL"
             />
-            <AlertBlock
-              title={t('dashboard.pendingApprovals')}
-              count={alerts.pendingApprovals.length}
-              items={alerts.pendingApprovals}
-              status="PENDING"
-            />
+            {commercial && (
+              <AlertBlock
+                title={t('dashboard.pendingApprovals')}
+                count={alerts.pendingApprovals.length}
+                items={alerts.pendingApprovals}
+                status="PENDING"
+              />
+            )}
             <AlertBlock
               title={t('dashboard.inventoryExpiring')}
               count={(alerts.inventoryExpiring ?? []).length}
@@ -267,10 +314,23 @@ export function DashboardPage() {
                 status="PENDING"
               />
             )}
+            <AlertBlock
+              title={t('dashboard.dueCalving')}
+              count={(alerts.dueCalving ?? []).length}
+              items={alerts.dueCalving ?? []}
+              status="PREGNANT"
+            />
+            <AlertBlock
+              title={t('dashboard.vaccineToday')}
+              count={(alerts.vaccineToday ?? []).length}
+              items={alerts.vaccineToday ?? []}
+              status="QUARANTINE"
+            />
           </div>
         </div>
       </div>
 
+      {commercial && (
       <div className="card section-block">
         <div className="section-head">
           <div>
@@ -294,6 +354,7 @@ export function DashboardPage() {
           </ul>
         )}
       </div>
+      )}
     </div>
   );
 }
@@ -303,6 +364,7 @@ function FinanceTrendChart({
 }: {
   data: Array<{ month: string; revenue: number; expenses: number }>;
 }) {
+  const { t } = useTranslation();
   const max = Math.max(1, ...data.flatMap((d) => [d.revenue, d.expenses]));
   const w = 560;
   const h = 160;
@@ -355,8 +417,8 @@ function FinanceTrendChart({
         ))}
       </svg>
       <div className="trend-legend">
-        <span className="trend-legend-rev">Revenue</span>
-        <span className="trend-legend-exp">Expenses</span>
+        <span className="trend-legend-rev">{t('dashboard.revenue')}</span>
+        <span className="trend-legend-exp">{t('dashboard.expenses')}</span>
       </div>
     </div>
   );

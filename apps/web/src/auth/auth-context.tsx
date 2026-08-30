@@ -17,20 +17,49 @@ interface AuthContextValue {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  refreshUser: () => Promise<void>;
+  patchUser: (partial: Partial<AuthUser>) => void;
   can: (permission: Permission) => boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function persistUser(next: AuthUser | null) {
+  if (next) localStorage.setItem(USER_KEY, JSON.stringify(next));
+  else localStorage.removeItem(USER_KEY);
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const applyUser = useCallback((next: AuthUser | null) => {
+    setUser(next);
+    persistUser(next);
+  }, []);
+
+  const refreshUser = useCallback(async () => {
+    if (!apiClient.getAccessToken()) return;
+    try {
+      const me = await apiClient.api<AuthUser>('/v1/auth/me');
+      applyUser({
+        ...me,
+        farmMode: me.farmMode === 'COMMERCIAL' ? 'COMMERCIAL' : 'HOUSEHOLD',
+      });
+    } catch {
+      /* keep cached user if refresh fails */
+    }
+  }, [applyUser]);
 
   useEffect(() => {
     const stored = localStorage.getItem(USER_KEY);
     if (stored && apiClient.getAccessToken()) {
       try {
-        setUser(JSON.parse(stored) as AuthUser);
+        const parsed = JSON.parse(stored) as AuthUser;
+        setUser({
+          ...parsed,
+          farmMode: parsed.farmMode === 'COMMERCIAL' ? 'COMMERCIAL' : 'HOUSEHOLD',
+        });
       } catch {
         localStorage.removeItem(USER_KEY);
       }
@@ -38,16 +67,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(false);
   }, []);
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    const response = await apiClient.login(email, password);
-    localStorage.setItem(USER_KEY, JSON.stringify(response.user));
-    setUser(response.user);
-  }, []);
+  useEffect(() => {
+    if (!loading && apiClient.getAccessToken()) {
+      void refreshUser();
+    }
+  }, [loading, refreshUser]);
+
+  const signIn = useCallback(
+    async (email: string, password: string) => {
+      const response = await apiClient.login(email, password);
+      applyUser({
+        ...response.user,
+        farmMode: response.user.farmMode === 'COMMERCIAL' ? 'COMMERCIAL' : 'HOUSEHOLD',
+      });
+    },
+    [applyUser],
+  );
 
   const signOut = useCallback(async () => {
     await apiClient.logout();
-    localStorage.removeItem(USER_KEY);
-    setUser(null);
+    applyUser(null);
+  }, [applyUser]);
+
+  const patchUser = useCallback((partial: Partial<AuthUser>) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...partial };
+      persistUser(next);
+      return next;
+    });
   }, []);
 
   const can = useCallback(
@@ -57,8 +105,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ user, loading, signIn, signOut, can }),
-    [user, loading, signIn, signOut, can],
+    () => ({ user, loading, signIn, signOut, refreshUser, patchUser, can }),
+    [user, loading, signIn, signOut, refreshUser, patchUser, can],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

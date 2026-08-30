@@ -21,13 +21,17 @@ import {
 import { useAuth } from '../../auth/auth-context';
 import { ErrorState, LoadingState } from '../../components/PageState';
 import { StatusChip } from '../../components/StatusChip';
+import { useFarmMode } from '../../hooks/useFarmMode';
 import {
   addWeight,
   createAnimal,
   deleteAnimal,
   getAnimal,
   getAnimalEconomics,
+  getAnimalProductionStats,
+  listAnimals,
   updateAnimal,
+  uploadAnimalPhoto,
 } from '../../api/animals';
 import { listBreeding } from '../../api/breeding';
 import { QrPrintCard } from '../../components/QrPrintCard';
@@ -37,9 +41,11 @@ export function AnimalDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { t } = useTranslation();
   const { can } = useAuth();
+  const { commercial } = useFarmMode();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [weightKg, setWeightKg] = useState('');
+  const [bcs, setBcs] = useState('');
   const [weightError, setWeightError] = useState(false);
 
   const query = useQuery({
@@ -60,11 +66,29 @@ export function AnimalDetailPage() {
     enabled: Boolean(id) && can('breeding:read'),
   });
 
+  const statsQ = useQuery({
+    queryKey: ['animal', id, 'production-stats'],
+    queryFn: () => getAnimalProductionStats(id!),
+    enabled: Boolean(id),
+  });
+
+  const photoMut = useMutation({
+    mutationFn: (file: File) => uploadAnimalPhoto(id!, file),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['animal', id] });
+    },
+  });
+
   const weightMutation = useMutation({
     mutationFn: () =>
-      addWeight(id!, { weightKg: Number(weightKg), recordedAt: new Date() }),
+      addWeight(id!, {
+        weightKg: Number(weightKg),
+        recordedAt: new Date(),
+        bcs: bcs ? Number(bcs) : undefined,
+      }),
     onSuccess: () => {
       setWeightKg('');
+      setBcs('');
       setWeightError(false);
       void qc.invalidateQueries({ queryKey: ['animal', id] });
       void qc.invalidateQueries({ queryKey: ['animals'] });
@@ -100,7 +124,12 @@ export function AnimalDetailPage() {
                 <span style={{ opacity: 0.9 }}>#{animal.tag}</span>
               </h1>
               <div className="chip-row">
-                <StatusChip status={animal.status} label={ANIMAL_STATUS_LABEL[animal.status]} />
+                <StatusChip
+                  status={animal.status}
+                  label={t(`enum.animalStatus.${animal.status}`, {
+                    defaultValue: ANIMAL_STATUS_LABEL[animal.status],
+                  })}
+                />
                 <span className="meta-pill" style={{ background: 'rgba(255,255,255,0.18)', color: '#fff' }}>
                   {SPECIES_LABEL[animal.species]}
                 </span>
@@ -153,9 +182,41 @@ export function AnimalDetailPage() {
         </div>
       )}
 
+      {statsQ.data && statsQ.data.milkEntryCount > 0 && (
+        <div className="stats-grid" style={{ marginBottom: 24 }}>
+          <div className="stat-card">
+            <span className="stat-label">{t('animals.milkAverage')}</span>
+            <span className="stat-value">{statsQ.data.milkAverage.toFixed(1)} L</span>
+          </div>
+          <div className="stat-card">
+            <span className="stat-label">{t('animals.herdAverage')}</span>
+            <span className="stat-value">{statsQ.data.herdAverage.toFixed(1)} L</span>
+          </div>
+          <div className="stat-card">
+            <span className="stat-label">{t('animals.milkTotal')}</span>
+            <span className="stat-value">{statsQ.data.milkTotalLiters.toFixed(1)} L</span>
+          </div>
+        </div>
+      )}
+
       <div className="detail-grid">
         <div className="card">
           <h2>{t('animals.basicInfo')}</h2>
+          <AnimalPhoto animalId={animal.id} photoUrl={animal.photoUrl} />
+          {can('animals:write') && (
+            <div className="field" style={{ marginTop: 12 }}>
+              <label htmlFor="animal-photo">{t('animals.photo')}</label>
+              <input
+                id="animal-photo"
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) photoMut.mutate(file);
+                }}
+              />
+            </div>
+          )}
           <dl className="info-grid">
             <div>
               <dt>{t('animals.gender')}</dt>
@@ -171,7 +232,15 @@ export function AnimalDetailPage() {
             </div>
             <div>
               <dt>{t('animals.motherTag')}</dt>
-              <dd>{animal.motherTag ?? '—'}</dd>
+              <dd>{animal.damTag ?? animal.motherTag ?? '—'}</dd>
+            </div>
+            <div>
+              <dt>{t('animals.sireTag')}</dt>
+              <dd>{animal.sireTag ?? '—'}</dd>
+            </div>
+            <div>
+              <dt>{t('animals.shed')}</dt>
+              <dd>{animal.shed ?? '—'}</dd>
             </div>
             <div>
               <dt>{t('animals.dateOfBirth')}</dt>
@@ -234,6 +303,16 @@ export function AnimalDetailPage() {
                 value={weightKg}
                 onChange={(e) => setWeightKg(e.target.value)}
               />
+              {commercial && (
+                <input
+                  type="number"
+                  min="1"
+                  max="5"
+                  placeholder={t('animals.bcs')}
+                  value={bcs}
+                  onChange={(e) => setBcs(e.target.value)}
+                />
+              )}
               <button className="btn" type="submit" disabled={weightMutation.isPending}>
                 {t('animals.addWeight')}
               </button>
@@ -248,6 +327,7 @@ export function AnimalDetailPage() {
                 <tr>
                   <th>{t('animals.date')}</th>
                   <th>{t('animals.weight')}</th>
+                  {commercial && <th>{t('animals.bcs')}</th>}
                   <th>{t('animals.notes')}</th>
                 </tr>
               </thead>
@@ -256,6 +336,7 @@ export function AnimalDetailPage() {
                   <tr key={w.id}>
                     <td>{formatDate(w.recordedAt)}</td>
                     <td>{w.weightKg} kg</td>
+                    {commercial && <td>{w.bcs ?? '—'}</td>}
                     <td>{w.notes ?? '—'}</td>
                   </tr>
                 ))}
@@ -337,6 +418,32 @@ export function AnimalDetailPage() {
             </p>
           </div>
         )}
+
+        {statsQ.data && statsQ.data.last30Days.length > 0 && (
+          <div className="card">
+            <h2>{t('animals.lactationTrend')}</h2>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>{t('common.date')}</th>
+                  <th>{t('production.quantity')}</th>
+                  <th>{t('production.fatPercent')}</th>
+                  <th>{t('production.scc')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {statsQ.data.last30Days.map((row) => (
+                  <tr key={row.date}>
+                    <td>{formatDate(row.date)}</td>
+                    <td>{row.quantity}</td>
+                    <td>{row.fatPercent ?? '—'}</td>
+                    <td>{row.scc ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -345,6 +452,7 @@ export function AnimalDetailPage() {
 export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
   const { id } = useParams<{ id: string }>();
   const { t } = useTranslation();
+  const { commercial } = useFarmMode();
   const navigate = useNavigate();
   const qc = useQueryClient();
 
@@ -381,12 +489,20 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
         purchaseCost: a.purchaseCost ?? undefined,
         dateOfBirth: a.dateOfBirth ? new Date(a.dateOfBirth) : undefined,
         purchaseDate: a.purchaseDate ? new Date(a.purchaseDate) : undefined,
+        shed: a.shed ?? undefined,
+        damId: a.damId ?? undefined,
+        sireId: a.sireId ?? undefined,
       });
     }
   }, [mode, existing.data]);
 
   const species = (form.species ?? 'BUFFALO') as Species;
   const tagPrefix = SPECIES_TAG_PREFIX[species];
+
+  const parents = useQuery({
+    queryKey: ['animals', 'parents'],
+    queryFn: () => listAnimals({ pageSize: 200 }),
+  });
 
   const save = useMutation({
     mutationFn: async () => {
@@ -406,6 +522,9 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
         dateOfBirth: form.dateOfBirth,
         purchaseDate: form.purchaseDate,
         initialWeightKg: form.initialWeightKg,
+        shed: form.shed,
+        damId: form.damId,
+        sireId: form.sireId,
       };
       if (mode === 'create') return createAnimal(payload);
       return updateAnimal(id!, payload);
@@ -519,7 +638,7 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
             >
               {ANIMAL_STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {ANIMAL_STATUS_LABEL[s]}
+                  {t(`enum.animalStatus.${s}`, { defaultValue: ANIMAL_STATUS_LABEL[s] })}
                 </option>
               ))}
             </select>
@@ -555,6 +674,80 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
               id="motherTag"
               value={form.motherTag ?? ''}
               onChange={(e) => set('motherTag', e.target.value || undefined)}
+            />
+          </div>
+          {commercial && (
+            <>
+              <div className="field">
+                <label htmlFor="damId">{t('animals.dam')}</label>
+                <select
+                  id="damId"
+                  value={form.damId ?? ''}
+                  onChange={(e) =>
+                    set('damId', (e.target.value || undefined) as AnimalCreate['damId'])
+                  }
+                >
+                  <option value="">—</option>
+                  {(parents.data?.items ?? [])
+                    .filter((a) => a.gender === 'FEMALE' && a.id !== id)
+                    .map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.tag}
+                        {a.name ? ` · ${a.name}` : ''}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="sireId">{t('animals.sire')}</label>
+                <select
+                  id="sireId"
+                  value={form.sireId ?? ''}
+                  onChange={(e) =>
+                    set('sireId', (e.target.value || undefined) as AnimalCreate['sireId'])
+                  }
+                >
+                  <option value="">—</option>
+                  {(parents.data?.items ?? [])
+                    .filter((a) => a.gender === 'MALE' && a.id !== id)
+                    .map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.tag}
+                        {a.name ? ` · ${a.name}` : ''}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            </>
+          )}
+          <div className="field">
+            <label htmlFor="shed">{t('animals.shed')}</label>
+            <input
+              id="shed"
+              value={form.shed ?? ''}
+              onChange={(e) => set('shed', e.target.value || undefined)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="dateOfBirth">{t('animals.dateOfBirth')}</label>
+            <input
+              id="dateOfBirth"
+              type="date"
+              value={toDateInput(form.dateOfBirth)}
+              onChange={(e) =>
+                set('dateOfBirth', e.target.value ? new Date(e.target.value) : undefined)
+              }
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="purchaseDate">{t('animals.purchaseDate')}</label>
+            <input
+              id="purchaseDate"
+              type="date"
+              value={toDateInput(form.purchaseDate)}
+              onChange={(e) =>
+                set('purchaseDate', e.target.value ? new Date(e.target.value) : undefined)
+              }
             />
           </div>
           {mode === 'create' && (
@@ -622,5 +815,43 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
         </div>
       </form>
     </div>
+  );
+}
+
+function toDateInput(value: Date | string | undefined): string {
+  if (!value) return '';
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
+}
+
+function AnimalPhoto({ animalId, photoUrl }: { animalId: string; photoUrl: string | null }) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    if (!photoUrl) {
+      setSrc(null);
+      return;
+    }
+    let objectUrl: string | null = null;
+    const token = localStorage.getItem('farm.accessToken');
+    void fetch(`/v1/animals/${animalId}/photo`, {
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+    })
+      .then((r) => (r.ok ? r.blob() : null))
+      .then((blob) => {
+        if (!blob) return;
+        objectUrl = URL.createObjectURL(blob);
+        setSrc(objectUrl);
+      });
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [animalId, photoUrl]);
+  if (!src) return null;
+  return (
+    <img
+      src={src}
+      alt=""
+      style={{ width: 160, height: 160, objectFit: 'cover', borderRadius: 12, marginBottom: 12 }}
+    />
   );
 }

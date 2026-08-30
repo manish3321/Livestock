@@ -4,6 +4,7 @@ import type {
   AnimalDto,
   AnimalEconomicsDto,
   AnimalListQuery,
+  AnimalProductionStatsDto,
   AnimalUpdate,
   PageResult,
   WeightCreate,
@@ -28,6 +29,32 @@ export function getAnimal(id: string): Promise<AnimalDetailDto> {
 
 export function getAnimalEconomics(id: string): Promise<AnimalEconomicsDto> {
   return api(`/v1/animals/${id}/economics`);
+}
+
+export function getAnimalProductionStats(id: string): Promise<AnimalProductionStatsDto> {
+  return api(`/v1/animals/${id}/production-stats`);
+}
+
+export async function uploadAnimalPhoto(id: string, file: File): Promise<AnimalDetailDto> {
+  const token = getAccessToken();
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`/v1/animals/${id}/photo`, {
+    method: 'POST',
+    headers: token ? { authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  if (!res.ok) {
+    let message = res.statusText;
+    try {
+      const err = (await res.json()) as { message?: string };
+      if (err.message) message = err.message;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(message || 'Upload failed');
+  }
+  return (await res.json()) as AnimalDetailDto;
 }
 
 export function createAnimal(body: AnimalCreate): Promise<AnimalDetailDto> {

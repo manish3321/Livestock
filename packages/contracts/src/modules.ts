@@ -98,6 +98,15 @@ export const expenseCreateSchema = z.object({
   paymentStatus: z.enum(['UNPAID', 'PAID', 'PARTIAL']).optional(),
   animalId: z.string().uuid().optional(),
   herdBatchId: z.string().uuid().optional(),
+  subcategory: z.string().max(80).optional(),
+  allocations: z
+    .array(
+      z.object({
+        animalId: z.string().uuid(),
+        amount: z.number().positive(),
+      }),
+    )
+    .optional(),
 });
 export type ExpenseCreate = z.infer<typeof expenseCreateSchema>;
 
@@ -153,6 +162,10 @@ export const revenueCreateSchema = z.object({
   notes: z.string().max(2000).optional(),
   animalId: z.string().uuid().optional(),
   herdBatchId: z.string().uuid().optional(),
+  qualityBonus: z.number().nonnegative().optional(),
+  qualityPenalty: z.number().nonnegative().optional(),
+  deductions: z.number().nonnegative().optional(),
+  deductionNote: z.string().max(500).optional(),
 });
 export type RevenueCreate = z.infer<typeof revenueCreateSchema>;
 export const revenueUpdateSchema = revenueCreateSchema.partial();
@@ -222,6 +235,14 @@ export const healthCreateSchema = z.object({
   groupId: z.string().uuid().optional(),
   herdBatchId: z.string().uuid().optional(),
   cost: z.number().nonnegative().optional(),
+  medicine: z.string().max(120).optional(),
+  dosage: z.string().max(80).optional(),
+  method: z.string().max(80).optional(),
+  vetName: z.string().max(120).optional(),
+  outcome: z.enum(['RECOVERED', 'ONGOING', 'FAILED', 'CULLED']).optional(),
+  followUpAt: z.coerce.date().optional(),
+  cmtResult: z.enum(['NEGATIVE', 'TRACE', 'ONE', 'TWO', 'THREE']).optional(),
+  milkWithholdUntil: z.coerce.date().optional(),
   performedAt: z.coerce.date(),
   nextDueAt: z.coerce.date().optional(),
   notes: z.string().max(2000).optional(),
@@ -244,6 +265,12 @@ export const healthListQuerySchema = z.object({
   due: z.enum(['overdue', 'due_soon', 'all']).default('all'),
 });
 export type HealthListQuery = z.infer<typeof healthListQuerySchema>;
+
+export const healthCalendarQuerySchema = z.object({
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+});
+export type HealthCalendarQuery = z.infer<typeof healthCalendarQuerySchema>;
 
 // ---- Breeding ----
 export const MATING_TYPES = ['NATURAL', 'AI'] as const;
@@ -269,6 +296,11 @@ export const breedingUpdateSchema = z.object({
   pregnancyStatus: z.enum(PREGNANCY_STATUSES).optional(),
   birthDate: z.coerce.date().optional(),
   offspringTag: z.string().max(20).optional(),
+  offspringAnimalId: z.string().uuid().optional(),
+  calvingDifficulty: z.enum(['EASY', 'ASSISTED', 'EMERGENCY', 'STILLBIRTH']).optional(),
+  colostrumFed: z.boolean().optional(),
+  colostrumWithin4h: z.boolean().optional(),
+  colostrumLiters: z.number().nonnegative().optional(),
   notes: z.string().max(2000).optional(),
   fatherTagOrAi: z.string().max(80).optional(),
 });
@@ -296,6 +328,12 @@ export const productionCreateSchema = z.object({
   groupId: z.string().uuid().optional(),
   batchId: z.string().uuid().optional(),
   herdBatchId: z.string().uuid().optional(),
+  milkerName: z.string().max(80).optional(),
+  appearance: z.enum(['NORMAL', 'CLOTS', 'BLOOD', 'DISCOLORED']).optional(),
+  fatPercent: z.number().min(0).max(20).optional(),
+  snfPercent: z.number().min(0).max(20).optional(),
+  scc: z.number().int().min(0).optional(),
+  collectionMethod: z.enum(['HAND', 'MACHINE']).optional(),
   notes: z.string().max(2000).optional(),
 });
 export type ProductionCreate = z.infer<typeof productionCreateSchema>;
@@ -477,3 +515,65 @@ export const farmMemberCreateSchema = z.object({
   password: z.string().min(8).max(128),
 });
 export type FarmMemberCreate = z.infer<typeof farmMemberCreateSchema>;
+
+export const farmMemberUpdateSchema = z.object({
+  role: z.enum(['ADMIN', 'MANAGER', 'WORKER']).optional(),
+  isActive: z.boolean().optional(),
+});
+export type FarmMemberUpdate = z.infer<typeof farmMemberUpdateSchema>;
+
+export const FARM_MODES = ['HOUSEHOLD', 'COMMERCIAL'] as const;
+export type FarmMode = (typeof FARM_MODES)[number];
+
+export const farmUpdateSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  location: z.string().max(200).optional(),
+  currency: z.string().min(1).max(8).optional(),
+  timezone: z.string().max(80).optional(),
+  mode: z.enum(FARM_MODES).optional(),
+});
+export type FarmUpdate = z.infer<typeof farmUpdateSchema>;
+
+export const periodReportQuerySchema = z.object({
+  kind: z.enum(['daily', 'weekly', 'quarterly', 'annual']),
+  date: z.coerce.date().optional(),
+});
+export type PeriodReportQuery = z.infer<typeof periodReportQuerySchema>;
+
+export const feedCreateSchema = z.object({
+  animalId: z.string().uuid().optional(),
+  herdBatchId: z.string().uuid().optional(),
+  feedType: z.string().min(1).max(80),
+  quantityKg: z.number().positive(),
+  costPerKg: z.number().nonnegative().optional(),
+  condition: z.enum(['FRESH', 'FERMENTED', 'DRY']).optional(),
+  accepted: z.boolean().optional(),
+  inventoryItemId: z.string().uuid().optional(),
+  occurredAt: z.coerce.date().default(() => new Date()),
+  notes: z.string().max(500).optional(),
+});
+export type FeedCreate = z.infer<typeof feedCreateSchema>;
+
+export const feedListQuerySchema = pageQuerySchema.extend({
+  animalId: z.string().uuid().optional(),
+  herdBatchId: z.string().uuid().optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+});
+export type FeedListQuery = z.infer<typeof feedListQuerySchema>;
+
+export const heatCreateSchema = z.object({
+  animalId: z.string().uuid(),
+  observedAt: z.coerce.date().default(() => new Date()),
+  intensity: z.enum(['WEAK', 'MEDIUM', 'STRONG']),
+  observerName: z.string().max(80).optional(),
+  signs: z.string().max(500).optional(),
+  notes: z.string().max(1000).optional(),
+});
+export type HeatCreate = z.infer<typeof heatCreateSchema>;
+
+export const heatListQuerySchema = pageQuerySchema.extend({
+  animalId: z.string().uuid().optional(),
+});
+export type HeatListQuery = z.infer<typeof heatListQuerySchema>;
+

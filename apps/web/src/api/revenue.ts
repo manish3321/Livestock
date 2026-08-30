@@ -16,6 +16,10 @@ export interface RevenueDto {
   unit: string;
   rate: number;
   amount: number;
+  qualityBonus?: number | null;
+  qualityPenalty?: number | null;
+  deductions?: number | null;
+  deductionNote?: string | null;
   revenueDate: string;
   buyerName: string | null;
   buyerContact: string | null;

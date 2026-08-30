@@ -17,6 +17,12 @@ export interface ProductionDto {
   animalTag?: string | null;
   animalName?: string | null;
   herdBatchName?: string | null;
+  milkerName?: string | null;
+  appearance?: string | null;
+  fatPercent?: number | null;
+  snfPercent?: number | null;
+  scc?: number | null;
+  collectionMethod?: string | null;
   notes: string | null;
   createdAt: string;
   updatedAt: string;

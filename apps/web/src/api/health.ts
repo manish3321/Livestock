@@ -14,6 +14,14 @@ export interface HealthRecordDto {
   animalName?: string | null;
   herdBatchName?: string | null;
   cost: number | null;
+  medicine?: string | null;
+  dosage?: string | null;
+  method?: string | null;
+  vetName?: string | null;
+  outcome?: string | null;
+  followUpAt?: string | null;
+  cmtResult?: string | null;
+  milkWithholdUntil?: string | null;
   performedAt: string;
   nextDueAt: string | null;
   notes: string | null;
@@ -29,4 +37,8 @@ export function listHealthRecords(
 
 export function createHealthRecord(body: HealthCreate): Promise<HealthRecordDto> {
   return api('/v1/health-records', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function listHealthCalendar(from?: Date, to?: Date): Promise<HealthRecordDto[]> {
+  return api(`/v1/health-records/calendar${toQuery({ from, to })}`);
 }

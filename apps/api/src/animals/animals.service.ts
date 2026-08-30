@@ -56,6 +56,8 @@ export class AnimalsService {
         take: query.pageSize,
         include: {
           weights: { orderBy: { recordedAt: 'desc' }, take: 1 },
+          dam: { select: { tag: true } },
+          sire: { select: { tag: true } },
         },
       }),
       this.prisma.animal.count({ where }),
@@ -72,7 +74,11 @@ export class AnimalsService {
   async get(user: RequestUser, id: string): Promise<AnimalDetailDto> {
     const animal = await this.prisma.animal.findFirst({
       where: { id, farmId: user.farmId, deletedAt: null },
-      include: { weights: { orderBy: { recordedAt: 'desc' } } },
+      include: {
+        weights: { orderBy: { recordedAt: 'desc' } },
+        dam: { select: { tag: true } },
+        sire: { select: { tag: true } },
+      },
     });
     if (!animal) {
       throw new NotFoundException({ code: 'ANIMAL_NOT_FOUND', message: 'Animal not found' });
@@ -81,6 +87,82 @@ export class AnimalsService {
       ...toDto(animal, animal.weights[0] ?? null),
       weights: animal.weights.map(toWeightDto),
     };
+  }
+
+  async productionStats(
+    user: RequestUser,
+    id: string,
+  ): Promise<import('@farm/contracts').AnimalProductionStatsDto> {
+    await this.requireAnimal(user.farmId, id);
+    const from = new Date();
+    from.setUTCDate(from.getUTCDate() - 30);
+
+    const [mine, herd] = await Promise.all([
+      this.prisma.productionEntry.findMany({
+        where: { farmId: user.farmId, animalId: id, type: 'MILK' },
+        orderBy: { entryDate: 'asc' },
+      }),
+      this.prisma.productionEntry.aggregate({
+        where: { farmId: user.farmId, type: 'MILK', animalId: { not: null } },
+        _avg: { quantity: true },
+      }),
+    ]);
+    const last30 = mine.filter((r) => r.entryDate >= from);
+    const milkTotalLiters = mine.reduce((s, r) => s + Number(r.quantity), 0);
+    return {
+      animalId: id,
+      milkEntryCount: mine.length,
+      milkTotalLiters,
+      milkAverage: mine.length ? milkTotalLiters / mine.length : 0,
+      herdAverage: herd._avg.quantity ? Number(herd._avg.quantity) : 0,
+      last30Days: last30.map((r) => ({
+        date: r.entryDate.toISOString(),
+        quantity: Number(r.quantity),
+        fatPercent: r.fatPercent != null ? Number(r.fatPercent) : null,
+        scc: r.scc,
+      })),
+    };
+  }
+
+  async uploadPhoto(
+    user: RequestUser,
+    id: string,
+    file: { buffer: Buffer; originalname: string; mimetype: string },
+    storage: import('../storage/storage.port').StoragePort,
+    requestId?: string,
+  ) {
+    await this.requireAnimal(user.farmId, id);
+    const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const key = `animals/${user.farmId}/${id}-${safeName}`;
+    await storage.put(key, file.buffer, file.mimetype || 'application/octet-stream');
+    const photoUrl = `/v1/animals/${id}/photo`;
+    await this.prisma.animal.update({
+      where: { id },
+      data: { photoStorageKey: key, photoUrl },
+    });
+    await this.audit.record({
+      farmId: user.farmId,
+      userId: user.id,
+      action: 'animals.photo',
+      entityType: 'animal',
+      entityId: id,
+      metadata: { key },
+      requestId,
+    });
+    return this.get(user, id);
+  }
+
+  async getPhotoBuffer(user: RequestUser, id: string, storage: import('../storage/storage.port').StoragePort) {
+    const animal = await this.requireAnimal(user.farmId, id);
+    if (!animal.photoStorageKey) {
+      throw new NotFoundException({
+        code: 'PHOTO_NOT_FOUND',
+        message: 'No photo uploaded for this animal',
+      });
+    }
+    const buffer = await storage.get(animal.photoStorageKey);
+    const filename = animal.photoStorageKey.split('/').pop() ?? 'photo';
+    return { buffer, filename };
   }
 
   async create(
@@ -116,6 +198,9 @@ export class AnimalsService {
           purchaseCost: data.purchaseCost,
           status: data.status,
           breedingStock: data.breedingStock ?? true,
+          shed: data.shed,
+          damId: data.damId,
+          sireId: data.sireId,
           notes: data.notes,
           version: 1,
         },
@@ -248,6 +333,7 @@ export class AnimalsService {
         farmId: user.farmId,
         animalId,
         weightKg: input.weightKg,
+        bcs: input.bcs,
         recordedAt: input.recordedAt,
         notes: input.notes,
       },
@@ -269,8 +355,13 @@ export class AnimalsService {
   async economics(user: RequestUser, id: string): Promise<AnimalEconomicsDto> {
     const animal = await this.requireAnimal(user.farmId, id);
 
-    const [expenseAgg, revenueAgg, healthAgg] = await Promise.all([
+    const [expenseAgg, allocationAgg, revenueAgg, healthAgg] = await Promise.all([
       this.prisma.expense.aggregate({
+        where: { farmId: user.farmId, animalId: id, allocations: { none: {} } },
+        _sum: { amount: true },
+        _count: true,
+      }),
+      this.prisma.expenseAllocation.aggregate({
         where: { farmId: user.farmId, animalId: id },
         _sum: { amount: true },
         _count: true,
@@ -288,7 +379,9 @@ export class AnimalsService {
     ]);
 
     const purchaseCost = animal.purchaseCost ? Number(animal.purchaseCost) : 0;
-    const expenseTotal = expenseAgg._sum.amount ? Number(expenseAgg._sum.amount) : 0;
+    const expenseTotal =
+      (expenseAgg._sum.amount ? Number(expenseAgg._sum.amount) : 0) +
+      (allocationAgg._sum.amount ? Number(allocationAgg._sum.amount) : 0);
     const healthCostTotal = healthAgg._sum.cost ? Number(healthAgg._sum.cost) : 0;
     const revenueTotal = revenueAgg._sum.amount ? Number(revenueAgg._sum.amount) : 0;
     const investedTotal = purchaseCost + expenseTotal + healthCostTotal;
@@ -307,7 +400,7 @@ export class AnimalsService {
       revenueTotal,
       earnedTotal,
       net: earnedTotal - investedTotal,
-      expenseCount: expenseAgg._count,
+      expenseCount: expenseAgg._count + allocationAgg._count,
       revenueCount: revenueAgg._count,
       healthCount: healthAgg._count,
     };
@@ -373,7 +466,7 @@ export class AnimalsService {
 }
 
 function toDto(
-  animal: Animal,
+  animal: Animal & { dam?: { tag: string } | null; sire?: { tag: string } | null },
   latestWeight: WeightRecord | null,
 ): AnimalDto {
   return {
@@ -392,6 +485,12 @@ function toDto(
     purchaseCost: animal.purchaseCost ? Number(animal.purchaseCost) : null,
     status: animal.status,
     breedingStock: animal.breedingStock,
+    shed: animal.shed,
+    photoUrl: animal.photoUrl,
+    damId: animal.damId,
+    sireId: animal.sireId,
+    damTag: animal.dam?.tag ?? null,
+    sireTag: animal.sire?.tag ?? null,
     notes: animal.notes,
     currentWeightKg: latestWeight ? Number(latestWeight.weightKg) : null,
     version: animal.version,
@@ -406,6 +505,7 @@ function toWeightDto(w: WeightRecord): WeightRecordDto {
     id: w.id,
     animalId: w.animalId,
     weightKg: Number(w.weightKg),
+    bcs: w.bcs,
     recordedAt: w.recordedAt.toISOString(),
     notes: w.notes,
     createdAt: w.createdAt.toISOString(),

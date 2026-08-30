@@ -3,7 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { modulesForRole, type ModuleKey } from '@farm/contracts';
 import { useAuth } from '../auth/auth-context';
 import { ModuleIcon } from '../components/ModuleIcon';
+import { useFarmMode } from '../hooks/useFarmMode';
 import { setLocale } from '../i18n';
+
+/** Modules hidden in household mode (still available when farm is commercial). */
+const HOUSEHOLD_HIDDEN: ReadonlySet<ModuleKey> = new Set(['pnl', 'reports']);
 
 const NAV_GROUPS: { labelKey: string; modules: ModuleKey[] }[] = [
   {
@@ -12,7 +16,7 @@ const NAV_GROUPS: { labelKey: string; modules: ModuleKey[] }[] = [
   },
   {
     labelKey: 'nav.group.farm',
-    modules: ['animals', 'groups', 'fish', 'scan', 'health', 'breeding', 'production', 'inventory'],
+    modules: ['animals', 'groups', 'fish', 'scan', 'health', 'breeding', 'production', 'feed', 'inventory'],
   },
   {
     labelKey: 'nav.group.money',
@@ -44,6 +48,7 @@ function FarmMark() {
 /** Role-aware shell: light pasture sidebar + top bar. */
 export function AppLayout() {
   const { user, signOut, can } = useAuth();
+  const { household } = useFarmMode();
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
 
@@ -68,12 +73,17 @@ export function AppLayout() {
           <FarmMark />
           <div>
             {t('appName')}
-            <span>{user.farmName}</span>
+            <span>
+              {user.farmName}
+              {household ? ` · ${t('admin.modeHousehold')}` : ''}
+            </span>
           </div>
         </div>
 
         {NAV_GROUPS.map((group) => {
-          const items = group.modules.filter((m) => allowed.has(m));
+          const items = group.modules.filter(
+            (m) => allowed.has(m) && !(household && HOUSEHOLD_HIDDEN.has(m)),
+          );
           if (items.length === 0) return null;
           return (
             <div key={group.labelKey} className="nav-group">

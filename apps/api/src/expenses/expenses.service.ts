@@ -24,10 +24,17 @@ import type { RequestUser } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
 import type { StoragePort } from '../storage/storage.port';
 
+export interface ExpenseAllocationDto {
+  animalId: string;
+  animalTag: string | null;
+  amount: number;
+}
+
 export interface ExpenseDto {
   id: string;
   farmId: string;
   category: string;
+  subcategory: string | null;
   amount: number;
   expenseDate: string;
   description: string;
@@ -43,6 +50,7 @@ export interface ExpenseDto {
   reviewNote: string | null;
   animalId: string | null;
   herdBatchId: string | null;
+  allocations: ExpenseAllocationDto[];
   createdAt: string;
   updatedAt: string;
 }
@@ -93,6 +101,9 @@ export class ExpensesService {
     const [rows, total] = await Promise.all([
       this.prisma.expense.findMany({
         where,
+        include: {
+          allocations: { include: { animal: { select: { tag: true } } } },
+        },
         orderBy: { expenseDate: 'desc' },
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
@@ -114,11 +125,22 @@ export class ExpensesService {
   ): Promise<ExpenseDto> {
     const threshold = EXPENSE_ESCALATION_THRESHOLDS[input.category];
     const status = input.amount > threshold ? 'ESCALATED' : 'PENDING';
+    const allocations = input.allocations ?? [];
+    if (allocations.length > 0) {
+      const sum = allocations.reduce((s, a) => s + a.amount, 0);
+      if (Math.abs(sum - input.amount) > 0.05) {
+        throw new BadRequestException({
+          code: 'ALLOCATION_SUM_MISMATCH',
+          message: 'Split amounts must add up to the expense total',
+        });
+      }
+    }
 
     const expense = await this.prisma.expense.create({
       data: {
         farmId: user.farmId,
         category: input.category,
+        subcategory: input.subcategory,
         amount: input.amount,
         expenseDate: input.expenseDate,
         description: input.description,
@@ -130,6 +152,19 @@ export class ExpensesService {
         submittedById: user.id,
         animalId: input.animalId,
         herdBatchId: input.herdBatchId,
+        allocations:
+          allocations.length > 0
+            ? {
+                create: allocations.map((a) => ({
+                  farmId: user.farmId,
+                  animalId: a.animalId,
+                  amount: a.amount,
+                })),
+              }
+            : undefined,
+      },
+      include: {
+        allocations: { include: { animal: { select: { tag: true } } } },
       },
     });
 
@@ -194,6 +229,9 @@ export class ExpensesService {
         reviewedAt: new Date(),
         reviewNote: input.reviewNote,
       },
+      include: {
+        allocations: { include: { animal: { select: { tag: true } } } },
+      },
     });
 
     await this.audit.record({
@@ -227,6 +265,9 @@ export class ExpensesService {
       data: {
         receiptStorageKey: key,
         receiptUrl,
+      },
+      include: {
+        allocations: { include: { animal: { select: { tag: true } } } },
       },
     });
 
@@ -394,6 +435,9 @@ export class ExpensesService {
             status,
             submittedById: user.id,
           },
+          include: {
+            allocations: { include: { animal: { select: { tag: true } } } },
+          },
         });
         await tx.recurringExpense.update({
           where: { id: tpl.id },
@@ -431,11 +475,20 @@ export class ExpensesService {
   }
 }
 
-function toDto(e: Expense): ExpenseDto {
+type ExpenseWithAllocations = Expense & {
+  allocations?: Array<{
+    animalId: string;
+    amount: unknown;
+    animal?: { tag: string } | null;
+  }>;
+};
+
+function toDto(e: ExpenseWithAllocations): ExpenseDto {
   return {
     id: e.id,
     farmId: e.farmId,
     category: e.category,
+    subcategory: e.subcategory,
     amount: Number(e.amount),
     expenseDate: e.expenseDate.toISOString(),
     description: e.description,
@@ -451,6 +504,11 @@ function toDto(e: Expense): ExpenseDto {
     reviewNote: e.reviewNote,
     animalId: e.animalId,
     herdBatchId: e.herdBatchId,
+    allocations: (e.allocations ?? []).map((a) => ({
+      animalId: a.animalId,
+      animalTag: a.animal?.tag ?? null,
+      amount: Number(a.amount),
+    })),
     createdAt: e.createdAt.toISOString(),
     updatedAt: e.updatedAt.toISOString(),
   };

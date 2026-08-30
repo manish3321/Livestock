@@ -24,7 +24,17 @@ export const SPECIES_LABEL: Record<Species, string> = {
   GOAT: 'Goat',
 };
 
-export const ANIMAL_STATUSES = ['ACTIVE', 'PREGNANT', 'SICK', 'QUARANTINE'] as const;
+export const ANIMAL_STATUSES = [
+  'ACTIVE',
+  'PREGNANT',
+  'SICK',
+  'QUARANTINE',
+  'DRY',
+  'LACTATING',
+  'CULLED',
+  'SOLD',
+  'DEAD',
+] as const;
 export type AnimalStatus = (typeof ANIMAL_STATUSES)[number];
 
 export const ANIMAL_STATUS_LABEL: Record<AnimalStatus, string> = {
@@ -32,6 +42,11 @@ export const ANIMAL_STATUS_LABEL: Record<AnimalStatus, string> = {
   PREGNANT: 'Pregnant',
   SICK: 'Sick',
   QUARANTINE: 'Quarantine',
+  DRY: 'Dry',
+  LACTATING: 'Lactating',
+  CULLED: 'Culled',
+  SOLD: 'Sold',
+  DEAD: 'Dead',
 };
 
 export const GENDERS = ['FEMALE', 'MALE'] as const;
@@ -57,6 +72,9 @@ export const animalCreateSchema = z.object({
   status: z.enum(ANIMAL_STATUSES).default('ACTIVE'),
   /** When true, animal can be used as a breeding parent. */
   breedingStock: z.boolean().optional(),
+  shed: z.string().max(80).optional(),
+  damId: z.string().uuid().optional(),
+  sireId: z.string().uuid().optional(),
   notes: z.string().max(2000).optional(),
 });
 export type AnimalCreate = z.infer<typeof animalCreateSchema>;
@@ -84,6 +102,7 @@ export interface WeightRecordDto {
   id: string;
   animalId: string;
   weightKg: number;
+  bcs: number | null;
   recordedAt: string;
   notes: string | null;
   createdAt: string;
@@ -105,6 +124,12 @@ export interface AnimalDto {
   purchaseCost: number | null;
   status: AnimalStatus;
   breedingStock: boolean;
+  shed: string | null;
+  photoUrl: string | null;
+  damId: string | null;
+  sireId: string | null;
+  damTag: string | null;
+  sireTag: string | null;
   notes: string | null;
   /** Latest weight from history, if any. */
   currentWeightKg: number | null;
@@ -116,6 +141,15 @@ export interface AnimalDto {
 
 export interface AnimalDetailDto extends AnimalDto {
   weights: WeightRecordDto[];
+}
+
+export interface AnimalProductionStatsDto {
+  animalId: string;
+  milkEntryCount: number;
+  milkTotalLiters: number;
+  milkAverage: number;
+  herdAverage: number;
+  last30Days: Array<{ date: string; quantity: number; fatPercent: number | null; scc: number | null }>;
 }
 
 /** Invested vs earned summary for an animal (QR / detail economics). */
@@ -156,6 +190,7 @@ export interface BatchEconomicsDto {
 
 export const weightCreateSchema = z.object({
   weightKg: z.number().positive().max(5000),
+  bcs: z.number().int().min(1).max(5).optional(),
   recordedAt: z.coerce.date().default(() => new Date()),
   notes: z.string().max(500).optional(),
 });

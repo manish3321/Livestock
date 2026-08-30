@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './auth/auth-context';
-import { RequireAuth, RequireModule } from './auth/ProtectedRoute';
+import { RequireAuth, RequireCommercial, RequireModule } from './auth/ProtectedRoute';
 import { AppLayout } from './layout/AppLayout';
 import { ForbiddenPage, NotFoundPage } from './pages/ErrorPages';
 import { LoginPage } from './pages/LoginPage';
@@ -20,6 +20,7 @@ import { InventoryPage } from './pages/inventory/InventoryPage';
 import { HealthPage } from './pages/health/HealthPage';
 import { BreedingPage } from './pages/breeding/BreedingPage';
 import { ProductionPage } from './pages/production/ProductionPage';
+import { FeedPage } from './pages/feed/FeedPage';
 import { AdminAuditPage, AdminMembersPage } from './pages/admin/AdminPages';
 import { ReportsPage } from './pages/reports/ReportsPage';
 import { AnimalScanPage, BatchScanPage } from './pages/scan/ScanPages';
@@ -73,7 +74,9 @@ export function App() {
             </Route>
 
             <Route element={<RequireModule module="pnl" />}>
-              <Route path="/pnl" element={<PnlPage />} />
+              <Route element={<RequireCommercial />}>
+                <Route path="/pnl" element={<PnlPage />} />
+              </Route>
             </Route>
 
             <Route element={<RequireModule module="inventory" />}>
@@ -92,8 +95,14 @@ export function App() {
               <Route path="/production" element={<ProductionPage />} />
             </Route>
 
+            <Route element={<RequireModule module="feed" />}>
+              <Route path="/feed" element={<FeedPage />} />
+            </Route>
+
             <Route element={<RequireModule module="reports" />}>
-              <Route path="/reports" element={<ReportsPage />} />
+              <Route element={<RequireCommercial />}>
+                <Route path="/reports" element={<ReportsPage />} />
+              </Route>
             </Route>
 
             <Route path="/admin/members" element={<AdminMembersPage />} />

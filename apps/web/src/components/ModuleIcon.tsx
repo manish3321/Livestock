@@ -98,6 +98,13 @@ export function ModuleIcon({ module, size = 22 }: { module: ModuleKey; size?: nu
           <path {...stroke} d="M10 17v3M14 17v3" />
         </svg>
       );
+    case 'feed':
+      return (
+        <svg {...props}>
+          <path {...stroke} d="M4 18h16M6 18V9l6-4 6 4v9" />
+          <path {...stroke} d="M9 14h6M10 11h4" />
+        </svg>
+      );
     case 'reports':
       return (
         <svg {...props}>

@@ -294,6 +294,63 @@ export class ReportsService {
     );
     return [header, ...lines].join('\n');
   }
+
+  async periodPack(
+    user: RequestUser,
+    kind: 'daily' | 'weekly' | 'quarterly' | 'annual',
+    date?: Date,
+  ) {
+    const { from, to, label } = periodBounds(kind, date ?? new Date());
+    const [overview, health, production] = await Promise.all([
+      this.farmOverview(user, { from, to }),
+      this.healthSummary(user, { from, to }),
+      this.prisma.productionEntry.groupBy({
+        by: ['type'],
+        where: { farmId: user.farmId, entryDate: { gte: from, lt: to } },
+        _sum: { quantity: true },
+        _count: true,
+      }),
+    ]);
+    return {
+      kind,
+      label,
+      from: from.toISOString(),
+      to: to.toISOString(),
+      overview,
+      health,
+      production: production.map((p) => ({
+        type: p.type,
+        entries: p._count,
+        quantity: Number(p._sum.quantity ?? 0),
+      })),
+    };
+  }
+
+  async periodPackCsv(
+    user: RequestUser,
+    kind: 'daily' | 'weekly' | 'quarterly' | 'annual',
+    date?: Date,
+  ): Promise<string> {
+    const pack = await this.periodPack(user, kind, date);
+    const finance = pack.overview.finance as {
+      totalRevenue: number;
+      totalExpenses: number;
+      netProfit: number;
+    };
+    const lines = [
+      ['kind', pack.kind].join(','),
+      ['label', csv(pack.label)].join(','),
+      ['from', pack.from].join(','),
+      ['to', pack.to].join(','),
+      ['revenue', finance.totalRevenue].join(','),
+      ['expenses', finance.totalExpenses].join(','),
+      ['netProfit', finance.netProfit].join(','),
+      '',
+      'productionType,entries,quantity',
+      ...pack.production.map((p) => [p.type, p.entries, p.quantity].join(',')),
+    ];
+    return lines.join('\n');
+  }
 }
 
 function rangeFilter(query: ReportQuery): { gte?: Date; lte?: Date } | undefined {
@@ -301,6 +358,38 @@ function rangeFilter(query: ReportQuery): { gte?: Date; lte?: Date } | undefined
   return {
     ...(query.from ? { gte: query.from } : {}),
     ...(query.to ? { lte: query.to } : {}),
+  };
+}
+
+function periodBounds(
+  kind: 'daily' | 'weekly' | 'quarterly' | 'annual',
+  date: Date,
+): { from: Date; to: Date; label: string } {
+  const y = date.getUTCFullYear();
+  const m = date.getUTCMonth();
+  const d = date.getUTCDate();
+  if (kind === 'daily') {
+    const from = new Date(Date.UTC(y, m, d));
+    const to = new Date(Date.UTC(y, m, d + 1));
+    return { from, to, label: from.toISOString().slice(0, 10) };
+  }
+  if (kind === 'weekly') {
+    const day = date.getUTCDay();
+    const mondayOffset = day === 0 ? -6 : 1 - day;
+    const from = new Date(Date.UTC(y, m, d + mondayOffset));
+    const to = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate() + 7));
+    return { from, to, label: `Week of ${from.toISOString().slice(0, 10)}` };
+  }
+  if (kind === 'quarterly') {
+    const q = Math.floor(m / 3);
+    const from = new Date(Date.UTC(y, q * 3, 1));
+    const to = new Date(Date.UTC(y, q * 3 + 3, 1));
+    return { from, to, label: `Q${q + 1} ${y}` };
+  }
+  return {
+    from: new Date(Date.UTC(y, 0, 1)),
+    to: new Date(Date.UTC(y + 1, 0, 1)),
+    label: String(y),
   };
 }
 

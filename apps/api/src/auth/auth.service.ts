@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { ROLE_PERMISSIONS } from '@farm/contracts';
-import type { LoginRequest, LoginResponse, Role, TokenPair } from '@farm/contracts';
+import type { AuthUser, LoginRequest, LoginResponse, Role, TokenPair } from '@farm/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { TokenService } from './token.service';
@@ -71,9 +71,27 @@ export class AuthService {
         name: user.name,
         farmId: membership.farmId,
         farmName: membership.farm.name,
+        farmMode: membership.farm.mode === 'COMMERCIAL' ? 'COMMERCIAL' : 'HOUSEHOLD',
         role,
         permissions: [...ROLE_PERMISSIONS[role]],
       },
+    };
+  }
+
+  async me(userId: string, farmId: string, role: Role): Promise<AuthUser> {
+    const [user, farm] = await Promise.all([
+      this.prisma.user.findUniqueOrThrow({ where: { id: userId } }),
+      this.prisma.farm.findUniqueOrThrow({ where: { id: farmId } }),
+    ]);
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      farmId,
+      farmName: farm.name,
+      farmMode: farm.mode === 'COMMERCIAL' ? 'COMMERCIAL' : 'HOUSEHOLD',
+      role,
+      permissions: [...ROLE_PERMISSIONS[role]],
     };
   }
 

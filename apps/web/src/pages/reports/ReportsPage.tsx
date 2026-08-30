@@ -10,9 +10,11 @@ import {
 } from '../../api/batches';
 import {
   downloadAnimalInventoryCsv,
+  downloadPeriodCsv,
   getAnimalInventoryReport,
   getFarmOverview,
   getHealthSummary,
+  getPeriodReport,
   type ReportSummary,
 } from '../../api/reports';
 import { ErrorState, LoadingState } from '../../components/PageState';
@@ -31,6 +33,8 @@ export function ReportsPage() {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [kind, setKind] = useState<HerdBatchKind | 'ALL'>('ALL');
   const [showMonthly, setShowMonthly] = useState(false);
+  const [periodKind, setPeriodKind] = useState<'daily' | 'weekly' | 'quarterly' | 'annual'>('weekly');
+  const [showPeriod, setShowPeriod] = useState(false);
 
   const queryParams = {
     from: from ? new Date(from) : undefined,
@@ -57,6 +61,12 @@ export function ReportsPage() {
     queryKey: ['reports', 'herd-monthly', year, month, kind],
     queryFn: () => getHerdMonthly(monthlyQuery),
     enabled: showMonthly,
+  });
+
+  const period = useQuery({
+    queryKey: ['reports', 'period', periodKind],
+    queryFn: () => getPeriodReport(periodKind),
+    enabled: showPeriod,
   });
 
   const cards: { kind: ReportKind; title: string; body: string }[] = [
@@ -99,6 +109,46 @@ export function ReportsPage() {
               {t('reports.downloadCsv')}
             </button>
           </div>
+        )}
+      </div>
+
+      <div className="card" style={{ marginBottom: 24 }}>
+        <h2>{t('reports.periodPacks')}</h2>
+        <p className="muted">{t('reports.periodPacksBody')}</p>
+        <div className="chip-row" style={{ marginTop: 12 }}>
+          {(['daily', 'weekly', 'quarterly', 'annual'] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              className={`filter-chip ${periodKind === value ? 'active' : ''}`}
+              onClick={() => setPeriodKind(value)}
+            >
+              {t(`reports.period.${value}`)}
+            </button>
+          ))}
+        </div>
+        <div className="page-actions" style={{ marginTop: 12 }}>
+          <button className="btn" type="button" onClick={() => setShowPeriod(true)}>
+            {t('reports.view')}
+          </button>
+          {can('export:data') && (
+            <button
+              className="btn secondary"
+              type="button"
+              onClick={() => void downloadPeriodCsv(periodKind)}
+            >
+              {t('reports.downloadPeriodCsv')}
+            </button>
+          )}
+        </div>
+        {showPeriod && period.isLoading && <LoadingState />}
+        {showPeriod && period.isError && (
+          <ErrorState onRetry={() => void period.refetch()} />
+        )}
+        {period.data && (
+          <pre className="notes" style={{ marginTop: 12 }}>
+            {JSON.stringify(period.data, null, 2)}
+          </pre>
         )}
       </div>
 

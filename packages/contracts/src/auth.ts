@@ -28,6 +28,7 @@ export interface AuthUser {
   name: string;
   farmId: string;
   farmName: string;
+  farmMode: 'HOUSEHOLD' | 'COMMERCIAL';
   role: Role;
   permissions: Permission[];
 }

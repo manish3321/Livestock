@@ -16,6 +16,7 @@ import { useAuth } from '../../auth/auth-context';
 import { DataTable, type Column } from '../../components/DataTable';
 import { ErrorState, LoadingState } from '../../components/PageState';
 import { StatusChip } from '../../components/StatusChip';
+import { useFarmMode } from '../../hooks/useFarmMode';
 import { downloadInvoicePdf } from '../../lib/pdf';
 
 const DEFAULT_UNIT: Record<(typeof REVENUE_SOURCES)[number], string> = {
@@ -28,6 +29,7 @@ const DEFAULT_UNIT: Record<(typeof REVENUE_SOURCES)[number], string> = {
 export function RevenuePage() {
   const { t } = useTranslation();
   const { can } = useAuth();
+  const { commercial } = useFarmMode();
   const qc = useQueryClient();
   const [searchParams] = useSearchParams();
   const [showForm, setShowForm] = useState(false);
@@ -80,6 +82,10 @@ export function RevenuePage() {
         notes: form.notes,
         animalId: form.animalId || undefined,
         herdBatchId: form.herdBatchId || undefined,
+        qualityBonus: form.qualityBonus,
+        qualityPenalty: form.qualityPenalty,
+        deductions: form.deductions,
+        deductionNote: form.deductionNote,
       }),
     onSuccess: () => {
       setShowForm(false);
@@ -285,6 +291,58 @@ export function RevenuePage() {
                 }
               />
             </div>
+            {commercial && (
+              <>
+                <div className="field">
+                  <label htmlFor="rev-bonus">{t('revenue.qualityBonus')}</label>
+                  <input
+                    id="rev-bonus"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.qualityBonus ?? ''}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        qualityBonus: e.target.value ? Number(e.target.value) : undefined,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="rev-pen">{t('revenue.qualityPenalty')}</label>
+                  <input
+                    id="rev-pen"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.qualityPenalty ?? ''}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        qualityPenalty: e.target.value ? Number(e.target.value) : undefined,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="rev-ded">{t('revenue.deductions')}</label>
+                  <input
+                    id="rev-ded"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.deductions ?? ''}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        deductions: e.target.value ? Number(e.target.value) : undefined,
+                      }))
+                    }
+                  />
+                </div>
+              </>
+            )}
             <div className="field">
               <label htmlFor="rev-animal">{t('revenue.animal')}</label>
               <select

@@ -63,12 +63,17 @@ export const color = {
   successSubtle: palette.green100,
 } as const;
 
-/** Animal status chips (Active / Pregnant / Sick / Quarantine). */
+/** Animal status chips. */
 export const animalStatusColor = {
   ACTIVE: { fg: palette.green700, bg: palette.green100 },
   PREGNANT: { fg: palette.purple700, bg: palette.purple100 },
   SICK: { fg: palette.red700, bg: palette.red100 },
   QUARANTINE: { fg: palette.amber700, bg: palette.amber100 },
+  DRY: { fg: palette.amber700, bg: palette.amber100 },
+  LACTATING: { fg: palette.green700, bg: palette.green100 },
+  CULLED: { fg: palette.purple700, bg: palette.purple100 },
+  SOLD: { fg: palette.blue700, bg: palette.blue100 },
+  DEAD: { fg: palette.red700, bg: palette.red100 },
 } as const;
 
 /** Expense approval workflow states. */

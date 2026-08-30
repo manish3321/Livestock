@@ -9,7 +9,7 @@ import {
 
 describe('RBAC permission map', () => {
   it('covers all modules', () => {
-    expect(MODULES).toHaveLength(13);
+    expect(MODULES).toHaveLength(14);
     for (const m of MODULES) {
       expect(MODULE_ACCESS[m].length).toBeGreaterThan(0);
     }

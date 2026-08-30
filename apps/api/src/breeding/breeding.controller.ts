@@ -14,11 +14,15 @@ import {
   breedingCreateSchema,
   breedingListQuerySchema,
   breedingUpdateSchema,
+  heatCreateSchema,
+  heatListQuerySchema,
 } from '@farm/contracts';
 import type {
   BreedingCreate,
   BreedingListQuery,
   BreedingUpdate,
+  HeatCreate,
+  HeatListQuery,
   PageResult,
 } from '@farm/contracts';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
@@ -39,6 +43,27 @@ export class BreedingController {
     @Query(new ZodValidationPipe(breedingListQuerySchema)) query: BreedingListQuery,
   ): Promise<PageResult<BreedingRecordDto>> {
     return this.breeding.list(user, query);
+  }
+
+  @Get('heat')
+  @RequirePermissions('breeding:read')
+  @ApiOperation({ summary: 'List heat / estrus logs' })
+  listHeat(
+    @CurrentUser() user: RequestUser,
+    @Query(new ZodValidationPipe(heatListQuerySchema)) query: HeatListQuery,
+  ) {
+    return this.breeding.listHeat(user, query);
+  }
+
+  @Post('heat')
+  @RequirePermissions('breeding:write')
+  @ApiOperation({ summary: 'Log heat / estrus' })
+  logHeat(
+    @CurrentUser() user: RequestUser,
+    @Body(new ZodValidationPipe(heatCreateSchema)) body: HeatCreate,
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    return this.breeding.logHeat(user, body, requestId);
   }
 
   @Post()

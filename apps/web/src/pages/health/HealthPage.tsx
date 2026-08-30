@@ -11,17 +11,19 @@ import {
 } from '@farm/contracts';
 import { listAnimals } from '../../api/animals';
 import { listBatches } from '../../api/batches';
-import { createHealthRecord, listHealthRecords, type HealthRecordDto } from '../../api/health';
+import { createHealthRecord, listHealthCalendar, listHealthRecords, type HealthRecordDto } from '../../api/health';
 import { useAuth } from '../../auth/auth-context';
 import { DataTable, type Column } from '../../components/DataTable';
 import { ErrorState, LoadingState } from '../../components/PageState';
 import { StatusChip } from '../../components/StatusChip';
+import { useFarmMode } from '../../hooks/useFarmMode';
 
 type DueFilter = HealthListQuery['due'];
 
 export function HealthPage() {
   const { t } = useTranslation();
   const { can } = useAuth();
+  const { commercial } = useFarmMode();
   const qc = useQueryClient();
   const [searchParams] = useSearchParams();
   const [due, setDue] = useState<DueFilter>('all');
@@ -44,6 +46,11 @@ export function HealthPage() {
       }));
     }
   }, [searchParams]);
+
+  const calendarQ = useQuery({
+    queryKey: ['health-records', 'calendar'],
+    queryFn: () => listHealthCalendar(),
+  });
 
   const query = useQuery({
     queryKey: ['health-records', due],
@@ -102,6 +109,14 @@ export function HealthPage() {
         animalId: form.animalId || undefined,
         herdBatchId: form.herdBatchId || undefined,
         cost: form.cost,
+        medicine: form.medicine,
+        dosage: form.dosage,
+        method: form.method,
+        vetName: form.vetName,
+        outcome: form.outcome,
+        followUpAt: form.followUpAt,
+        cmtResult: form.cmtResult,
+        milkWithholdUntil: form.milkWithholdUntil,
         performedAt: form.performedAt ?? new Date(),
         nextDueAt: form.nextDueAt,
         notes: form.notes,
@@ -186,6 +201,29 @@ export function HealthPage() {
           ))}
         </div>
       </div>
+
+      {calendarQ.data && calendarQ.data.length > 0 && (
+        <div className="card" style={{ marginBottom: 24 }}>
+          <h2>{t('health.calendar')}</h2>
+          <ul className="activity-list">
+            {calendarQ.data.slice(0, 12).map((row) => (
+              <li key={row.id}>
+                <div>
+                  <strong>{row.title}</strong>
+                  <span className="muted">
+                    {' · '}
+                    {t(`enum.healthType.${row.type}`, { defaultValue: row.type })}
+                    {row.animalTag ? ` · ${row.animalTag}` : ''}
+                  </span>
+                </div>
+                <span className="muted">
+                  {row.nextDueAt ? formatDate(row.nextDueAt) : '—'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {showForm && (
         <form className="card form-card" onSubmit={onSubmit} style={{ marginBottom: 24 }}>
@@ -301,6 +339,131 @@ export function HealthPage() {
                 }
               />
             </div>
+            <div className="field">
+              <label htmlFor="health-med">{t('health.medicine')}</label>
+              <input
+                id="health-med"
+                value={form.medicine ?? ''}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, medicine: e.target.value || undefined }))
+                }
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="health-dose">{t('health.dosage')}</label>
+              <input
+                id="health-dose"
+                value={form.dosage ?? ''}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, dosage: e.target.value || undefined }))
+                }
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="health-method">{t('health.method')}</label>
+              <input
+                id="health-method"
+                value={form.method ?? ''}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, method: e.target.value || undefined }))
+                }
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="health-vet">{t('health.vetName')}</label>
+              <input
+                id="health-vet"
+                value={form.vetName ?? ''}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, vetName: e.target.value || undefined }))
+                }
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="health-out">{t('health.outcome')}</label>
+              <select
+                id="health-out"
+                value={form.outcome ?? ''}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    outcome: (e.target.value || undefined) as HealthCreate['outcome'],
+                  }))
+                }
+              >
+                <option value="">—</option>
+                {(['RECOVERED', 'ONGOING', 'FAILED', 'CULLED'] as const).map((v) => (
+                  <option key={v} value={v}>
+                    {t(`enum.healthOutcome.${v}`)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {commercial && (
+              <>
+                <div className="field">
+                  <label htmlFor="health-cmt">{t('health.cmtResult')}</label>
+                  <select
+                    id="health-cmt"
+                    value={form.cmtResult ?? ''}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        cmtResult: (e.target.value || undefined) as HealthCreate['cmtResult'],
+                      }))
+                    }
+                  >
+                    <option value="">—</option>
+                    {(['NEGATIVE', 'TRACE', 'ONE', 'TWO', 'THREE'] as const).map((v) => (
+                      <option key={v} value={v}>
+                        {t(`enum.cmt.${v}`)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="health-withhold">{t('health.milkWithholdUntil')}</label>
+                  <input
+                    id="health-withhold"
+                    type="date"
+                    value={toDateInput(form.milkWithholdUntil)}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        milkWithholdUntil: e.target.value
+                          ? new Date(e.target.value)
+                          : undefined,
+                      }))
+                    }
+                  />
+                </div>
+              </>
+            )}
+            <div className="field">
+              <label htmlFor="health-follow">{t('health.followUpAt')}</label>
+              <input
+                id="health-follow"
+                type="date"
+                value={toDateInput(form.followUpAt)}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    followUpAt: e.target.value ? new Date(e.target.value) : undefined,
+                  }))
+                }
+              />
+            </div>
+          </div>
+          <div className="field">
+            <label htmlFor="health-notes">{t('common.notes')}</label>
+            <textarea
+              id="health-notes"
+              rows={2}
+              value={form.notes ?? ''}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, notes: e.target.value || undefined }))
+              }
+            />
           </div>
           {error && <p className="error-text">{error}</p>}
           <div className="page-actions">

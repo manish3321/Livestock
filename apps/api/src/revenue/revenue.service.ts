@@ -18,6 +18,10 @@ export interface RevenueDto {
   unit: string;
   rate: number;
   amount: number;
+  qualityBonus: number | null;
+  qualityPenalty: number | null;
+  deductions: number | null;
+  deductionNote: string | null;
   revenueDate: string;
   buyerName: string | null;
   buyerContact: string | null;
@@ -73,7 +77,13 @@ export class RevenueService {
     input: RevenueCreate,
     requestId?: string,
   ): Promise<RevenueDto> {
-    const amount = input.quantity * input.rate;
+    const amount = settledAmount(
+      input.quantity,
+      input.rate,
+      input.qualityBonus,
+      input.qualityPenalty,
+      input.deductions,
+    );
     const invoiceNumber = await this.nextInvoiceNumber(user.farmId, input.revenueDate);
 
     const row = await this.prisma.revenue.create({
@@ -93,6 +103,10 @@ export class RevenueService {
         notes: input.notes,
         animalId: input.animalId,
         herdBatchId: input.herdBatchId,
+        qualityBonus: input.qualityBonus,
+        qualityPenalty: input.qualityPenalty,
+        deductions: input.deductions,
+        deductionNote: input.deductionNote,
       },
     });
 
@@ -118,10 +132,25 @@ export class RevenueService {
     const current = await this.requireRevenue(user.farmId, id);
     const quantity = input.quantity ?? Number(current.quantity);
     const rate = input.rate ?? Number(current.rate);
-    const amount =
-      input.quantity !== undefined || input.rate !== undefined
-        ? quantity * rate
-        : Number(current.amount);
+    const bonus =
+      input.qualityBonus !== undefined
+        ? input.qualityBonus
+        : current.qualityBonus != null
+          ? Number(current.qualityBonus)
+          : 0;
+    const penalty =
+      input.qualityPenalty !== undefined
+        ? input.qualityPenalty
+        : current.qualityPenalty != null
+          ? Number(current.qualityPenalty)
+          : 0;
+    const deductions =
+      input.deductions !== undefined
+        ? input.deductions
+        : current.deductions != null
+          ? Number(current.deductions)
+          : 0;
+    const amount = settledAmount(quantity, rate, bonus, penalty, deductions);
 
     const row = await this.prisma.revenue.update({
       where: { id },
@@ -141,6 +170,14 @@ export class RevenueService {
         ...(input.notes !== undefined ? { notes: input.notes } : {}),
         ...(input.animalId !== undefined ? { animalId: input.animalId } : {}),
         ...(input.herdBatchId !== undefined ? { herdBatchId: input.herdBatchId } : {}),
+        ...(input.qualityBonus !== undefined ? { qualityBonus: input.qualityBonus } : {}),
+        ...(input.qualityPenalty !== undefined
+          ? { qualityPenalty: input.qualityPenalty }
+          : {}),
+        ...(input.deductions !== undefined ? { deductions: input.deductions } : {}),
+        ...(input.deductionNote !== undefined
+          ? { deductionNote: input.deductionNote }
+          : {}),
       },
     });
 
@@ -198,6 +235,16 @@ export class RevenueService {
   }
 }
 
+function settledAmount(
+  quantity: number,
+  rate: number,
+  bonus?: number | null,
+  penalty?: number | null,
+  deductions?: number | null,
+): number {
+  return quantity * rate + (bonus ?? 0) - (penalty ?? 0) - (deductions ?? 0);
+}
+
 function toDto(r: Revenue): RevenueDto {
   return {
     id: r.id,
@@ -207,6 +254,10 @@ function toDto(r: Revenue): RevenueDto {
     unit: r.unit,
     rate: Number(r.rate),
     amount: Number(r.amount),
+    qualityBonus: r.qualityBonus != null ? Number(r.qualityBonus) : null,
+    qualityPenalty: r.qualityPenalty != null ? Number(r.qualityPenalty) : null,
+    deductions: r.deductions != null ? Number(r.deductions) : null,
+    deductionNote: r.deductionNote,
     revenueDate: r.revenueDate.toISOString(),
     buyerName: r.buyerName,
     buyerContact: r.buyerContact,

@@ -19,6 +19,9 @@ export interface PnlReport {
     expense: number;
     margin: number;
   };
+  feedPercentOfRevenue: number | null;
+  healthPercentOfRevenue: number | null;
+  profitPerAnimal: number | null;
 }
 
 /** Raw API payload from GET /v1/pnl */
@@ -28,6 +31,10 @@ interface PnlApiResponse {
   totalRevenue: number;
   totalExpenses: number;
   netProfit: number;
+  feedPercentOfRevenue?: number | null;
+  healthPercentOfRevenue?: number | null;
+  profitPerAnimal?: number | null;
+  animalCount?: number;
   byRevenueSource: Array<{
     key: string;
     revenue: number;
@@ -47,6 +54,9 @@ export async function getPnl(query: Partial<PnlQuery> = {}): Promise<PnlReport> 
       expense: raw.totalExpenses,
       margin: raw.netProfit,
     },
+    feedPercentOfRevenue: raw.feedPercentOfRevenue ?? null,
+    healthPercentOfRevenue: raw.healthPercentOfRevenue ?? null,
+    profitPerAnimal: raw.profitPerAnimal ?? null,
     streams: (raw.byRevenueSource ?? []).map((s) => ({
       name: s.key,
       revenue: s.revenue,
