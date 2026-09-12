@@ -20,6 +20,7 @@ export const ne = {
     nav: {
       dashboard: 'होम',
       animals: 'पशुधन',
+      batches: 'ब्याच',
       groups: 'कुखुरा',
       fish: 'माछा',
       scan: 'QR स्क्यान',
@@ -102,9 +103,9 @@ export const ne = {
       role: { ADMIN: 'एडमिन', MANAGER: 'व्यवस्थापक', WORKER: 'कामदार' },
     },
     animals: {
-      subtitle: 'ऐच्छिक प्रजनन अभिभावक — मिलान रेकर्डका लागि मात्र व्यक्तिगत ट्याग',
-      add: 'प्रजनन पशु थप्नुहोस्',
-      edit: 'प्रजनन पशु सम्पादन',
+      subtitle: 'फार्मका सबै ट्याग गरिएका पशु — दूध, प्रजनन, स्वास्थ्य र लागत यही रेकर्डमा आधारित',
+      add: 'पशु थप्नुहोस्',
+      edit: 'पशु सम्पादन',
       tag: 'ट्याग',
       name: 'नाम',
       species: 'प्रजाति',
@@ -492,8 +493,8 @@ export const ne = {
       requiredFields: 'नाम र संख्या आवश्यक छन्।',
       other: 'अन्य',
       breedingStock: 'प्रजनन स्टक',
-      breedingStockLink: 'प्रजनन अभिभावक व्यवस्थापन (ऐच्छिक ट्याग पशु)',
-      openBreedingStock: 'प्रजनन स्टक खोल्नुहोस्',
+      breedingStockLink: 'यो श्रेणीका व्यक्तिगत पशु व्यवस्थापन',
+      openBreedingStock: 'पशुधन सूची खोल्नुहोस्',
       poultry: {
         LAYER: 'लेयर',
         BROILER: 'ब्राइलर',

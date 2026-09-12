@@ -10,6 +10,7 @@ import {
   Patch,
   Post,
   Query,
+  UseInterceptors,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
@@ -28,6 +29,7 @@ import type {
   WaterQualityCreate,
 } from '@farm/contracts';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
+import { DeprecatedEndpointInterceptor } from '../common/deprecated-endpoint.interceptor';
 import type { RequestUser } from '../common/types';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import {
@@ -37,8 +39,10 @@ import {
   type WaterQualityDto,
 } from './fish.service';
 
+/** @deprecated Superseded by /v1/batches?kind=FISH. Removed after one release. */
 @ApiTags('fish')
 @Controller('fish')
+@UseInterceptors(new DeprecatedEndpointInterceptor('/v1/batches?kind=FISH'))
 export class FishController {
   constructor(private readonly fish: FishService) {}
 

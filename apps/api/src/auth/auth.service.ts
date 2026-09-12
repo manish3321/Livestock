@@ -72,6 +72,8 @@ export class AuthService {
         farmId: membership.farmId,
         farmName: membership.farm.name,
         farmMode: membership.farm.mode === 'COMMERCIAL' ? 'COMMERCIAL' : 'HOUSEHOLD',
+        livestockTrackingMode:
+          membership.farm.livestockTrackingMode === 'BATCH' ? 'BATCH' : 'INDIVIDUAL',
         role,
         permissions: [...ROLE_PERMISSIONS[role]],
       },
@@ -90,6 +92,7 @@ export class AuthService {
       farmId,
       farmName: farm.name,
       farmMode: farm.mode === 'COMMERCIAL' ? 'COMMERCIAL' : 'HOUSEHOLD',
+      livestockTrackingMode: farm.livestockTrackingMode === 'BATCH' ? 'BATCH' : 'INDIVIDUAL',
       role,
       permissions: [...ROLE_PERMISSIONS[role]],
     };

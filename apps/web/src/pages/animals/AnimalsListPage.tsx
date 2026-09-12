@@ -40,10 +40,7 @@ export function AnimalsListPage() {
     <div>
       <div className="page-header">
         <div>
-          <Link to="/animals" className="back-link">
-            ← {t('nav.animals')}
-          </Link>
-          <h1>{t('batches.breedingStock')}</h1>
+          <h1>{t('nav.animals')}</h1>
           <p className="page-subtitle">{t('animals.subtitle')}</p>
         </div>
         <div className="page-actions">
@@ -63,8 +60,8 @@ export function AnimalsListPage() {
                 onClick={() => {
                   const rows = query.data?.items ?? [];
                   downloadTablePdf(
-                    t('batches.breedingStock'),
-                    'breeding-animals.pdf',
+                    t('nav.animals'),
+                    'animals.pdf',
                     [
                       t('animals.tag'),
                       t('animals.species'),
@@ -138,7 +135,7 @@ export function AnimalsListPage() {
           </p>
           <div className="animal-grid">
             {query.data.items.map((row) => (
-              <Link key={row.id} to={`/animals/stock/${row.id}`} className="animal-card">
+              <Link key={row.id} to={`/animals/${row.id}`} className="animal-card">
                 <div className="animal-card-media" data-species={row.species}>
                   <SpeciesGlyph species={row.species} />
                   <div className="animal-card-status">
@@ -177,7 +174,7 @@ export function AnimalsListPage() {
         <button
           className="btn fab"
           type="button"
-          onClick={() => navigate('/animals/stock/new')}
+          onClick={() => navigate('/animals/new')}
         >
           + {t('animals.add')}
         </button>

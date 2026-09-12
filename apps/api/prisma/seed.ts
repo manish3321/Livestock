@@ -1,5 +1,6 @@
 /**
- * Seed: one farm, one user per role, animals, groups, fish, finance samples.
+ * Seed: one farm, one user per role, individual animals, herd batches
+ * (livestock/poultry/fish) and finance samples.
  * Idempotent — safe to run repeatedly.
  */
 import {
@@ -9,8 +10,6 @@ import {
   Gender,
   AnimalStatus,
   AnimalSource,
-  PoultryType,
-  GroupHealthStatus,
   ExpenseCategory,
   ApprovalStatus,
   RevenueSource,
@@ -77,6 +76,9 @@ async function main(): Promise<void> {
       location: 'Nepal',
       currency: 'NPR',
       timezone: 'Asia/Kathmandu',
+      // Explicit: the demo data seeds tagged individual animals, so the farm
+      // should land on the individual-first surface rather than batch counts.
+      livestockTrackingMode: 'INDIVIDUAL',
     },
   });
 
@@ -218,13 +220,27 @@ async function main(): Promise<void> {
       ageToMonths: 18,
       count: 2900,
     },
+    {
+      kind: 'POULTRY',
+      category: 'DUCK',
+      name: 'Ducks',
+      ageFromMonths: 0,
+      ageToMonths: 12,
+      count: 200,
+    },
   ];
+
+  /** Batch ids by name, so later seed rows can reference a real batch. */
+  const herdBatchIds = new Map<string, string>();
 
   for (const h of herdDefs) {
     const existing = await prisma.herdBatch.findFirst({
       where: { farmId: farm.id, name: h.name, deletedAt: null },
     });
-    if (existing) continue;
+    if (existing) {
+      herdBatchIds.set(h.name, existing.id);
+      continue;
+    }
     const created = await prisma.herdBatch.create({
       data: {
         farmId: farm.id,
@@ -238,6 +254,7 @@ async function main(): Promise<void> {
         deadCount: h.dead ?? 0,
       },
     });
+    herdBatchIds.set(h.name, created.id);
     if (h.illness) {
       await prisma.batchIllnessEvent.create({
         data: {
@@ -296,74 +313,10 @@ async function main(): Promise<void> {
     });
   }
 
-  // ---- Groups ----
-  const groups = [
-    {
-      name: 'Layer House A',
-      poultryType: PoultryType.LAYER,
-      breed: 'Hy-Line Brown',
-      count: 500,
-    },
-    {
-      name: 'Broiler B',
-      poultryType: PoultryType.BROILER,
-      breed: 'Cobb 500',
-      count: 300,
-    },
-    {
-      name: 'Ducks',
-      poultryType: PoultryType.DUCK,
-      breed: 'Pekin',
-      count: 200,
-    },
-  ];
-
-  const groupIds: string[] = [];
-  for (const g of groups) {
-    const existing = await prisma.animalGroup.findFirst({
-      where: { farmId: farm.id, name: g.name, deletedAt: null },
-    });
-    if (existing) {
-      groupIds.push(existing.id);
-      continue;
-    }
-    const created = await prisma.animalGroup.create({
-      data: {
-        farmId: farm.id,
-        name: g.name,
-        poultryType: g.poultryType,
-        breed: g.breed,
-        initialCount: g.count,
-        currentCount: g.count,
-        startedAt: new Date(Date.now() - 60 * 86_400_000),
-        healthStatus: GroupHealthStatus.HEALTHY,
-      },
-    });
-    groupIds.push(created.id);
-  }
-
-  // ---- Fish ----
-  const fishDefs = [
-    { name: 'Rohu Pond 1', species: 'Rohu', count: 2000, avg: 120 },
-    { name: 'Catla Pond 2', species: 'Catla', count: 1500, avg: 150 },
-  ];
-  for (const f of fishDefs) {
-    const existing = await prisma.fishBatch.findFirst({
-      where: { farmId: farm.id, name: f.name, deletedAt: null },
-    });
-    if (!existing) {
-      await prisma.fishBatch.create({
-        data: {
-          farmId: farm.id,
-          name: f.name,
-          species: f.species,
-          stockingDate: new Date(Date.now() - 90 * 86_400_000),
-          estimatedCount: f.count,
-          avgWeightGrams: f.avg,
-        },
-      });
-    }
-  }
+  // AnimalGroup and FishBatch are deprecated — poultry and fish are seeded as
+  // HerdBatch above. Seeding both produced two rows for one physical flock and
+  // double-counted headcount, which is the denominator for mortality rate and
+  // feed per bird.
 
   // ---- Expenses ----
   const expenseCount = await prisma.expense.count({ where: { farmId: farm.id } });
@@ -557,14 +510,14 @@ async function main(): Promise<void> {
           quantity: 420,
           unit: 'pcs',
           quality: QualityGrade.A,
-          groupId: groupIds[0],
+          herdBatchId: herdBatchIds.get('Layer House A — pullets'),
         },
       ],
     });
   }
 
   console.log(
-    `Seeded farm "${farm.name}" with users, herd batches, breeding stock, groups, fish, expenses, revenue, inventory, health, production.`,
+    `Seeded farm "${farm.name}" with users, individual animals, herd batches, expenses, revenue, inventory, health, production.`,
   );
   console.log(`Login password for all seeded users: ${SEED_PASSWORD}`);
 }

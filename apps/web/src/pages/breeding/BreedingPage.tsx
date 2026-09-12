@@ -334,7 +334,7 @@ export function BreedingPage() {
           <p className="page-subtitle">{t('breeding.subtitle')}</p>
           <p className="muted" style={{ marginTop: 8 }}>
             {t('breeding.parentsOnly')}{' '}
-            <Link className="link-strong" to="/animals/stock">
+            <Link className="link-strong" to="/animals">
               {t('breeding.manageStock')}
             </Link>
           </p>

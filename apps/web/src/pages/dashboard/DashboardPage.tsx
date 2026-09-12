@@ -6,7 +6,6 @@ import {
   formatDate,
   formatDateTime,
   formatNPR,
-  modulesForRole,
   SPECIES_LABEL,
   type Species,
 } from '@farm/contracts';
@@ -35,6 +34,7 @@ import { ModuleIcon } from '../../components/ModuleIcon';
 import { ErrorState, LoadingState } from '../../components/PageState';
 import { StatusChip } from '../../components/StatusChip';
 import { useFarmMode } from '../../hooks/useFarmMode';
+import { navigableModules } from '../../lib/navigation';
 
 export function DashboardPage() {
   const { t, i18n } = useTranslation();
@@ -83,8 +83,8 @@ export function DashboardPage() {
   const maxSpecies = Math.max(1, ...species.map((s) => s.count));
   const urgentCount =
     alerts.healthOverdue.length + alerts.inventoryCritical.length;
-  const shortcuts = (user ? modulesForRole(user.role) : []).filter(
-    (m) => m !== 'dashboard' && !(household && (m === 'pnl' || m === 'reports')),
+  const shortcuts = (user ? navigableModules(user.role, { household }) : []).filter(
+    (m) => m !== 'dashboard',
   );
 
   return (

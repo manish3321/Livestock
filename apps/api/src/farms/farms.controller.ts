@@ -54,6 +54,9 @@ export class FarmsController {
         ...(body.currency !== undefined ? { currency: body.currency } : {}),
         ...(body.timezone !== undefined ? { timezone: body.timezone } : {}),
         ...(body.mode !== undefined ? { mode: body.mode } : {}),
+        ...(body.livestockTrackingMode !== undefined
+          ? { livestockTrackingMode: body.livestockTrackingMode }
+          : {}),
       },
     });
   }

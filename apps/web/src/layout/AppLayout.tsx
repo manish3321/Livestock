@@ -5,28 +5,46 @@ import { useAuth } from '../auth/auth-context';
 import { ModuleIcon } from '../components/ModuleIcon';
 import { useFarmMode } from '../hooks/useFarmMode';
 import { setLocale } from '../i18n';
+import {
+  HOUSEHOLD_HIDDEN,
+  NON_NAV_MODULES,
+  livestockModuleOrder,
+} from '../lib/navigation';
 
-/** Modules hidden in household mode (still available when farm is commercial). */
-const HOUSEHOLD_HIDDEN: ReadonlySet<ModuleKey> = new Set(['pnl', 'reports']);
-
-const NAV_GROUPS: { labelKey: string; modules: ModuleKey[] }[] = [
-  {
-    labelKey: 'nav.group.home',
-    modules: ['dashboard'],
-  },
-  {
-    labelKey: 'nav.group.farm',
-    modules: ['animals', 'groups', 'fish', 'scan', 'health', 'breeding', 'production', 'feed', 'inventory'],
-  },
-  {
-    labelKey: 'nav.group.money',
-    modules: ['expenses', 'revenue', 'pnl'],
-  },
-  {
-    labelKey: 'nav.group.insights',
-    modules: ['reports'],
-  },
-];
+/**
+ * Sidebar groups. The livestock entries are spliced in from the farm's
+ * tracking mode so the primary surface leads.
+ */
+function navGroups(livestock: ModuleKey[]): { labelKey: string; modules: ModuleKey[] }[] {
+  return [
+    {
+      labelKey: 'nav.group.home',
+      modules: ['dashboard'],
+    },
+    {
+      labelKey: 'nav.group.farm',
+      modules: [
+        ...livestock,
+        'groups',
+        'fish',
+        'scan',
+        'health',
+        'breeding',
+        'production',
+        'feed',
+        'inventory',
+      ],
+    },
+    {
+      labelKey: 'nav.group.money',
+      modules: ['expenses', 'revenue', 'pnl'],
+    },
+    {
+      labelKey: 'nav.group.insights',
+      modules: ['reports'],
+    },
+  ];
+}
 
 function FarmMark() {
   return (
@@ -48,12 +66,13 @@ function FarmMark() {
 /** Role-aware shell: light pasture sidebar + top bar. */
 export function AppLayout() {
   const { user, signOut, can } = useAuth();
-  const { household } = useFarmMode();
+  const { household, livestockTrackingMode } = useFarmMode();
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
 
   if (!user) return null;
   const allowed = new Set(modulesForRole(user.role));
+  const groups = navGroups(livestockModuleOrder(livestockTrackingMode));
 
   const handleSignOut = async () => {
     await signOut();
@@ -80,9 +99,12 @@ export function AppLayout() {
           </div>
         </div>
 
-        {NAV_GROUPS.map((group) => {
+        {groups.map((group) => {
           const items = group.modules.filter(
-            (m) => allowed.has(m) && !(household && HOUSEHOLD_HIDDEN.has(m)),
+            (m) =>
+              allowed.has(m) &&
+              !NON_NAV_MODULES.has(m) &&
+              !(household && HOUSEHOLD_HIDDEN.has(m)),
           );
           if (items.length === 0) return null;
           return (

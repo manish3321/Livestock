@@ -45,7 +45,7 @@ function ageLabel(from: number | null, to: number | null, t: (k: string) => stri
 }
 
 export function LivestockBatchesPage() {
-  return <BatchKindPage kind="LIVESTOCK" titleKey="nav.animals" showBreedingStock />;
+  return <BatchKindPage kind="LIVESTOCK" titleKey="nav.batches" showBreedingStock />;
 }
 
 export function PoultryBatchesPage() {
@@ -141,7 +141,7 @@ function BatchKindPage({
         </div>
         {showBreedingStock && (
           <div className="page-actions">
-            <Link className="btn secondary" to="/animals/stock">
+            <Link className="btn secondary" to="/animals">
               {t('batches.openBreedingStock')}
             </Link>
           </div>
@@ -456,7 +456,7 @@ export function BatchDetailPage() {
 
   const b = batchQ.data;
   const back =
-    b.kind === 'POULTRY' ? '/groups' : b.kind === 'FISH' ? '/fish' : '/animals';
+    b.kind === 'POULTRY' ? '/groups' : b.kind === 'FISH' ? '/fish' : '/batches';
   const feedItems = (feedItemsQ.data?.items ?? []).filter((i) => i.category === 'FEED');
 
   return (
@@ -464,7 +464,7 @@ export function BatchDetailPage() {
       <Link to={back} className="back-link">
         ←{' '}
         {t(
-          `nav.${b.kind === 'POULTRY' ? 'groups' : b.kind === 'FISH' ? 'fish' : 'animals'}`,
+          `nav.${b.kind === 'POULTRY' ? 'groups' : b.kind === 'FISH' ? 'fish' : 'batches'}`,
         )}
       </Link>
       <div className="animal-hero">
@@ -661,7 +661,7 @@ export function BatchDetailPage() {
 
           {b.kind === 'LIVESTOCK' && (
             <p style={{ marginTop: 24 }}>
-              <Link className="link-strong" to="/animals/stock">
+              <Link className="link-strong" to="/animals">
                 {t('batches.breedingStockLink')}
               </Link>
             </p>

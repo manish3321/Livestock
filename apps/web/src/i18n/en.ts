@@ -20,6 +20,7 @@ export const en = {
     nav: {
       dashboard: 'Home',
       animals: 'Livestock',
+      batches: 'Batches',
       groups: 'Poultry',
       fish: 'Fish',
       scan: 'Scan QR',
@@ -102,9 +103,9 @@ export const en = {
       role: { ADMIN: 'Admin', MANAGER: 'Manager', WORKER: 'Worker' },
     },
     animals: {
-      subtitle: 'Optional breeding parents — tag individuals only when needed for mating records',
-      add: 'Add breeding animal',
-      edit: 'Edit breeding animal',
+      subtitle: 'Every tagged animal on the farm — milk, breeding, health, and cost all hang off these records',
+      add: 'Add animal',
+      edit: 'Edit animal',
       tag: 'Tag',
       name: 'Name',
       species: 'Species',
@@ -492,8 +493,8 @@ export const en = {
       requiredFields: 'Name and count are required.',
       other: 'Other',
       breedingStock: 'Breeding stock',
-      breedingStockLink: 'Manage breeding parents (optional tagged animals)',
-      openBreedingStock: 'Open breeding stock',
+      breedingStockLink: 'Manage individual animals in this category',
+      openBreedingStock: 'Open livestock list',
       poultry: {
         LAYER: 'Layer',
         BROILER: 'Broiler',

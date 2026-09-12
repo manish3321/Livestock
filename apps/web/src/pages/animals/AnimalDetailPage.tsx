@@ -99,7 +99,7 @@ export function AnimalDetailPage() {
     mutationFn: () => deleteAnimal(id!),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['animals'] });
-      navigate('/animals/stock');
+      navigate('/animals');
     },
   });
 
@@ -112,7 +112,7 @@ export function AnimalDetailPage() {
 
   return (
     <div>
-      <Link to="/animals/stock" className="back-link">
+      <Link to="/animals" className="back-link">
         ← {t('batches.breedingStock')}
       </Link>
       <div className="animal-hero" data-species={animal.species}>
@@ -143,7 +143,7 @@ export function AnimalDetailPage() {
                 {t('qr.openScan')}
               </Link>
               {can('animals:write') && (
-                <Link className="btn secondary" to={`/animals/stock/${animal.id}/edit`}>
+                <Link className="btn secondary" to={`/animals/${animal.id}/edit`}>
                   {t('common.edit')}
                 </Link>
               )}
@@ -532,7 +532,7 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
     onSuccess: (animal) => {
       void qc.invalidateQueries({ queryKey: ['animals'] });
       void qc.invalidateQueries({ queryKey: ['animal', animal.id] });
-      navigate(`/animals/stock/${animal.id}`);
+      navigate(`/animals/${animal.id}`);
     },
     onError: (err: Error) => setError(err.message),
   });
@@ -559,7 +559,7 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
     <div>
       <div className="page-header">
         <div>
-          <Link to="/animals/stock" className="back-link">
+          <Link to="/animals" className="back-link">
             ← {t('batches.breedingStock')}
           </Link>
           <h1>{mode === 'create' ? t('animals.add') : t('animals.edit')}</h1>

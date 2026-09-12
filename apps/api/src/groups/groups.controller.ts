@@ -10,6 +10,7 @@ import {
   Patch,
   Post,
   Query,
+  UseInterceptors,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
@@ -26,12 +27,15 @@ import type {
   PageResult,
 } from '@farm/contracts';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
+import { DeprecatedEndpointInterceptor } from '../common/deprecated-endpoint.interceptor';
 import type { RequestUser } from '../common/types';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { GroupsService, type GroupDto, type MortalityDto } from './groups.service';
 
+/** @deprecated Superseded by /v1/batches?kind=POULTRY. Removed after one release. */
 @ApiTags('groups')
 @Controller('groups')
+@UseInterceptors(new DeprecatedEndpointInterceptor('/v1/batches?kind=POULTRY'))
 export class GroupsController {
   constructor(private readonly groups: GroupsService) {}
 

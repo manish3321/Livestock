@@ -26,6 +26,14 @@ export function ModuleIcon({ module, size = 22 }: { module: ModuleKey; size?: nu
           <path {...stroke} d="M8 8.5 6 6M16 8.5 18 6" />
         </svg>
       );
+    case 'batches':
+      return (
+        <svg {...props}>
+          <rect {...stroke} x="3" y="4" width="18" height="6" rx="1.5" />
+          <rect {...stroke} x="3" y="14" width="18" height="6" rx="1.5" />
+          <path {...stroke} d="M7 7h4M7 17h4" />
+        </svg>
+      );
     case 'groups':
       return (
         <svg {...props}>

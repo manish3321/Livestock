@@ -525,12 +525,28 @@ export type FarmMemberUpdate = z.infer<typeof farmMemberUpdateSchema>;
 export const FARM_MODES = ['HOUSEHOLD', 'COMMERCIAL'] as const;
 export type FarmMode = (typeof FARM_MODES)[number];
 
+/**
+ * Livestock tracking mode. INDIVIDUAL makes the tagged `Animal` primary —
+ * required for lactation curves, breeding cycles, milk withdrawal and profit
+ * per animal. BATCH makes counted `HerdBatch` primary, which suits a
+ * household flock or a pen of grower pigs. Both surfaces stay available; this
+ * only decides which one the farm lands on first.
+ */
+export const LIVESTOCK_TRACKING_MODES = ['INDIVIDUAL', 'BATCH'] as const;
+export type LivestockTrackingMode = (typeof LIVESTOCK_TRACKING_MODES)[number];
+
+/** Default tracking mode for a farm mode. Commercial dairy needs individuals. */
+export function defaultLivestockTrackingMode(mode: FarmMode): LivestockTrackingMode {
+  return mode === 'COMMERCIAL' ? 'INDIVIDUAL' : 'BATCH';
+}
+
 export const farmUpdateSchema = z.object({
   name: z.string().min(1).max(120).optional(),
   location: z.string().max(200).optional(),
   currency: z.string().min(1).max(8).optional(),
   timezone: z.string().max(80).optional(),
   mode: z.enum(FARM_MODES).optional(),
+  livestockTrackingMode: z.enum(LIVESTOCK_TRACKING_MODES).optional(),
 });
 export type FarmUpdate = z.infer<typeof farmUpdateSchema>;
 

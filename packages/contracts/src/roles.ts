@@ -13,6 +13,7 @@ export type Role = (typeof ROLES)[number];
 export const MODULES = [
   'dashboard',
   'animals',
+  'batches',
   'groups',
   'fish',
   'scan',
@@ -25,6 +26,7 @@ export const MODULES = [
   'production',
   'feed',
   'reports',
+  'admin',
 ] as const;
 export type ModuleKey = (typeof MODULES)[number];
 
@@ -128,6 +130,7 @@ export function hasPermission(role: Role, permission: Permission): boolean {
 export const MODULE_ACCESS: Record<ModuleKey, readonly Role[]> = {
   dashboard: ['ADMIN', 'MANAGER', 'WORKER'],
   animals: ['ADMIN', 'MANAGER', 'WORKER'],
+  batches: ['ADMIN', 'MANAGER', 'WORKER'],
   groups: ['ADMIN', 'MANAGER', 'WORKER'],
   fish: ['ADMIN', 'MANAGER', 'WORKER'],
   scan: ['ADMIN', 'MANAGER', 'WORKER'],
@@ -140,6 +143,7 @@ export const MODULE_ACCESS: Record<ModuleKey, readonly Role[]> = {
   production: ['ADMIN', 'MANAGER', 'WORKER'],
   feed: ['ADMIN', 'MANAGER', 'WORKER'],
   reports: ['ADMIN', 'MANAGER'],
+  admin: ['ADMIN'],
 };
 
 export function modulesForRole(role: Role): ModuleKey[] {

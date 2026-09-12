@@ -8,5 +8,6 @@ export function useFarmMode() {
     farmMode: user?.farmMode ?? 'HOUSEHOLD',
     commercial: isCommercial(user),
     household: isHousehold(user),
+    livestockTrackingMode: user?.livestockTrackingMode ?? 'INDIVIDUAL',
   };
 }

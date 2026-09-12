@@ -119,7 +119,7 @@ function AnimalResult({ id, onClose }: { id: string; onClose: () => void }) {
 
       <h3 className="scan-modal-subtitle">{t('qr.quickActions')}</h3>
       <div className="page-actions" style={{ flexWrap: 'wrap', justifyContent: 'flex-start' }}>
-        <Link className="btn" to={`/animals/stock/${animal.id}`} onClick={onClose}>
+        <Link className="btn" to={`/animals/${animal.id}`} onClick={onClose}>
           {t('qr.openDetail')}
         </Link>
         {can('expenses:submit') && (

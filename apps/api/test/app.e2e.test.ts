@@ -103,6 +103,17 @@ class E2ePrisma extends FakePrisma {
     findMany: async () => [],
   };
 
+  // Legacy models, kept answering for one deprecation release (Phase 0c).
+  animalGroup = {
+    findMany: async () => [],
+    count: async () => 0,
+  };
+
+  fishBatch = {
+    findMany: async () => [],
+    count: async () => 0,
+  };
+
   $queryRaw = async () => [{ '?column?': 1 }];
   $connect = async () => undefined;
   $disconnect = async () => undefined;
@@ -238,6 +249,29 @@ describe('API over HTTP', () => {
       .post('/v1/auth/refresh')
       .send({ refreshToken: login.body.refreshToken })
       .expect(401);
+  });
+
+  it('marks the superseded group and fish endpoints as deprecated', async () => {
+    const token = await loginAs('worker@farm.local');
+    for (const [path, successor] of [
+      ['/v1/groups', '/v1/batches?kind=POULTRY'],
+      ['/v1/fish', '/v1/batches?kind=FISH'],
+    ] as const) {
+      const res = await request(app.getHttpServer())
+        .get(path)
+        .set('authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(res.headers.deprecation).toBe('true');
+      expect(res.headers.link).toBe(`<${successor}>; rel="successor-version"`);
+    }
+  });
+
+  it('reports the farm livestock tracking mode on login', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/v1/auth/login')
+      .send({ email: 'admin@farm.local', password: PASSWORD, platform: 'web' })
+      .expect(200);
+    expect(res.body.user.livestockTrackingMode).toBe('INDIVIDUAL');
   });
 
   it('writes audit events for logins and sync pushes', () => {

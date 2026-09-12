@@ -6,7 +6,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/v1': 'http://localhost:4000',
+      '/v1': process.env.API_PROXY_TARGET ?? 'http://localhost:4000',
     },
   },
   test: {

@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { AuthProvider } from './auth/auth-context';
 import { RequireAuth, RequireCommercial, RequireModule } from './auth/ProtectedRoute';
 import { AppLayout } from './layout/AppLayout';
@@ -26,6 +26,16 @@ import { ReportsPage } from './pages/reports/ReportsPage';
 import { AnimalScanPage, BatchScanPage } from './pages/scan/ScanPages';
 import { ScanHubPage } from './pages/scan/ScanHubPage';
 
+/**
+ * Individuals moved from /animals/stock to /animals when the batch-first
+ * routing was flipped. Bookmarks and any printed sheet with the old path keep
+ * working through these redirects.
+ */
+function LegacyStockRedirect({ suffix = '' }: { suffix?: string }) {
+  const { id } = useParams();
+  return <Navigate to={id ? `/animals/${id}${suffix}` : '/animals'} replace />;
+}
+
 export function App() {
   return (
     <AuthProvider>
@@ -40,11 +50,26 @@ export function App() {
             </Route>
 
             <Route element={<RequireModule module="animals" />}>
-              <Route path="/animals" element={<LivestockBatchesPage />} />
-              <Route path="/animals/stock" element={<AnimalsListPage />} />
-              <Route path="/animals/stock/new" element={<AnimalFormPage mode="create" />} />
-              <Route path="/animals/stock/:id" element={<AnimalDetailPage />} />
-              <Route path="/animals/stock/:id/edit" element={<AnimalFormPage mode="edit" />} />
+              <Route path="/animals" element={<AnimalsListPage />} />
+              <Route path="/animals/new" element={<AnimalFormPage mode="create" />} />
+              <Route path="/animals/:id" element={<AnimalDetailPage />} />
+              <Route path="/animals/:id/edit" element={<AnimalFormPage mode="edit" />} />
+
+              <Route path="/animals/stock" element={<Navigate to="/animals" replace />} />
+              <Route
+                path="/animals/stock/new"
+                element={<Navigate to="/animals/new" replace />}
+              />
+              <Route path="/animals/stock/:id" element={<LegacyStockRedirect />} />
+              <Route
+                path="/animals/stock/:id/edit"
+                element={<LegacyStockRedirect suffix="/edit" />}
+              />
+            </Route>
+
+            <Route element={<RequireModule module="batches" />}>
+              <Route path="/batches" element={<LivestockBatchesPage />} />
+              <Route path="/batches/:id" element={<BatchDetailPage />} />
             </Route>
 
             <Route element={<RequireModule module="scan" />}>
@@ -59,10 +84,6 @@ export function App() {
 
             <Route element={<RequireModule module="fish" />}>
               <Route path="/fish" element={<FishBatchesPage />} />
-            </Route>
-
-            <Route element={<RequireModule module="animals" />}>
-              <Route path="/batches/:id" element={<BatchDetailPage />} />
             </Route>
 
             <Route element={<RequireModule module="expenses" />}>
@@ -105,8 +126,10 @@ export function App() {
               </Route>
             </Route>
 
-            <Route path="/admin/members" element={<AdminMembersPage />} />
-            <Route path="/admin/audit" element={<AdminAuditPage />} />
+            <Route element={<RequireModule module="admin" />}>
+              <Route path="/admin/members" element={<AdminMembersPage />} />
+              <Route path="/admin/audit" element={<AdminAuditPage />} />
+            </Route>
 
             <Route path="/forbidden" element={<ForbiddenPage />} />
             <Route path="*" element={<NotFoundPage />} />

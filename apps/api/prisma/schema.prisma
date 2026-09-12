@@ -3,8 +3,11 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Migrations need a non-pooled connection; pgbouncer transaction mode
+  // cannot hold the advisory lock Prisma Migrate takes.
+  directUrl = env("DIRECT_URL")
 }
 
 // ---------------------------------------------------------------------------
@@ -21,6 +24,16 @@ enum Role {
 enum FarmMode {
   HOUSEHOLD
   COMMERCIAL
+}
+
+/**
+ * Which livestock surface is primary. INDIVIDUAL makes the tagged Animal the
+ * unit of record (needed for lactation, breeding and profit per animal);
+ * BATCH makes counted HerdBatch primary. Both remain available either way.
+ */
+enum LivestockTrackingMode {
+  INDIVIDUAL
+  BATCH
 }
 
 model User {
@@ -46,6 +59,7 @@ model Farm {
   currency  String   @default("NPR")
   timezone  String   @default("Asia/Kathmandu")
   mode      FarmMode @default(HOUSEHOLD)
+  livestockTrackingMode LivestockTrackingMode @default(INDIVIDUAL)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

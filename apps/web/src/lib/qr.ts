@@ -36,5 +36,10 @@ export function parseQrPayload(raw: string): QrTarget | null {
   const batchMatch = text.match(new RegExp(`(?:/scan/b/|farm://b/)(${UUID_RE})`, 'i'));
   if (batchMatch?.[1]) return { kind: 'batch', id: batchMatch[1].toLowerCase() };
 
+  // A bare id resolves to an animal: individuals are the primary scan target,
+  // and a tag worn by an animal is what gets scanned in the shed.
+  const bareId = text.match(new RegExp(`^(${UUID_RE})$`, 'i'));
+  if (bareId?.[1]) return { kind: 'animal', id: bareId[1].toLowerCase() };
+
   return null;
 }

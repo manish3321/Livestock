@@ -29,6 +29,8 @@ export interface AuthUser {
   farmId: string;
   farmName: string;
   farmMode: 'HOUSEHOLD' | 'COMMERCIAL';
+  /** Whether livestock is tracked animal-by-animal or as counted batches. */
+  livestockTrackingMode: 'INDIVIDUAL' | 'BATCH';
   role: Role;
   permissions: Permission[];
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MODULES,
   MODULE_ACCESS,
+  ROLES,
   ROLE_PERMISSIONS,
   hasPermission,
   modulesForRole,
@@ -9,10 +10,26 @@ import {
 
 describe('RBAC permission map', () => {
   it('covers all modules', () => {
-    expect(MODULES).toHaveLength(14);
+    expect(MODULES).toHaveLength(16);
     for (const m of MODULES) {
       expect(MODULE_ACCESS[m].length).toBeGreaterThan(0);
     }
+  });
+
+  it('exposes individual animals and counted batches as separate modules', () => {
+    expect(MODULES).toContain('animals');
+    expect(MODULES).toContain('batches');
+    for (const role of ROLES) {
+      expect(modulesForRole(role)).toContain('animals');
+      expect(modulesForRole(role)).toContain('batches');
+    }
+  });
+
+  it('restricts the admin module to admins', () => {
+    expect(MODULE_ACCESS.admin).toEqual(['ADMIN']);
+    expect(modulesForRole('ADMIN')).toContain('admin');
+    expect(modulesForRole('MANAGER')).not.toContain('admin');
+    expect(modulesForRole('WORKER')).not.toContain('admin');
   });
 
   it('denies workers all financial access', () => {
