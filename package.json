@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "pnpm -r build",
+    "build:vercel": "pnpm --filter @farm/contracts build && pnpm --filter @farm/design-tokens build && pnpm --filter @farm/web build",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",

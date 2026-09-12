@@ -1,0 +1,6 @@
+{
+  "buildCommand": "pnpm run build:vercel",
+  "outputDirectory": "apps/web/dist",
+  "installCommand": "pnpm install",
+  "rewrites": [{ "source": "/((?!assets/).*)", "destination": "/index.html" }]
+}
