@@ -13,10 +13,12 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  groupVaccinateSchema,
   healthCalendarQuerySchema,
   healthCreateSchema,
   healthListQuerySchema,
 } from '@farm/contracts';
+import type { GroupVaccinate } from '@farm/contracts';
 import type {
   HealthCalendarQuery,
   HealthCreate,
@@ -51,6 +53,17 @@ export class HealthRecordsController {
     @Query(new ZodValidationPipe(healthCalendarQuerySchema)) query: HealthCalendarQuery,
   ): Promise<HealthRecordDto[]> {
     return this.health.calendar(user, query);
+  }
+
+  @Post('group-vaccinate')
+  @RequirePermissions('health:write')
+  @ApiOperation({ summary: 'Vaccinate many animals in one form' })
+  groupVaccinate(
+    @CurrentUser() user: RequestUser,
+    @Body(new ZodValidationPipe(groupVaccinateSchema)) body: GroupVaccinate,
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    return this.health.groupVaccinate(user, body, requestId);
   }
 
   @Get(':id')

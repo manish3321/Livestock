@@ -22,6 +22,8 @@ const SPECIES_CONSTANTS: Record<string, Record<string, number>> = {
     targetCalvingIntervalDays: 425,
     dryOffDaysBeforeCalving: 60,
     minWeightFirstServiceKg: 300,
+    fatMinPercent: 6.5,
+    fatMaxPercent: 8,
   },
   COW: {
     gestationDays: 283,
@@ -33,6 +35,8 @@ const SPECIES_CONSTANTS: Record<string, Record<string, number>> = {
     targetCalvingIntervalDays: 380,
     dryOffDaysBeforeCalving: 60,
     minWeightFirstServiceKg: 250,
+    fatMinPercent: 3.5,
+    fatMaxPercent: 4.5,
   },
   PIG: {
     gestationDays: 114,
@@ -44,6 +48,8 @@ const SPECIES_CONSTANTS: Record<string, Record<string, number>> = {
     targetCalvingIntervalDays: 180,
     dryOffDaysBeforeCalving: 0,
     minWeightFirstServiceKg: 120,
+    fatMinPercent: 5,
+    fatMaxPercent: 8,
   },
   GOAT: {
     gestationDays: 150,
@@ -55,6 +61,8 @@ const SPECIES_CONSTANTS: Record<string, Record<string, number>> = {
     targetCalvingIntervalDays: 240,
     dryOffDaysBeforeCalving: 30,
     minWeightFirstServiceKg: 25,
+    fatMinPercent: 5,
+    fatMaxPercent: 8,
   },
 };
 
@@ -72,6 +80,7 @@ interface AnimalRow {
   id: string;
   farmId: string;
   tag: string;
+  herdNumber: string | null;
   name: string | null;
   species: string;
   breed: string;
@@ -82,6 +91,8 @@ interface AnimalRow {
   motherTag: string | null;
   purchaseDate: Date | null;
   purchaseCost: number | null;
+  sellerName: string | null;
+  distinguishingMarks: string | null;
   status: string;
   dobIsEstimated: boolean;
   ageAtAcquisitionMonths: number | null;
@@ -168,6 +179,7 @@ export class FakePrisma {
         id: data.id ?? randomUUID(),
         farmId: data.farmId,
         tag: data.tag,
+        herdNumber: data.herdNumber ?? null,
         name: data.name ?? null,
         species: data.species,
         breed: data.breed,
@@ -178,6 +190,8 @@ export class FakePrisma {
         motherTag: data.motherTag ?? null,
         purchaseDate: data.purchaseDate ?? null,
         purchaseCost: data.purchaseCost ?? null,
+        sellerName: data.sellerName ?? null,
+        distinguishingMarks: data.distinguishingMarks ?? null,
         status: data.status ?? 'ACTIVE',
         dobIsEstimated: data.dobIsEstimated ?? false,
         ageAtAcquisitionMonths: data.ageAtAcquisitionMonths ?? null,
@@ -206,6 +220,10 @@ export class FakePrisma {
   };
 
   weightRecord = {
+    create: async ({ data }: any) => ({ id: randomUUID(), ...data }),
+  };
+
+  animalTag = {
     create: async ({ data }: any) => ({ id: randomUUID(), ...data }),
   };
 

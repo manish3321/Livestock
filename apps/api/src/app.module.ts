@@ -1,4 +1,5 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { APP_FILTER, APP_GUARD, Reflector } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AnimalsModule } from './animals/animals.module';
@@ -29,10 +30,14 @@ import { ReportsModule } from './reports/reports.module';
 import { RevenueModule } from './revenue/revenue.module';
 import { StorageModule } from './storage/storage.module';
 import { SyncModule } from './sync/sync.module';
+import { MilkModule } from './milk/milk.module';
+import { TasksModule } from './tasks/tasks.module';
+import { NightlyJob } from './jobs/nightly.job';
 
 @Module({
   imports: [
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
+    ScheduleModule.forRoot(),
     PrismaModule,
     SpeciesConfigModule,
     NotificationsModule,
@@ -56,8 +61,11 @@ import { SyncModule } from './sync/sync.module';
     DashboardModule,
     PnlModule,
     ReportsModule,
+    MilkModule,
+    TasksModule,
   ],
   providers: [
+    NightlyJob,
     { provide: APP_FILTER, useClass: AppExceptionFilter },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     {

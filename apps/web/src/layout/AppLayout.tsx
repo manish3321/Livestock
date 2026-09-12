@@ -19,7 +19,7 @@ function navGroups(livestock: ModuleKey[]): { labelKey: string; modules: ModuleK
   return [
     {
       labelKey: 'nav.group.home',
-      modules: ['dashboard'],
+      modules: ['dashboard', 'shed', 'inbox'],
     },
     {
       labelKey: 'nav.group.farm',
@@ -120,6 +120,9 @@ export function AppLayout() {
                   {t(`nav.${m}`)}
                 </NavLink>
               ))}
+              {group.labelKey === 'nav.group.money' && can('finance:read') && !household && (
+                <NavLink to="/profit">{t('nav.profit')}</NavLink>
+              )}
             </div>
           );
         })}

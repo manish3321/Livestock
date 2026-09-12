@@ -109,6 +109,11 @@ export class ProductionService {
         snfPercent: input.snfPercent,
         scc: input.scc,
         collectionMethod: input.collectionMethod,
+        session: input.session,
+        destination: input.destination,
+        proteinPercent: input.proteinPercent,
+        lactosePercent: input.lactosePercent,
+        udderFlag: input.udderFlag ?? false,
         notes: input.notes,
       },
       include: {

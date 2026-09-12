@@ -50,6 +50,20 @@ export function ModuleIcon({ module, size = 22 }: { module: ModuleKey; size?: nu
           <path {...stroke} d="M3 12h3" />
         </svg>
       );
+    case 'shed':
+      return (
+        <svg {...props}>
+          <path {...stroke} d="M4 18V8l8-4 8 4v10" />
+          <path {...stroke} d="M9 18v-5h6v5" />
+        </svg>
+      );
+    case 'inbox':
+      return (
+        <svg {...props}>
+          <path {...stroke} d="M4 6h16v12H4z" />
+          <path {...stroke} d="m4 6 8 6 8-6" />
+        </svg>
+      );
     case 'scan':
       return (
         <svg {...props}>

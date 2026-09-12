@@ -11,7 +11,7 @@ export function batchScanUrl(batchId: string): string {
 
 export async function qrDataUrl(text: string): Promise<string> {
   return QRCode.toDataURL(text, {
-    errorCorrectionLevel: 'M',
+    errorCorrectionLevel: 'H',
     margin: 2,
     width: 280,
     color: { dark: '#1a2e1a', light: '#ffffff' },

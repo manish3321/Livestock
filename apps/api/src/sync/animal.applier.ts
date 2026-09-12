@@ -152,6 +152,7 @@ export function toSnapshot(animal: Animal): Record<string, unknown> {
     id: animal.id,
     farmId: animal.farmId,
     tag: animal.tag,
+    herdNumber: animal.herdNumber,
     name: animal.name,
     species: animal.species,
     breed: animal.breed,

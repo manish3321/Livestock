@@ -18,6 +18,8 @@ enum Role {
   ADMIN
   MANAGER
   WORKER
+  VET
+  COOP
 }
 
 /** HOUSEHOLD = simple UI defaults; COMMERCIAL = full dairy/finance depth. */
@@ -61,6 +63,10 @@ model Farm {
   timezone  String   @default("Asia/Kathmandu")
   mode      FarmMode @default(HOUSEHOLD)
   livestockTrackingMode LivestockTrackingMode @default(INDIVIDUAL)
+  /// Local clock hours the shed actually milks. Scan-to-record opens in
+  /// milking mode at these times without being asked.
+  morningMilkingHour Int @default(5)
+  eveningMilkingHour Int @default(17)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -98,6 +104,15 @@ model Farm {
   expenseAllocations ExpenseAllocation[]
   animalStatusHistory AnimalStatusHistory[]
   tasks            Task[]
+  herdNumberSequences HerdNumberSequence[]
+  animalPhotos     AnimalPhoto[]
+  animalTags       AnimalTag[]
+  animalMarkers    AnimalMarker[]
+  milkRounds       MilkRound[]
+  milkTanks        MilkTank[]
+  milkDeliveries   MilkDelivery[]
+  paymentStatements PaymentStatement[]
+  productionRevisions ProductionRevision[]
 }
 
 model FarmMembership {
@@ -182,6 +197,8 @@ enum Species {
 /// a buffalo is routinely lactating and pregnant at the same time, so it lives
 /// on Animal.isPregnant as a flag.
 enum AnimalStatus {
+  GROWING
+  HEIFER
   ACTIVE
   SICK
   QUARANTINE
@@ -214,6 +231,9 @@ model SpeciesConfig {
   targetCalvingIntervalDays  Int
   dryOffDaysBeforeCalving    Int
   minWeightFirstServiceKg    Int
+  /// Normal butterfat band for this species in Nepal. Buffalo 6.5–8.0, cattle 3.5–4.5.
+  fatMinPercent              Decimal  @default(3.5) @db.Decimal(4, 2)
+  fatMaxPercent              Decimal  @default(4.5) @db.Decimal(4, 2)
   createdAt                  DateTime @default(now())
   updatedAt                  DateTime @updatedAt
 }
@@ -226,6 +246,7 @@ enum Gender {
 enum AnimalSource {
   PURCHASED
   BORN
+  GIFTED
   TRANSFERRED
 }
 
@@ -233,6 +254,8 @@ model Animal {
   id             String        @id @default(uuid()) @db.Uuid
   farmId         String        @db.Uuid
   tag            String
+  /// Human identifier printed large on the tag: B42, C08. Never reused.
+  herdNumber     String?
   name           String?
   species        Species
   breed          String
@@ -250,6 +273,7 @@ model Animal {
   motherTag      String?
   purchaseDate   DateTime?
   purchaseCost   Decimal?      @db.Decimal(12, 2)
+  sellerName     String?
   status         AnimalStatus  @default(ACTIVE)
   /// Pregnancy is a flag, not a status — she can be lactating and pregnant
   /// at once. Making these mutually exclusive is a schema bug.
@@ -266,6 +290,7 @@ model Animal {
   /** When true, animal can be used as a breeding parent. */
   breedingStock  Boolean       @default(true)
   shed           String?
+  distinguishingMarks String?
   photoStorageKey String?
   photoUrl       String?
   damId          String?        @db.Uuid
@@ -293,13 +318,18 @@ model Animal {
   calvingRecords BreedingRecord[] @relation("BreedingOffspring")
   statusHistory  AnimalStatusHistory[]
   tasks          Task[]
+  photos         AnimalPhoto[]
+  tags           AnimalTag[]
+  markers        AnimalMarker[]
 
   @@unique([farmId, tag])
+  @@unique([farmId, herdNumber])
   @@index([farmId, updatedAt])
   @@index([farmId, species])
   @@index([farmId, status])
   @@index([farmId, breedingStock])
   @@index([farmId, isPregnant])
+  @@index([farmId, shed])
   @@index([damId])
   @@index([sireId])
 }
@@ -342,6 +372,105 @@ model WeightRecord {
 
   @@index([animalId, recordedAt])
   @@index([farmId])
+}
+
+/// Per-farm, per-species sequence so B42 is never issued twice, including
+/// after the animal is sold or dies. Offline phones take a reserved block.
+model HerdNumberSequence {
+  id          String  @id @default(uuid()) @db.Uuid
+  farmId      String  @db.Uuid
+  species     Species
+  nextNumber  Int     @default(1)
+  /// Next block reserved for an offline device. Incremented in chunks of 20.
+  reservedThrough Int @default(0)
+
+  farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@unique([farmId, species])
+}
+
+model AnimalPhoto {
+  id         String   @id @default(uuid()) @db.Uuid
+  farmId     String   @db.Uuid
+  animalId   String   @db.Uuid
+  storageKey String
+  url        String
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  farm   Farm   @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal Animal @relation(fields: [animalId], references: [id], onDelete: Cascade)
+
+  @@index([animalId, sortOrder])
+}
+
+enum AnimalTagReason {
+  ISSUED
+  LOST
+  DAMAGED
+  ILLEGIBLE
+  REPLACED
+}
+
+/// A short number belongs to the animal for life. Replacing a muddy tag
+/// reprints B42; the old printed tag still resolves and says it was replaced.
+model AnimalTag {
+  id         String          @id @default(uuid()) @db.Uuid
+  farmId     String          @db.Uuid
+  animalId   String          @db.Uuid
+  herdNumber String
+  fullTag    String
+  reason     AnimalTagReason @default(ISSUED)
+  nfcUid     String?
+  uhfEpc     String?
+  replacedAt DateTime?
+  createdAt  DateTime        @default(now())
+
+  farm   Farm   @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal Animal @relation(fields: [animalId], references: [id], onDelete: Cascade)
+
+  @@index([farmId, herdNumber])
+  @@index([animalId, createdAt])
+}
+
+enum MarkerColor {
+  RED
+  YELLOW
+  BLUE
+  GREEN
+  WHITE
+}
+
+enum MarkerMeaning {
+  MILK_WITHHOLD
+  DRY
+  CALVING_SOON
+  IN_HEAT
+  TREATMENT
+}
+
+/// Physical coloured band. Completing a place/remove task requires a scan so
+/// the record matches what is on the ear. Red never means anything except
+/// "milk must not be sold".
+model AnimalMarker {
+  id              String        @id @default(uuid()) @db.Uuid
+  farmId          String        @db.Uuid
+  animalId        String        @db.Uuid
+  color           MarkerColor
+  meaning         MarkerMeaning
+  placedAt        DateTime      @default(now())
+  placedById      String?       @db.Uuid
+  placedByScan    Boolean       @default(false)
+  removedAt       DateTime?
+  removedById     String?       @db.Uuid
+  removedByScan   Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+
+  farm   Farm   @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal Animal @relation(fields: [animalId], references: [id], onDelete: Cascade)
+
+  @@index([farmId, animalId, removedAt])
+  @@index([farmId, color, removedAt])
 }
 
 // ---------------------------------------------------------------------------
@@ -981,6 +1110,8 @@ model HealthRecord {
   followUpAt  DateTime?
   cmtResult   CmtResult?
   milkWithholdUntil DateTime?
+  meatWithholdUntil DateTime?
+  batchNumber String?
   performedAt DateTime
   nextDueAt   DateTime?
   notes       String?
@@ -1061,6 +1192,142 @@ enum QualityGrade {
   STANDARD
 }
 
+enum MilkSession {
+  MORNING
+  EVENING
+  MIDDAY
+}
+
+enum MilkDestination {
+  SOLD
+  CALF
+  HOUSEHOLD
+  DISCARDED
+}
+
+enum MilkRoundStatus {
+  OPEN
+  FINISHED
+}
+
+enum CobResult {
+  NOT_TESTED
+  PASS
+  FAIL
+}
+
+enum UnrecordedReason {
+  NOT_MILKED
+  FORGOT
+  RECORDED
+}
+
+/// One milking round. Mode is chosen once; every scan in the shed writes
+/// into this round. Finishing asks about anyone still missing — a missing
+/// record silently wrecks every average and every profit figure.
+model MilkRound {
+  id          String          @id @default(uuid()) @db.Uuid
+  farmId      String          @db.Uuid
+  session     MilkSession
+  roundDate   DateTime
+  status      MilkRoundStatus @default(OPEN)
+  startedById String?         @db.Uuid
+  finishedAt  DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  farm     Farm              @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  entries  ProductionEntry[]
+  tank     MilkTank?
+  skipped  MilkRoundSkip[]
+
+  @@unique([farmId, roundDate, session])
+  @@index([farmId, status, roundDate])
+}
+
+model MilkRoundSkip {
+  id        String           @id @default(uuid()) @db.Uuid
+  roundId   String           @db.Uuid
+  animalId  String           @db.Uuid
+  reason    UnrecordedReason
+  createdAt DateTime         @default(now())
+
+  round MilkRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@unique([roundId, animalId])
+}
+
+/// Per-session tank. Expected litres are the sum of milk marked SOLD —
+/// computed, never typed. Variance is the daily honesty check.
+model MilkTank {
+  id             String    @id @default(uuid()) @db.Uuid
+  farmId         String    @db.Uuid
+  roundId        String    @unique @db.Uuid
+  expectedLitres Decimal   @db.Decimal(12, 2)
+  actualLitres   Decimal?  @db.Decimal(12, 2)
+  temperatureC   Decimal?  @db.Decimal(5, 2)
+  compositeFat   Decimal?  @db.Decimal(5, 2)
+  compositeSnf   Decimal?  @db.Decimal(5, 2)
+  cobResult      CobResult @default(NOT_TESTED)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  farm     Farm           @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  round    MilkRound      @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  delivery MilkDelivery?
+}
+
+model MilkDelivery {
+  id              String   @id @default(uuid()) @db.Uuid
+  farmId          String   @db.Uuid
+  tankId          String   @unique @db.Uuid
+  litresSent      Decimal  @db.Decimal(12, 2)
+  litresAccepted  Decimal? @db.Decimal(12, 2)
+  litresRejected  Decimal? @db.Decimal(12, 2)
+  rejectReason    String?
+  centreFat       Decimal? @db.Decimal(5, 2)
+  centreSnf       Decimal? @db.Decimal(5, 2)
+  lactometer      Decimal? @db.Decimal(6, 3)
+  centreScc       Int?
+  receiptNumber   String?
+  receiptUrl      String?
+  expectedValue   Decimal? @db.Decimal(12, 2)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  farm Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  tank MilkTank @relation(fields: [tankId], references: [id], onDelete: Cascade)
+
+  @@map("MilkRoundDelivery")
+}
+
+/// Fortnightly cooperative statement. Effective price = netPaid / litres.
+/// That number — typically 10–25% below the headline rate — is what every
+/// profit-per-animal figure must use.
+model PaymentStatement {
+  id             String   @id @default(uuid()) @db.Uuid
+  farmId         String   @db.Uuid
+  periodStart    DateTime
+  periodEnd      DateTime
+  litres         Decimal  @db.Decimal(12, 2)
+  baseRate       Decimal  @db.Decimal(12, 2)
+  fatBonus       Decimal  @default(0) @db.Decimal(12, 2)
+  snfBonus       Decimal  @default(0) @db.Decimal(12, 2)
+  sccPenalty     Decimal  @default(0) @db.Decimal(12, 2)
+  coolingCharge  Decimal  @default(0) @db.Decimal(12, 2)
+  transport      Decimal  @default(0) @db.Decimal(12, 2)
+  membership     Decimal  @default(0) @db.Decimal(12, 2)
+  feedCredit     Decimal  @default(0) @db.Decimal(12, 2)
+  netPaid        Decimal  @db.Decimal(12, 2)
+  effectivePrice Decimal  @db.Decimal(12, 4)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@index([farmId, periodEnd])
+}
+
 model ProductionEntry {
   id          String         @id @default(uuid()) @db.Uuid
   farmId      String         @db.Uuid
@@ -1073,12 +1340,18 @@ model ProductionEntry {
   groupId     String?        @db.Uuid
   batchId     String?        @db.Uuid
   herdBatchId String?        @db.Uuid
+  milkRoundId String?        @db.Uuid
+  session     MilkSession?
+  destination MilkDestination?
   milkerName  String?
   appearance  MilkAppearance?
   fatPercent  Decimal?       @db.Decimal(5, 2)
   snfPercent  Decimal?       @db.Decimal(5, 2)
+  proteinPercent Decimal?    @db.Decimal(5, 2)
+  lactosePercent Decimal?    @db.Decimal(5, 2)
   scc         Int?
   collectionMethod CollectionMethod?
+  udderFlag   Boolean        @default(false)
   notes       String?
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
@@ -1088,10 +1361,30 @@ model ProductionEntry {
   group     AnimalGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   batch     FishBatch?   @relation(fields: [batchId], references: [id], onDelete: SetNull)
   herdBatch HerdBatch?   @relation(fields: [herdBatchId], references: [id], onDelete: SetNull)
+  milkRound MilkRound?   @relation(fields: [milkRoundId], references: [id], onDelete: SetNull)
+  revisions ProductionRevision[]
 
   @@index([farmId, entryDate])
   @@index([farmId, type])
   @@index([herdBatchId])
+  @@index([milkRoundId])
+  @@index([farmId, animalId, entryDate, session])
+}
+
+/// Corrections keep the original figure. Nothing is overwritten silently.
+model ProductionRevision {
+  id               String   @id @default(uuid()) @db.Uuid
+  farmId           String   @db.Uuid
+  entryId          String   @db.Uuid
+  previousQuantity Decimal  @db.Decimal(12, 2)
+  newQuantity      Decimal  @db.Decimal(12, 2)
+  changedById      String?  @db.Uuid
+  createdAt        DateTime @default(now())
+
+  farm  Farm            @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  entry ProductionEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@index([entryId, createdAt])
 }
 
 model NotificationLog {

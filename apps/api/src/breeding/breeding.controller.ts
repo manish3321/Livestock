@@ -14,9 +14,13 @@ import {
   breedingCreateSchema,
   breedingListQuerySchema,
   breedingUpdateSchema,
+  calvingSchema,
+  colostrumSchema,
   heatCreateSchema,
   heatListQuerySchema,
+  pregnancyCheckSchema,
 } from '@farm/contracts';
+import type { CalvingInput, ColostrumInput, PregnancyCheck } from '@farm/contracts';
 import type {
   BreedingCreate,
   BreedingListQuery,
@@ -75,6 +79,39 @@ export class BreedingController {
     @Headers('x-request-id') requestId?: string,
   ): Promise<BreedingRecordDto> {
     return this.breeding.create(user, body, requestId);
+  }
+
+  @Post(':id/calving')
+  @RequirePermissions('breeding:write')
+  calving(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(calvingSchema)) body: CalvingInput,
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    return this.breeding.recordCalving(user, id, body, requestId);
+  }
+
+  @Post(':id/pd')
+  @RequirePermissions('breeding:write')
+  pd(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(pregnancyCheckSchema)) body: PregnancyCheck,
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    return this.breeding.pregnancyCheck(user, id, body, requestId);
+  }
+
+  @Post(':id/colostrum')
+  @RequirePermissions('breeding:write')
+  colostrum(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(colostrumSchema)) body: ColostrumInput,
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    return this.breeding.recordColostrum(user, id, body, requestId);
   }
 
   @Patch(':id')

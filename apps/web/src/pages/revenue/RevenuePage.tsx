@@ -18,6 +18,7 @@ import { ErrorState, LoadingState } from '../../components/PageState';
 import { StatusChip } from '../../components/StatusChip';
 import { useFarmMode } from '../../hooks/useFarmMode';
 import { downloadInvoicePdf } from '../../lib/pdf';
+import { effectivePrice, recordPayment } from '../../api/milk';
 
 const DEFAULT_UNIT: Record<(typeof REVENUE_SOURCES)[number], string> = {
   MILK: 'L',
@@ -188,6 +189,8 @@ export function RevenuePage() {
           </div>
         )}
       </div>
+
+      {commercial && can('revenue:write') && <PaymentStatementCard />}
 
       {showForm && (
         <form className="card form-card" onSubmit={onSubmit} style={{ marginBottom: 24 }}>
@@ -405,6 +408,104 @@ export function RevenuePage() {
         </>
       )}
     </div>
+  );
+}
+
+function PaymentStatementCard() {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const priceQ = useQuery({ queryKey: ['effective-price'], queryFn: effectivePrice });
+  const [litres, setLitres] = useState('');
+  const [baseRate, setBaseRate] = useState('62');
+  const [netPaid, setNetPaid] = useState('');
+  const [feedCredit, setFeedCredit] = useState('0');
+  const [cooling, setCooling] = useState('0');
+  const [transport, setTransport] = useState('0');
+  const [start, setStart] = useState(toDateInput(new Date()));
+  const [end, setEnd] = useState(toDateInput(new Date()));
+
+  const save = useMutation({
+    mutationFn: () =>
+      recordPayment({
+        periodStart: new Date(start),
+        periodEnd: new Date(end),
+        litres: Number(litres),
+        baseRate: Number(baseRate),
+        fatBonus: 0,
+        snfBonus: 0,
+        sccPenalty: 0,
+        coolingCharge: Number(cooling) || 0,
+        transport: Number(transport) || 0,
+        membership: 0,
+        feedCredit: Number(feedCredit) || 0,
+        netPaid: Number(netPaid),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['effective-price'] });
+      void qc.invalidateQueries({ queryKey: ['profit'] });
+    },
+  });
+
+  return (
+    <form
+      className="card form-card"
+      style={{ marginBottom: 24 }}
+      onSubmit={(e) => {
+        e.preventDefault();
+        save.mutate();
+      }}
+    >
+      <h2>{t('revenue.coopPayment')}</h2>
+      <p className="muted">{t('revenue.coopPaymentHelp')}</p>
+      {priceQ.data && (
+        <p>
+          {t('profit.effective')}: <strong>{formatNPR(priceQ.data.effectivePrice)}</strong> / L
+          {priceQ.data.headlineRate != null && (
+            <span className="muted">
+              {' '}
+              ({t('profit.headline')} {formatNPR(priceQ.data.headlineRate)})
+            </span>
+          )}
+        </p>
+      )}
+      <div className="form-grid">
+        <div className="field">
+          <label>{t('common.from') === 'common.from' ? 'From' : t('reports.from')}</label>
+          <input type="date" value={start} onChange={(e) => setStart(e.target.value)} required />
+        </div>
+        <div className="field">
+          <label>{t('reports.to')}</label>
+          <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} required />
+        </div>
+        <div className="field">
+          <label>{t('revenue.quantity')}</label>
+          <input type="number" min="0.1" step="0.1" value={litres} onChange={(e) => setLitres(e.target.value)} required />
+        </div>
+        <div className="field">
+          <label>{t('revenue.rate')}</label>
+          <input type="number" min="0" value={baseRate} onChange={(e) => setBaseRate(e.target.value)} required />
+        </div>
+        <div className="field">
+          <label>{t('revenue.feedCredit')}</label>
+          <input type="number" min="0" value={feedCredit} onChange={(e) => setFeedCredit(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>{t('revenue.cooling')}</label>
+          <input type="number" min="0" value={cooling} onChange={(e) => setCooling(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>{t('revenue.transport')}</label>
+          <input type="number" min="0" value={transport} onChange={(e) => setTransport(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>{t('revenue.netPaid')}</label>
+          <input type="number" value={netPaid} onChange={(e) => setNetPaid(e.target.value)} required />
+        </div>
+      </div>
+      <button className="btn" type="submit" disabled={save.isPending}>
+        {t('revenue.savePayment')}
+      </button>
+    </form>
   );
 }
 

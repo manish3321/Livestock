@@ -3,14 +3,17 @@
 -- Nepali farmers rarely know the exact date of birth of a purchased animal.
 -- Registration must never be blocked on DOB, so an estimated date is a
 -- first-class value that gets flagged wherever it drives a calculation.
+--
+-- lactationNumber and breedComposition already exist in the live database via a
+-- parallel workstream, hence IF NOT EXISTS throughout.
 
 ALTER TABLE "Animal"
-  ADD COLUMN "dobIsEstimated" BOOLEAN NOT NULL DEFAULT false,
-  ADD COLUMN "ageAtAcquisitionMonths" INTEGER,
-  ADD COLUMN "lactationNumber" INTEGER NOT NULL DEFAULT 0,
-  ADD COLUMN "lactationStartDate" TIMESTAMP(3),
-  ADD COLUMN "expectedLactationDays" INTEGER,
-  ADD COLUMN "breedComposition" JSONB;
+  ADD COLUMN IF NOT EXISTS "dobIsEstimated" BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS "ageAtAcquisitionMonths" INTEGER,
+  ADD COLUMN IF NOT EXISTS "lactationNumber" INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS "lactationStartDate" TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "expectedLactationDays" INTEGER,
+  ADD COLUMN IF NOT EXISTS "breedComposition" JSONB;
 
 -- Existing rows that were registered without a DOB had one guessed or left
 -- blank; either way the date on file is not a farmer-confirmed birth date.
@@ -21,10 +24,10 @@ UPDATE "Animal" SET "dobIsEstimated" = true WHERE "dateOfBirth" IS NULL;
 UPDATE "Animal" a
 SET "expectedLactationDays" = s."lactationDays"
 FROM "SpeciesConfig" s
-WHERE s."species" = a."species";
+WHERE s."species" = a."species" AND a."expectedLactationDays" IS NULL;
 
 -- Anything already LACTATING is on at least her first lactation.
 UPDATE "Animal" SET "lactationNumber" = 1
-WHERE "status" = 'LACTATING' AND "lactationNumber" = 0;
+WHERE "status"::text = 'LACTATING' AND "lactationNumber" = 0;
 
-CREATE INDEX "Animal_farmId_isPregnant_idx" ON "Animal"("farmId", "isPregnant");
+CREATE INDEX IF NOT EXISTS "Animal_farmId_isPregnant_idx" ON "Animal"("farmId", "isPregnant");

@@ -47,6 +47,18 @@ export function updateBreeding(id: string, body: BreedingUpdate): Promise<Breedi
   return api(`/v1/breeding/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
 }
 
+export function recordCalving(id: string, body: import('@farm/contracts').CalvingInput) {
+  return api<BreedingDto>(`/v1/breeding/${id}/calving`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function pregnancyCheck(id: string, body: import('@farm/contracts').PregnancyCheck) {
+  return api<BreedingDto>(`/v1/breeding/${id}/pd`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function recordColostrum(id: string, body: import('@farm/contracts').ColostrumInput) {
+  return api<BreedingDto>(`/v1/breeding/${id}/colostrum`, { method: 'POST', body: JSON.stringify(body) });
+}
+
 export interface HeatLogDto {
   id: string;
   animalId: string;
@@ -57,6 +69,10 @@ export interface HeatLogDto {
   signs: string | null;
   notes: string | null;
   createdAt: string;
+  nextHeatAt?: string;
+  serviceWindowStart?: string;
+  serviceWindowEnd?: string;
+  tooSoonDays?: number | null;
 }
 
 export function listHeat(animalId?: string): Promise<PageResult<HeatLogDto>> {

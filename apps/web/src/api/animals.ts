@@ -69,6 +69,35 @@ export function deleteAnimal(id: string): Promise<void> {
   return api(`/v1/animals/${id}`, { method: 'DELETE' });
 }
 
+export function previewAnimalImport(csv: string) {
+  return api<import('@farm/contracts').AnimalImportPreviewRow[]>('/v1/animals/import/preview', {
+    method: 'POST',
+    body: JSON.stringify({ csv }),
+  });
+}
+
+export function commitAnimalImport(rows: import('@farm/contracts').AnimalImportRow[]) {
+  return api<{ created: number; errors: import('@farm/contracts').AnimalImportPreviewRow[] }>(
+    '/v1/animals/import',
+    { method: 'POST', body: JSON.stringify({ rows }) },
+  );
+}
+
+export function printTags(ids?: string[]) {
+  const qs = ids?.length ? `?ids=${ids.join(',')}` : '';
+  return api<Array<{ id: string; herdNumber: string | null; tag: string; name: string | null; qrPath: string }>>(
+    `/v1/animals/tags/print${qs}`,
+  );
+}
+
+export function replaceTag(id: string, body: import('@farm/contracts').TagReplace) {
+  return api(`/v1/animals/${id}/retag`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function placeMarker(body: import('@farm/contracts').MarkerPlace) {
+  return api('/v1/animals/markers', { method: 'POST', body: JSON.stringify(body) });
+}
+
 export function addWeight(id: string, body: WeightCreate): Promise<WeightRecordDto> {
   return api(`/v1/animals/${id}/weights`, {
     method: 'POST',

@@ -6,7 +6,7 @@
  * what to render, never to authorize.
  */
 
-export const ROLES = ['ADMIN', 'MANAGER', 'WORKER'] as const;
+export const ROLES = ['ADMIN', 'MANAGER', 'WORKER', 'VET', 'COOP'] as const;
 export type Role = (typeof ROLES)[number];
 
 /** Product modules. Keys are stable identifiers used in routes. */
@@ -27,6 +27,8 @@ export const MODULES = [
   'feed',
   'reports',
   'admin',
+  'shed',
+  'inbox',
 ] as const;
 export type ModuleKey = (typeof MODULES)[number];
 
@@ -68,6 +70,8 @@ export const PERMISSIONS = [
   'audit:read',
   // Sync (optional API clients)
   'sync:use',
+  'tasks:read',
+  'tasks:manage',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -91,6 +95,7 @@ const WORKER_PERMISSIONS: Permission[] = [
   'expenses:read',
   'expenses:submit',
   'sync:use',
+  'tasks:read',
 ];
 
 const MANAGER_PERMISSIONS: Permission[] = [
@@ -103,6 +108,7 @@ const MANAGER_PERMISSIONS: Permission[] = [
   'finance:read',
   'reports:read',
   'export:data',
+  'tasks:manage',
 ];
 
 const ADMIN_PERMISSIONS: Permission[] = [
@@ -113,10 +119,31 @@ const ADMIN_PERMISSIONS: Permission[] = [
   'audit:read',
 ];
 
+const VET_PERMISSIONS: Permission[] = [
+  'animals:read',
+  'health:read',
+  'health:write',
+  'breeding:read',
+  'breeding:write',
+  'production:read',
+  'tasks:read',
+  'sync:use',
+];
+
+const COOP_PERMISSIONS: Permission[] = [
+  'animals:read',
+  'production:read',
+  'reports:read',
+  'finance:read',
+  'revenue:read',
+];
+
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   ADMIN: ADMIN_PERMISSIONS,
   MANAGER: MANAGER_PERMISSIONS,
   WORKER: WORKER_PERMISSIONS,
+  VET: VET_PERMISSIONS,
+  COOP: COOP_PERMISSIONS,
 };
 
 export function hasPermission(role: Role, permission: Permission): boolean {
@@ -128,22 +155,24 @@ export function hasPermission(role: Role, permission: Permission): boolean {
  * Workers never see financial modules (also enforced server-side).
  */
 export const MODULE_ACCESS: Record<ModuleKey, readonly Role[]> = {
-  dashboard: ['ADMIN', 'MANAGER', 'WORKER'],
-  animals: ['ADMIN', 'MANAGER', 'WORKER'],
-  batches: ['ADMIN', 'MANAGER', 'WORKER'],
+  dashboard: ['ADMIN', 'MANAGER', 'WORKER', 'VET', 'COOP'],
+  animals: ['ADMIN', 'MANAGER', 'WORKER', 'VET', 'COOP'],
+  batches: ['ADMIN', 'MANAGER', 'WORKER', 'VET', 'COOP'],
   groups: ['ADMIN', 'MANAGER', 'WORKER'],
   fish: ['ADMIN', 'MANAGER', 'WORKER'],
-  scan: ['ADMIN', 'MANAGER', 'WORKER'],
+  scan: ['ADMIN', 'MANAGER', 'WORKER', 'VET'],
   expenses: ['ADMIN', 'MANAGER', 'WORKER'],
-  revenue: ['ADMIN', 'MANAGER'],
+  revenue: ['ADMIN', 'MANAGER', 'COOP'],
   pnl: ['ADMIN', 'MANAGER'],
-  inventory: ['ADMIN', 'MANAGER', 'WORKER'],
-  health: ['ADMIN', 'MANAGER', 'WORKER'],
-  breeding: ['ADMIN', 'MANAGER', 'WORKER'],
-  production: ['ADMIN', 'MANAGER', 'WORKER'],
+  inventory: ['ADMIN', 'MANAGER', 'WORKER', 'VET'],
+  health: ['ADMIN', 'MANAGER', 'WORKER', 'VET'],
+  breeding: ['ADMIN', 'MANAGER', 'WORKER', 'VET'],
+  production: ['ADMIN', 'MANAGER', 'WORKER', 'COOP'],
   feed: ['ADMIN', 'MANAGER', 'WORKER'],
-  reports: ['ADMIN', 'MANAGER'],
+  reports: ['ADMIN', 'MANAGER', 'COOP'],
   admin: ['ADMIN'],
+  shed: ['ADMIN', 'MANAGER', 'WORKER', 'VET'],
+  inbox: ['ADMIN', 'MANAGER', 'WORKER', 'VET'],
 };
 
 export function modulesForRole(role: Role): ModuleKey[] {

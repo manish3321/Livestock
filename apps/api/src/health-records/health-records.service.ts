@@ -1,10 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   HEALTH_DEFAULT_INTERVAL_DAYS,
+  NEPAL_VACCINE_PROTOCOLS,
+  type GroupVaccinate,
   type HealthCreate,
   type HealthListQuery,
   type PageResult,
 } from '@farm/contracts';
+import { ensureTask } from '../jobs/task-writer';
 import type { HealthRecord, Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/types';
@@ -30,6 +33,8 @@ export interface HealthRecordDto {
   followUpAt: string | null;
   cmtResult: string | null;
   milkWithholdUntil: string | null;
+  meatWithholdUntil: string | null;
+  batchNumber: string | null;
   performedAt: string;
   nextDueAt: string | null;
   notes: string | null;
@@ -67,6 +72,7 @@ export class HealthRecordsService {
     const where: Prisma.HealthRecordWhereInput = {
       farmId: user.farmId,
       ...(query.type ? { type: query.type } : {}),
+      ...(query.animalId ? { animalId: query.animalId } : {}),
       ...dueFilter,
     };
 
@@ -145,6 +151,18 @@ export class HealthRecordsService {
       }
     }
 
+    if (input.animalId && input.milkWithholdUntil) {
+      const existing = await this.prisma.healthRecord.findMany({
+        where: { farmId: user.farmId, animalId: input.animalId, milkWithholdUntil: { not: null } },
+        select: { milkWithholdUntil: true },
+      });
+      const stacked = existing.reduce(
+        (max, r) => (r.milkWithholdUntil && r.milkWithholdUntil > max ? r.milkWithholdUntil : max),
+        input.milkWithholdUntil,
+      );
+      input = { ...input, milkWithholdUntil: stacked };
+    }
+
     const row = await this.prisma.healthRecord.create({
       data: {
         farmId: user.farmId,
@@ -162,6 +180,8 @@ export class HealthRecordsService {
         followUpAt: input.followUpAt,
         cmtResult: input.cmtResult,
         milkWithholdUntil: input.milkWithholdUntil,
+        meatWithholdUntil: input.meatWithholdUntil,
+        batchNumber: input.batchNumber,
         performedAt: input.performedAt,
         nextDueAt,
         notes: input.notes,
@@ -181,7 +201,84 @@ export class HealthRecordsService {
       requestId,
     });
 
+    if (input.animalId && input.doseCount && input.doseCount > 1) {
+      const hours = input.doseIntervalHours ?? 12;
+      for (let i = 1; i < input.doseCount; i++) {
+        await ensureTask(this.prisma, {
+          farmId: user.farmId,
+          animalId: input.animalId,
+          type: 'MEDICATION_DOSE',
+          titleEn: `Dose ${i + 1}/${input.doseCount} — ${input.title}`,
+          titleNp: `खुराक ${i + 1}/${input.doseCount} — ${input.title}`,
+          dueAt: new Date(input.performedAt.getTime() + i * hours * 60 * 60 * 1000),
+          priority: 'HIGH',
+          sourceRefType: 'healthRecord',
+          sourceRefId: row.id,
+        });
+      }
+    }
+
     return toDto(row);
+  }
+
+  async groupVaccinate(user: RequestUser, input: GroupVaccinate, requestId?: string) {
+    const protocol = NEPAL_VACCINE_PROTOCOLS.find((p) => p.key === input.protocolKey);
+    const animals = await this.prisma.animal.findMany({
+      where: { id: { in: input.animalIds }, farmId: user.farmId, deletedAt: null },
+    });
+    const blocked: string[] = [];
+    const created: HealthRecordDto[] = [];
+    for (const animal of animals) {
+      if (protocol?.blockPregnant && animal.isPregnant && !input.pregnantOverride) {
+        blocked.push(animal.herdNumber ?? animal.tag);
+        continue;
+      }
+      if (protocol?.blockPregnant && animal.isPregnant && input.pregnantOverride && !input.pregnantOverrideReason) {
+        throw new BadRequestException({
+          code: 'OVERRIDE_REASON_REQUIRED',
+          message: 'Giving this vaccine to a pregnant animal needs a reason',
+        });
+      }
+      created.push(
+        await this.create(
+          user,
+          {
+            type: protocol?.key === 'DEWORM' ? 'DEWORMING' : 'VACCINATION',
+            title: input.title,
+            animalId: animal.id,
+            performedAt: input.performedAt,
+            batchNumber: input.batchNumber,
+            milkWithholdUntil: input.milkWithholdUntil,
+            meatWithholdUntil: input.meatWithholdUntil,
+            notes: input.pregnantOverrideReason,
+          },
+          requestId,
+        ),
+      );
+    }
+    if (input.inventoryItemId && created.length) {
+      const item = await this.prisma.inventoryItem.findFirst({
+        where: { id: input.inventoryItemId, farmId: user.farmId, deletedAt: null },
+      });
+      if (item) {
+        const next = Number(item.currentStock) - created.length;
+        await this.prisma.inventoryItem.update({
+          where: { id: item.id },
+          data: { currentStock: next },
+        });
+        await this.prisma.stockMovement.create({
+          data: {
+            farmId: user.farmId,
+            itemId: item.id,
+            type: 'OUT',
+            quantity: created.length,
+            reason: `Group vaccinate ${input.title}`,
+            userId: user.id,
+          },
+        });
+      }
+    }
+    return { created: created.length, blocked, records: created };
   }
 
   async update(
@@ -276,6 +373,8 @@ function toDto(r: HealthWithRelations): HealthRecordDto {
     followUpAt: r.followUpAt?.toISOString() ?? null,
     cmtResult: r.cmtResult,
     milkWithholdUntil: r.milkWithholdUntil?.toISOString() ?? null,
+    meatWithholdUntil: r.meatWithholdUntil?.toISOString() ?? null,
+    batchNumber: r.batchNumber,
     performedAt: r.performedAt.toISOString(),
     nextDueAt: r.nextDueAt?.toISOString() ?? null,
     notes: r.notes,

@@ -12,6 +12,8 @@ import {
 } from './pages/batches/BatchesPages';
 import { AnimalDetailPage, AnimalFormPage } from './pages/animals/AnimalDetailPage';
 import { AnimalsListPage } from './pages/animals/AnimalsListPage';
+import { AnimalsImportPage } from './pages/animals/AnimalsImportPage';
+import { TagPrintPage } from './pages/animals/TagPrintPage';
 import { DashboardPage } from './pages/dashboard/DashboardPage';
 import { ExpensesPage } from './pages/expenses/ExpensesPage';
 import { RevenuePage } from './pages/revenue/RevenuePage';
@@ -25,6 +27,9 @@ import { AdminAuditPage, AdminMembersPage } from './pages/admin/AdminPages';
 import { ReportsPage } from './pages/reports/ReportsPage';
 import { AnimalScanPage, BatchScanPage } from './pages/scan/ScanPages';
 import { ScanHubPage } from './pages/scan/ScanHubPage';
+import { ShedPage } from './pages/shed/ShedPage';
+import { InboxPage } from './pages/inbox/InboxPage';
+import { ProfitPage } from './pages/money/ProfitPage';
 
 /**
  * Individuals moved from /animals/stock to /animals when the batch-first
@@ -51,6 +56,8 @@ export function App() {
 
             <Route element={<RequireModule module="animals" />}>
               <Route path="/animals" element={<AnimalsListPage />} />
+              <Route path="/animals/import" element={<AnimalsImportPage />} />
+              <Route path="/animals/tags" element={<TagPrintPage />} />
               <Route path="/animals/new" element={<AnimalFormPage mode="create" />} />
               <Route path="/animals/:id" element={<AnimalDetailPage />} />
               <Route path="/animals/:id/edit" element={<AnimalFormPage mode="edit" />} />
@@ -70,6 +77,14 @@ export function App() {
             <Route element={<RequireModule module="batches" />}>
               <Route path="/batches" element={<LivestockBatchesPage />} />
               <Route path="/batches/:id" element={<BatchDetailPage />} />
+            </Route>
+
+            <Route element={<RequireModule module="shed" />}>
+              <Route path="/shed" element={<ShedPage />} />
+            </Route>
+
+            <Route element={<RequireModule module="inbox" />}>
+              <Route path="/inbox" element={<InboxPage />} />
             </Route>
 
             <Route element={<RequireModule module="scan" />}>
@@ -97,6 +112,7 @@ export function App() {
             <Route element={<RequireModule module="pnl" />}>
               <Route element={<RequireCommercial />}>
                 <Route path="/pnl" element={<PnlPage />} />
+                <Route path="/profit" element={<ProfitPage />} />
               </Route>
             </Route>
 

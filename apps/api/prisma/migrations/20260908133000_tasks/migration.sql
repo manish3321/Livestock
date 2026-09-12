@@ -1,24 +1,39 @@
 -- Phase 1d: the farmer's work queue.
+--
+-- Note for whoever reconciles this: the live database also carries a FarmTask
+-- table from a parallel workstream that covers the same ground with a different
+-- shape (a payload JSON instead of sourceRefType/sourceRefId, and no snooze
+-- ceiling). The two are not merged yet and should not both survive.
 
-CREATE TYPE "TaskType" AS ENUM (
-  'VACCINATION_DUE', 'MEDICATION_DOSE', 'COLOSTRUM_FEED', 'CALVING_WATCH',
-  'HEAT_WATCH', 'SILENT_HEAT_CHECK', 'SERVICE_WINDOW', 'PREGNANCY_CHECK',
-  'DRY_OFF', 'POSTPARTUM_CHECK', 'MILK_WITHHOLD_END', 'STOCK_REORDER',
-  'LOT_EXPIRING', 'MISSING_PRODUCTION', 'YIELD_DROP', 'APPLY_MARKER',
-  'REMOVE_MARKER', 'RETAG_REQUIRED'
-);
+DO $$ BEGIN
+  CREATE TYPE "TaskType" AS ENUM (
+    'VACCINATION_DUE', 'MEDICATION_DOSE', 'COLOSTRUM_FEED', 'CALVING_WATCH',
+    'HEAT_WATCH', 'SILENT_HEAT_CHECK', 'SERVICE_WINDOW', 'PREGNANCY_CHECK',
+    'DRY_OFF', 'POSTPARTUM_CHECK', 'MILK_WITHHOLD_END', 'STOCK_REORDER',
+    'LOT_EXPIRING', 'MISSING_PRODUCTION', 'YIELD_DROP', 'APPLY_MARKER',
+    'REMOVE_MARKER', 'RETAG_REQUIRED'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-CREATE TYPE "TaskPriority" AS ENUM ('CRITICAL', 'HIGH', 'NORMAL', 'LOW');
+DO $$ BEGIN
+  CREATE TYPE "TaskPriority" AS ENUM ('CRITICAL', 'HIGH', 'NORMAL', 'LOW');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-CREATE TYPE "TaskStatus" AS ENUM ('PENDING', 'DONE', 'SNOOZED', 'DISMISSED', 'EXPIRED');
+DO $$ BEGIN
+  CREATE TYPE "TaskStatus" AS ENUM ('PENDING', 'DONE', 'SNOOZED', 'DISMISSED', 'EXPIRED');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-CREATE TYPE "TaskSource" AS ENUM ('AUTO', 'MANUAL');
+DO $$ BEGIN
+  CREATE TYPE "TaskSource" AS ENUM ('AUTO', 'MANUAL');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-CREATE TYPE "TaskDismissReason" AS ENUM (
-  'NOT_NEEDED', 'ALREADY_DONE_OFFLINE', 'ANIMAL_SOLD', 'WRONG_ANIMAL', 'OTHER'
-);
+DO $$ BEGIN
+  CREATE TYPE "TaskDismissReason" AS ENUM (
+    'NOT_NEEDED', 'ALREADY_DONE_OFFLINE', 'ANIMAL_SOLD', 'WRONG_ANIMAL', 'OTHER'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-CREATE TABLE "Task" (
+CREATE TABLE IF NOT EXISTS "Task" (
     "id" UUID NOT NULL,
     "farmId" UUID NOT NULL,
     "animalId" UUID,
@@ -48,10 +63,10 @@ CREATE TABLE "Task" (
     CONSTRAINT "Task_pkey" PRIMARY KEY ("id")
 );
 
-CREATE INDEX "Task_farmId_status_dueAt_idx" ON "Task"("farmId", "status", "dueAt");
-CREATE INDEX "Task_farmId_animalId_status_idx" ON "Task"("farmId", "animalId", "status");
-CREATE INDEX "Task_farmId_assignedToId_status_idx" ON "Task"("farmId", "assignedToId", "status");
-CREATE INDEX "Task_farmId_priority_dueAt_idx" ON "Task"("farmId", "priority", "dueAt");
+CREATE INDEX IF NOT EXISTS "Task_farmId_status_dueAt_idx" ON "Task"("farmId", "status", "dueAt");
+CREATE INDEX IF NOT EXISTS "Task_farmId_animalId_status_idx" ON "Task"("farmId", "animalId", "status");
+CREATE INDEX IF NOT EXISTS "Task_farmId_assignedToId_status_idx" ON "Task"("farmId", "assignedToId", "status");
+CREATE INDEX IF NOT EXISTS "Task_farmId_priority_dueAt_idx" ON "Task"("farmId", "priority", "dueAt");
 
 -- The nightly generators re-run over the same herd every night, so inserting a
 -- task the farmer already has open must be a no-op rather than a duplicate.
@@ -65,16 +80,27 @@ CREATE INDEX "Task_farmId_priority_dueAt_idx" ON "Task"("farmId", "priority", "d
 -- Partial and NULLS NOT DISTINCT indexes cannot be expressed in the Prisma
 -- schema, so this index lives only here. Do not expect `prisma db pull` to
 -- round-trip it.
-CREATE UNIQUE INDEX "Task_pending_dedupe_idx"
+CREATE UNIQUE INDEX IF NOT EXISTS "Task_pending_dedupe_idx"
   ON "Task" ("farmId", "animalId", "type", "sourceRefId")
   NULLS NOT DISTINCT
   WHERE "status" = 'PENDING';
 
-ALTER TABLE "Task" ADD CONSTRAINT "Task_farmId_fkey"
-  FOREIGN KEY ("farmId") REFERENCES "Farm"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "Task" ADD CONSTRAINT "Task_animalId_fkey"
-  FOREIGN KEY ("animalId") REFERENCES "Animal"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "Task" ADD CONSTRAINT "Task_batchId_fkey"
-  FOREIGN KEY ("batchId") REFERENCES "HerdBatch"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "Task" ADD CONSTRAINT "Task_assignedToId_fkey"
-  FOREIGN KEY ("assignedToId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "Task" ADD CONSTRAINT "Task_farmId_fkey"
+    FOREIGN KEY ("farmId") REFERENCES "Farm"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "Task" ADD CONSTRAINT "Task_animalId_fkey"
+    FOREIGN KEY ("animalId") REFERENCES "Animal"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "Task" ADD CONSTRAINT "Task_batchId_fkey"
+    FOREIGN KEY ("batchId") REFERENCES "HerdBatch"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "Task" ADD CONSTRAINT "Task_assignedToId_fkey"
+    FOREIGN KEY ("assignedToId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;

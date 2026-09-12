@@ -9,19 +9,26 @@ import type {
   AnimalDetailDto,
   AnimalDto,
   AnimalEconomicsDto,
+  AnimalImportCommit,
+  AnimalImportPreviewRow,
   AnimalListQuery,
   AnimalUpdate,
+  MarkerPlace,
   PageResult,
+  TagReplace,
   WeightCreate,
   WeightRecordDto,
 } from '@farm/contracts';
+import { DEFAULT_MARKER_SCHEME, animalImportRowSchema } from '@farm/contracts';
 import { MIN_DAM_AGE_GAP_MONTHS, type AnimalStatusHistoryDto, type BreedComposition, type Species } from '@farm/contracts';
 import { Prisma, type Animal, type AnimalStatusHistory, type WeightRecord } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
+import { HerdNumberService } from '../herd-number/herd-number.service';
 import { SpeciesConfigService } from '../species-config/species-config.service';
 import { toSnapshot } from '../sync/animal.applier';
+import { ensureTask } from '../jobs/task-writer';
 
 const MONTH_MS = 30.44 * 24 * 60 * 60 * 1000;
 
@@ -31,6 +38,7 @@ export class AnimalsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly speciesConfig: SpeciesConfigService,
+    private readonly herdNumbers: HerdNumberService,
   ) {}
 
   async list(
@@ -43,10 +51,12 @@ export class AnimalsService {
       ...(query.species ? { species: query.species } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(query.gender ? { gender: query.gender } : {}),
+      ...(query.shed ? { shed: query.shed } : {}),
       ...(query.q
         ? {
             OR: [
               { tag: { contains: query.q, mode: 'insensitive' as const } },
+              { herdNumber: { contains: query.q, mode: 'insensitive' as const } },
               { name: { contains: query.q, mode: 'insensitive' as const } },
               { breed: { contains: query.q, mode: 'insensitive' as const } },
             ],
@@ -197,10 +207,12 @@ export class AnimalsService {
     const { lactationDays } = await this.speciesConfig.forSpecies(data.species as Species);
 
     const animal = await this.prisma.$transaction(async (tx) => {
+      const herdNumber = await this.herdNumbers.issue(tx, user.farmId, data.species as Species);
       const created = await tx.animal.create({
         data: {
           farmId: user.farmId,
           tag: data.tag,
+          herdNumber,
           name: data.name,
           species: data.species,
           breed: data.breed,
@@ -213,6 +225,8 @@ export class AnimalsService {
           motherTag: data.motherTag,
           purchaseDate: data.purchaseDate,
           purchaseCost: data.purchaseCost,
+          sellerName: data.sellerName,
+          distinguishingMarks: data.distinguishingMarks,
           status: data.status,
           isPregnant: data.isPregnant ?? false,
           pregnancyConfirmedDate: data.pregnancyConfirmedDate,
@@ -227,6 +241,16 @@ export class AnimalsService {
           sireId: data.sireId,
           notes: data.notes,
           version: 1,
+        },
+      });
+
+      await tx.animalTag.create({
+        data: {
+          farmId: user.farmId,
+          animalId: created.id,
+          herdNumber,
+          fullTag: created.tag,
+          reason: 'ISSUED',
         },
       });
 
@@ -596,6 +620,209 @@ export class AnimalsService {
       }
     }
   }
+
+  previewImport(csvText: string): AnimalImportPreviewRow[] {
+    const lines = csvText.split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length === 0) return [];
+    const header = splitCsvLine(lines[0]!).map((h) => h.trim().toLowerCase());
+    return lines.slice(1).map((line, i) => {
+      const cells = splitCsvLine(line);
+      const raw: Record<string, string> = {};
+      header.forEach((h, idx) => {
+        raw[h] = cells[idx]?.trim() ?? '';
+      });
+      const parsed = animalImportRowSchema.safeParse({
+        tag: raw.tag,
+        name: raw.name || undefined,
+        species: raw.species?.toUpperCase(),
+        breed: raw.breed,
+        gender: raw.gender?.toUpperCase(),
+        status: raw.status?.toUpperCase() || undefined,
+        source: raw.source?.toUpperCase() || undefined,
+        shed: raw.shed || undefined,
+        sellerName: raw.sellername || raw.seller || undefined,
+        dateOfBirth: raw.dateofbirth || raw.dob || undefined,
+        ageAtAcquisitionMonths: raw.ageatacquisitionmonths || raw.age || undefined,
+        purchaseCost: raw.purchasecost || raw.price || undefined,
+      });
+      if (!parsed.success) {
+        return {
+          row: i + 2,
+          data: null,
+          errors: parsed.error.issues.map((e) => `${e.path.join('.')}: ${e.message}`),
+        };
+      }
+      return { row: i + 2, data: parsed.data, errors: [] };
+    });
+  }
+
+  async commitImport(
+    user: RequestUser,
+    input: AnimalImportCommit,
+    requestId?: string,
+  ): Promise<{ created: number; errors: AnimalImportPreviewRow[] }> {
+    const errors: AnimalImportPreviewRow[] = [];
+    let created = 0;
+    for (const [i, row] of input.rows.entries()) {
+      try {
+        await this.create(
+          user,
+          {
+            tag: row.tag,
+            name: row.name,
+            species: row.species,
+            breed: row.breed,
+            gender: row.gender,
+            status: row.status ?? 'ACTIVE',
+            source: row.source,
+            shed: row.shed,
+            sellerName: row.sellerName,
+            dateOfBirth: row.dateOfBirth,
+            ageAtAcquisitionMonths: row.ageAtAcquisitionMonths,
+            purchaseCost: row.purchaseCost,
+          },
+          requestId,
+        );
+        created += 1;
+      } catch (err) {
+        errors.push({
+          row: i + 1,
+          data: row,
+          errors: [err instanceof Error ? err.message : 'Could not create'],
+        });
+      }
+    }
+    return { created, errors };
+  }
+
+  async replaceTag(user: RequestUser, id: string, input: TagReplace, requestId?: string) {
+    const animal = await this.prisma.animal.findFirst({
+      where: { id, farmId: user.farmId, deletedAt: null },
+    });
+    if (!animal || !animal.herdNumber) {
+      throw new NotFoundException({ code: 'ANIMAL_NOT_FOUND', message: 'Animal not found' });
+    }
+    const fullTag = input.fullTag ?? animal.tag;
+    await this.prisma.animalTag.updateMany({
+      where: { animalId: animal.id, replacedAt: null },
+      data: { replacedAt: new Date(), reason: input.reason },
+    });
+    await this.prisma.animalTag.create({
+      data: {
+        farmId: user.farmId,
+        animalId: animal.id,
+        herdNumber: animal.herdNumber,
+        fullTag,
+        reason: 'ISSUED',
+      },
+    });
+    if (fullTag !== animal.tag) {
+      await this.prisma.animal.update({ where: { id: animal.id }, data: { tag: fullTag } });
+    }
+    await this.audit.record({
+      farmId: user.farmId,
+      userId: user.id,
+      action: 'animal.retag',
+      entityType: 'animal',
+      entityId: animal.id,
+      metadata: { reason: input.reason, herdNumber: animal.herdNumber },
+      requestId,
+    });
+    return this.get(user, animal.id);
+  }
+
+  async printTags(user: RequestUser, ids?: string[]) {
+    const animals = await this.prisma.animal.findMany({
+      where: {
+        farmId: user.farmId,
+        deletedAt: null,
+        ...(ids?.length ? { id: { in: ids } } : {}),
+      },
+      orderBy: { herdNumber: 'asc' },
+    });
+    return animals.map((a) => ({
+      id: a.id,
+      herdNumber: a.herdNumber,
+      tag: a.tag,
+      name: a.name,
+      species: a.species,
+      qrPath: `/scan/a/${a.id}`,
+    }));
+  }
+
+  async placeMarker(user: RequestUser, input: MarkerPlace, requestId?: string) {
+    if (!input.byScan) {
+      throw new BadRequestException({
+        code: 'SCAN_REQUIRED',
+        message: 'Placing a band requires a scan so the record matches the ear',
+      });
+    }
+    const animal = await this.prisma.animal.findFirst({
+      where: { id: input.animalId, farmId: user.farmId, deletedAt: null },
+    });
+    if (!animal) {
+      throw new NotFoundException({ code: 'ANIMAL_NOT_FOUND', message: 'Animal not found' });
+    }
+    const color = DEFAULT_MARKER_SCHEME[input.meaning];
+    const marker = await this.prisma.animalMarker.create({
+      data: {
+        farmId: user.farmId,
+        animalId: animal.id,
+        color,
+        meaning: input.meaning,
+        placedById: user.id,
+        placedByScan: true,
+      },
+    });
+    await ensureTask(this.prisma, {
+      farmId: user.farmId,
+      animalId: animal.id,
+      type: 'REMOVE_MARKER',
+      titleEn: `Remove ${color} band from ${animal.herdNumber ?? animal.tag}`,
+      titleNp: `${animal.herdNumber ?? animal.tag} बाट ${color} ब्यान्ड हटाउनुहोस्`,
+      dueAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+      priority: 'NORMAL',
+      sourceRefType: 'animalMarker',
+      sourceRefId: marker.id,
+    });
+    await this.audit.record({
+      farmId: user.farmId,
+      userId: user.id,
+      action: 'animal.marker.place',
+      entityType: 'animalMarker',
+      entityId: marker.id,
+      requestId,
+    });
+    return marker;
+  }
+
+  async removeMarker(user: RequestUser, markerId: string, byScan: boolean, requestId?: string) {
+    if (!byScan) {
+      throw new BadRequestException({
+        code: 'SCAN_REQUIRED',
+        message: 'Removing a band requires a scan',
+      });
+    }
+    const marker = await this.prisma.animalMarker.findFirst({
+      where: { id: markerId, farmId: user.farmId, removedAt: null },
+    });
+    if (!marker) {
+      throw new NotFoundException({ code: 'MARKER_NOT_FOUND', message: 'Marker not found' });
+    }
+    await this.prisma.animalMarker.update({
+      where: { id: marker.id },
+      data: { removedAt: new Date(), removedById: user.id, removedByScan: true },
+    });
+    await this.audit.record({
+      farmId: user.farmId,
+      userId: user.id,
+      action: 'animal.marker.remove',
+      entityType: 'animalMarker',
+      entityId: marker.id,
+      requestId,
+    });
+    return { ok: true };
+  }
 }
 
 /**
@@ -631,6 +858,7 @@ function toDto(
     id: animal.id,
     farmId: animal.farmId,
     tag: animal.tag,
+    herdNumber: animal.herdNumber,
     name: animal.name,
     species: animal.species,
     breed: animal.breed,
@@ -643,6 +871,8 @@ function toDto(
     motherTag: animal.motherTag,
     purchaseDate: animal.purchaseDate?.toISOString() ?? null,
     purchaseCost: animal.purchaseCost ? Number(animal.purchaseCost) : null,
+    sellerName: animal.sellerName,
+    distinguishingMarks: animal.distinguishingMarks,
     status: animal.status,
     isPregnant: animal.isPregnant,
     pregnancyConfirmedDate: animal.pregnancyConfirmedDate?.toISOString() ?? null,
@@ -695,4 +925,28 @@ function csv(value: string | null | undefined): string {
   if (!value) return '';
   if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
   return value;
+}
+
+function splitCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === ',' && !inQuotes) {
+      out.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  out.push(cur);
+  return out;
 }

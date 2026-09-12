@@ -31,6 +31,8 @@ export const SPECIES_LABEL: Record<Species, string> = {
  * that are both true and lose one of them.
  */
 export const ANIMAL_STATUSES = [
+  'GROWING',
+  'HEIFER',
   'ACTIVE',
   'SICK',
   'QUARANTINE',
@@ -43,6 +45,8 @@ export const ANIMAL_STATUSES = [
 export type AnimalStatus = (typeof ANIMAL_STATUSES)[number];
 
 export const ANIMAL_STATUS_LABEL: Record<AnimalStatus, string> = {
+  GROWING: 'Growing',
+  HEIFER: 'Heifer',
   ACTIVE: 'Active',
   SICK: 'Sick',
   QUARANTINE: 'Quarantine',
@@ -62,7 +66,14 @@ export const ANIMAL_EXIT_STATUSES = ['CULLED', 'SOLD', 'DEAD'] as const;
 export const GENDERS = ['FEMALE', 'MALE'] as const;
 export type Gender = (typeof GENDERS)[number];
 
-export const ANIMAL_SOURCES = ['PURCHASED', 'BORN', 'TRANSFERRED'] as const;
+export const SPECIES_HERD_LETTER: Record<Species, string> = {
+  BUFFALO: 'B',
+  COW: 'C',
+  PIG: 'P',
+  GOAT: 'G',
+};
+
+export const ANIMAL_SOURCES = ['PURCHASED', 'BORN', 'GIFTED', 'TRANSFERRED'] as const;
 export type AnimalSource = (typeof ANIMAL_SOURCES)[number];
 
 /**
@@ -99,6 +110,8 @@ const animalBaseSchema = z.object({
   motherTag: z.string().max(20).optional(),
   purchaseDate: z.coerce.date().optional(),
   purchaseCost: z.number().nonnegative().optional(),
+  sellerName: z.string().max(120).optional(),
+  distinguishingMarks: z.string().max(500).optional(),
   /** Initial weight in kg when creating; stored as first weight history entry. */
   initialWeightKg: z.number().positive().max(5000).optional(),
   status: z.enum(ANIMAL_STATUSES).default('ACTIVE'),
@@ -168,6 +181,7 @@ export const animalListQuerySchema = z.object({
   species: z.enum(SPECIES).optional(),
   status: z.enum(ANIMAL_STATUSES).optional(),
   gender: z.enum(GENDERS).optional(),
+  shed: z.string().max(80).optional(),
 });
 export type AnimalListQuery = z.infer<typeof animalListQuerySchema>;
 
@@ -185,6 +199,8 @@ export interface AnimalDto {
   id: string;
   farmId: string;
   tag: string;
+  /** Printed large on the tag: B42. The number a worker holds in his head. */
+  herdNumber: string | null;
   name: string | null;
   species: Species;
   breed: string;
@@ -198,6 +214,8 @@ export interface AnimalDto {
   motherTag: string | null;
   purchaseDate: string | null;
   purchaseCost: number | null;
+  sellerName: string | null;
+  distinguishingMarks: string | null;
   status: AnimalStatus;
   /** Independent of status — she may be lactating and pregnant at once. */
   isPregnant: boolean;
@@ -369,6 +387,8 @@ export interface SpeciesConfigDto {
   targetCalvingIntervalDays: number;
   dryOffDaysBeforeCalving: number;
   minWeightFirstServiceKg: number;
+  fatMinPercent: number;
+  fatMaxPercent: number;
 }
 
 export const speciesConfigUpdateSchema = z.object({
@@ -381,6 +401,8 @@ export const speciesConfigUpdateSchema = z.object({
   targetCalvingIntervalDays: z.number().int().min(1).max(900).optional(),
   dryOffDaysBeforeCalving: z.number().int().min(0).max(200).optional(),
   minWeightFirstServiceKg: z.number().int().min(1).max(1500).optional(),
+  fatMinPercent: z.number().min(0).max(15).optional(),
+  fatMaxPercent: z.number().min(0).max(15).optional(),
 });
 export type SpeciesConfigUpdate = z.infer<typeof speciesConfigUpdateSchema>;
 

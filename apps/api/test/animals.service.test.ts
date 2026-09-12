@@ -124,6 +124,7 @@ describe('AnimalsService', () => {
       prisma as unknown as PrismaService,
       fakeAudit,
       fakeSpeciesConfig,
+      { issue: async () => 'B99' } as never,
     );
   });
 

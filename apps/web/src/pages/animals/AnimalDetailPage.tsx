@@ -34,6 +34,7 @@ import {
   uploadAnimalPhoto,
 } from '../../api/animals';
 import { listBreeding } from '../../api/breeding';
+import { listHealthRecords } from '../../api/health';
 import { QrPrintCard } from '../../components/QrPrintCard';
 import { animalScanUrl } from '../../lib/qr';
 
@@ -115,14 +116,18 @@ export function AnimalDetailPage() {
       <Link to="/animals" className="back-link">
         ← {t('batches.breedingStock')}
       </Link>
+      <AnimalBanners animalId={animal.id} isPregnant={animal.isPregnant} />
       <div className="animal-hero" data-species={animal.species}>
         <div style={{ width: '100%' }}>
           <div className="page-header" style={{ marginBottom: 0, alignItems: 'flex-end' }}>
             <div>
-              <h1>
-                {animal.name?.trim() || SPECIES_LABEL[animal.species]}{' '}
-                <span style={{ opacity: 0.9 }}>#{animal.tag}</span>
+              <h1 className="herd-number-hero">
+                {animal.herdNumber ?? animal.tag}
+                {animal.name?.trim() ? <span className="herd-name"> {animal.name}</span> : null}
               </h1>
+              <p className="muted" style={{ color: 'rgba(255,255,255,0.8)' }}>
+                {t('animals.tag')}: {animal.tag}
+              </p>
               <div className="chip-row">
                 <StatusChip
                   status={animal.status}
@@ -244,7 +249,22 @@ export function AnimalDetailPage() {
             </div>
             <div>
               <dt>{t('animals.dateOfBirth')}</dt>
-              <dd>{animal.dateOfBirth ? formatDate(animal.dateOfBirth) : '—'}</dd>
+              <dd>
+                {animal.dateOfBirth ? formatDate(animal.dateOfBirth) : '—'}
+                {animal.dobIsEstimated ? ` · ${t('animals.estimated')}` : ''}
+              </dd>
+            </div>
+            <div>
+              <dt>{t('animals.sellerName')}</dt>
+              <dd>{animal.sellerName ?? '—'}</dd>
+            </div>
+            <div>
+              <dt>{t('animals.distinguishingMarks')}</dt>
+              <dd>{animal.distinguishingMarks ?? '—'}</dd>
+            </div>
+            <div>
+              <dt>{t('animals.lactationNumber')}</dt>
+              <dd>{animal.lactationNumber}</dd>
             </div>
             <div>
               <dt>{t('animals.purchaseDate')}</dt>
@@ -271,6 +291,24 @@ export function AnimalDetailPage() {
             <>
               <h3>{t('animals.notes')}</h3>
               <p className="notes">{animal.notes}</p>
+            </>
+          )}
+          {animal.statusHistory.length > 0 && (
+            <>
+              <h3>{t('animals.statusHistory')}</h3>
+              <ul className="activity-list">
+                {animal.statusHistory.map((row) => (
+                  <li key={row.id}>
+                    <div>
+                      <strong>
+                        {row.fromStatus ?? '—'} → {row.toStatus}
+                      </strong>
+                      {row.reason ? <span className="muted"> · {row.reason}</span> : null}
+                    </div>
+                    <span className="muted">{formatDate(row.changedAt)}</span>
+                  </li>
+                ))}
+              </ul>
             </>
           )}
         </div>
@@ -488,6 +526,12 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
         notes: a.notes ?? undefined,
         purchaseCost: a.purchaseCost ?? undefined,
         dateOfBirth: a.dateOfBirth ? new Date(a.dateOfBirth) : undefined,
+        dobIsEstimated: a.dobIsEstimated,
+        ageAtAcquisitionMonths: a.ageAtAcquisitionMonths ?? undefined,
+        sellerName: a.sellerName ?? undefined,
+        distinguishingMarks: a.distinguishingMarks ?? undefined,
+        lactationNumber: a.lactationNumber,
+        lactationStartDate: a.lactationStartDate ? new Date(a.lactationStartDate) : undefined,
         purchaseDate: a.purchaseDate ? new Date(a.purchaseDate) : undefined,
         shed: a.shed ?? undefined,
         damId: a.damId ?? undefined,
@@ -520,6 +564,12 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
         notes: form.notes,
         purchaseCost: form.purchaseCost,
         dateOfBirth: form.dateOfBirth,
+        dobIsEstimated: form.dobIsEstimated,
+        ageAtAcquisitionMonths: form.ageAtAcquisitionMonths,
+        sellerName: form.sellerName,
+        distinguishingMarks: form.distinguishingMarks,
+        lactationNumber: form.lactationNumber,
+        lactationStartDate: form.lactationStartDate,
         purchaseDate: form.purchaseDate,
         initialWeightKg: form.initialWeightKg,
         shed: form.shed,
@@ -740,6 +790,59 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
             />
           </div>
           <div className="field">
+            <label htmlFor="dobEst">{t('animals.dobUnknown')}</label>
+            <select
+              id="dobEst"
+              value={form.dobIsEstimated ? 'yes' : 'no'}
+              onChange={(e) => set('dobIsEstimated', e.target.value === 'yes')}
+            >
+              <option value="no">{t('common.no')}</option>
+              <option value="yes">{t('common.yes')}</option>
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="ageAcq">{t('animals.ageAtAcquisition')}</label>
+            <input
+              id="ageAcq"
+              type="number"
+              min="0"
+              max="360"
+              value={form.ageAtAcquisitionMonths ?? ''}
+              onChange={(e) =>
+                set('ageAtAcquisitionMonths', e.target.value ? Number(e.target.value) : undefined)
+              }
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="seller">{t('animals.sellerName')}</label>
+            <input
+              id="seller"
+              value={form.sellerName ?? ''}
+              onChange={(e) => set('sellerName', e.target.value || undefined)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="marks">{t('animals.distinguishingMarks')}</label>
+            <input
+              id="marks"
+              value={form.distinguishingMarks ?? ''}
+              onChange={(e) => set('distinguishingMarks', e.target.value || undefined)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="lactNo">{t('animals.lactationNumber')}</label>
+            <input
+              id="lactNo"
+              type="number"
+              min="0"
+              max="30"
+              value={form.lactationNumber ?? ''}
+              onChange={(e) =>
+                set('lactationNumber', e.target.value ? Number(e.target.value) : undefined)
+              }
+            />
+          </div>
+          <div className="field">
             <label htmlFor="purchaseDate">{t('animals.purchaseDate')}</label>
             <input
               id="purchaseDate"
@@ -815,6 +918,28 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
         </div>
       </form>
     </div>
+  );
+}
+
+function AnimalBanners({ animalId, isPregnant }: { animalId: string; isPregnant: boolean }) {
+  const { t } = useTranslation();
+  const healthQ = useQuery({
+    queryKey: ['health-records', 'animal', animalId],
+    queryFn: () => listHealthRecords({ animalId, pageSize: 50 }),
+  });
+  const now = Date.now();
+  const withhold = (healthQ.data?.items ?? []).find(
+    (r) => r.milkWithholdUntil && new Date(r.milkWithholdUntil).getTime() >= now,
+  );
+  return (
+    <>
+      {withhold?.milkWithholdUntil && (
+        <div className="hold-banner hold-banner-red">
+          {t('health.animalWithhold', { date: formatDate(withhold.milkWithholdUntil) })}
+        </div>
+      )}
+      {isPregnant && <div className="hold-banner hold-banner-blue">{t('animals.pregnantBanner')}</div>}
+    </>
   );
 }
 

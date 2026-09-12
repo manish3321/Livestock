@@ -10,7 +10,7 @@ import {
 
 describe('RBAC permission map', () => {
   it('covers all modules', () => {
-    expect(MODULES).toHaveLength(16);
+    expect(MODULES).toHaveLength(18);
     for (const m of MODULES) {
       expect(MODULE_ACCESS[m].length).toBeGreaterThan(0);
     }
@@ -39,6 +39,24 @@ describe('RBAC permission map', () => {
     expect(modulesForRole('WORKER')).not.toContain('revenue');
     expect(modulesForRole('WORKER')).not.toContain('pnl');
     expect(modulesForRole('WORKER')).not.toContain('reports');
+  });
+
+  it('limits the vet to health work and the cooperative to viewing', () => {
+    expect(hasPermission('VET', 'health:write')).toBe(true);
+    expect(hasPermission('VET', 'finance:read')).toBe(false);
+    expect(hasPermission('COOP', 'production:read')).toBe(true);
+    expect(hasPermission('COOP', 'animals:write')).toBe(false);
+    expect(modulesForRole('VET')).toContain('health');
+    expect(modulesForRole('COOP')).toContain('reports');
+    expect(modulesForRole('COOP')).not.toContain('shed');
+  });
+
+  it('lets workers record in the shed and read the inbox', () => {
+    expect(hasPermission('WORKER', 'tasks:read')).toBe(true);
+    expect(hasPermission('WORKER', 'tasks:manage')).toBe(false);
+    expect(hasPermission('MANAGER', 'tasks:manage')).toBe(true);
+    expect(modulesForRole('WORKER')).toContain('shed');
+    expect(modulesForRole('WORKER')).toContain('inbox');
   });
 
   it('lets workers submit expenses and enter data', () => {

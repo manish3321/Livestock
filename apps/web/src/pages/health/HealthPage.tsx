@@ -11,7 +11,8 @@ import {
 } from '@farm/contracts';
 import { listAnimals } from '../../api/animals';
 import { listBatches } from '../../api/batches';
-import { createHealthRecord, listHealthCalendar, listHealthRecords, type HealthRecordDto } from '../../api/health';
+import { NEPAL_VACCINE_PROTOCOLS } from '@farm/contracts';
+import { createHealthRecord, groupVaccinate, listHealthCalendar, listHealthRecords, type HealthRecordDto } from '../../api/health';
 import { useAuth } from '../../auth/auth-context';
 import { DataTable, type Column } from '../../components/DataTable';
 import { ErrorState, LoadingState } from '../../components/PageState';
@@ -28,8 +29,14 @@ export function HealthPage() {
   const [searchParams] = useSearchParams();
   const [due, setDue] = useState<DueFilter>('all');
   const [showForm, setShowForm] = useState(false);
+  const [showGroup, setShowGroup] = useState(false);
+  const [protocolKey, setProtocolKey] = useState('FMD');
+  const [groupIds, setGroupIds] = useState<string[]>([]);
+  const [batchNumber, setBatchNumber] = useState('');
+  const [symptoms, setSymptoms] = useState<string[]>([]);
+  const [appearance, setAppearance] = useState('NORMAL');
   const [form, setForm] = useState<Partial<HealthCreate>>({
-    type: 'VACCINATION',
+    type: (searchParams.get('type') as HealthCreate['type']) || 'VACCINATION',
     performedAt: new Date(),
   });
   const [error, setError] = useState<string | null>(null);
@@ -37,10 +44,12 @@ export function HealthPage() {
   useEffect(() => {
     const animalId = searchParams.get('animalId') ?? undefined;
     const herdBatchId = searchParams.get('herdBatchId') ?? undefined;
-    if (animalId || herdBatchId) {
+    const type = searchParams.get('type') as HealthCreate['type'] | null;
+    if (animalId || herdBatchId || type) {
       setShowForm(true);
       setForm((prev) => ({
         ...prev,
+        type: type || prev.type,
         animalId: animalId || undefined,
         herdBatchId: herdBatchId || undefined,
       }));
@@ -117,9 +126,15 @@ export function HealthPage() {
         followUpAt: form.followUpAt,
         cmtResult: form.cmtResult,
         milkWithholdUntil: form.milkWithholdUntil,
+        meatWithholdUntil: form.meatWithholdUntil,
+        batchNumber: form.batchNumber,
+        doseCount: form.doseCount,
+        doseIntervalHours: form.doseIntervalHours,
         performedAt: form.performedAt ?? new Date(),
         nextDueAt: form.nextDueAt,
-        notes: form.notes,
+        notes: [form.notes, symptoms.length ? `Symptoms: ${symptoms.join(',')}` : null, appearance !== 'NORMAL' ? `Milk: ${appearance}` : null]
+          .filter(Boolean)
+          .join(' · ') || undefined,
       }),
     onSuccess: () => {
       setShowForm(false);
@@ -183,9 +198,110 @@ export function HealthPage() {
             <button className="btn" type="button" onClick={() => setShowForm((v) => !v)}>
               {showForm ? t('common.cancel') : t('health.add')}
             </button>
+            <button className="btn secondary" type="button" onClick={() => setShowGroup((v) => !v)}>
+              {t('health.groupVax')}
+            </button>
           </div>
         )}
       </div>
+
+      {(() => {
+        const now = Date.now();
+        const holds = (query.data?.items ?? []).filter(
+          (r) => r.milkWithholdUntil && new Date(r.milkWithholdUntil).getTime() >= now,
+        );
+        if (holds.length === 0) return null;
+        return (
+          <div className="hold-banner hold-banner-red">
+            {t('health.withholdBanner', { n: holds.length })}
+            {': '}
+            {holds
+              .slice(0, 6)
+              .map((r) => `${r.animalTag ?? r.animalId} → ${formatDate(r.milkWithholdUntil!)}`)
+              .join(' · ')}
+          </div>
+        );
+      })()}
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h2>{t('health.protocols')}</h2>
+        <p className="muted">{t('health.protocolsHelp')}</p>
+        <ul className="activity-list">
+          {NEPAL_VACCINE_PROTOCOLS.map((p) => (
+            <li key={p.key}>
+              <div>
+                <strong>{p.titleNp}</strong>
+                <span className="muted">
+                  {' · '}
+                  {p.titleEn}
+                  {p.blockPregnant ? ` · ${t('health.blockPregnant')}` : ''}
+                </span>
+              </div>
+              <span className="muted">
+                {p.firstDoseMonths}m
+                {p.boosterDays ? ` +${p.boosterDays}d` : ''}
+                {p.intervalDays ? ` / ${p.intervalDays}d` : ''}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {showGroup && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <h2>{t('health.groupVax')}</h2>
+          <p className="muted">{t('health.groupVaxHelp')}</p>
+          <label>
+            {t('health.protocol')}
+            <select value={protocolKey} onChange={(e) => setProtocolKey(e.target.value)}>
+              {NEPAL_VACCINE_PROTOCOLS.map((p) => (
+                <option key={p.key} value={p.key}>
+                  {p.titleEn}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {t('health.batchNumber')}
+            <input value={batchNumber} onChange={(e) => setBatchNumber(e.target.value)} />
+          </label>
+          <div className="chip-row" style={{ margin: '12px 0' }}>
+            {(animalsQ.data?.items ?? []).map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                className={`filter-chip ${groupIds.includes(a.id) ? 'active' : ''}`}
+                onClick={() =>
+                  setGroupIds((ids) => (ids.includes(a.id) ? ids.filter((x) => x !== a.id) : [...ids, a.id]))
+                }
+              >
+                {a.herdNumber ?? a.tag}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="btn"
+            disabled={groupIds.length === 0}
+            onClick={() => {
+              const proto = NEPAL_VACCINE_PROTOCOLS.find((p) => p.key === protocolKey);
+              void groupVaccinate({
+                title: proto?.titleEn ?? protocolKey,
+                protocolKey,
+                animalIds: groupIds,
+                performedAt: new Date(),
+                batchNumber: batchNumber || undefined,
+              }).then(() => {
+                setShowGroup(false);
+                setGroupIds([]);
+                void qc.invalidateQueries({ queryKey: ['health-records'] });
+              });
+            }}
+          >
+            {t('health.vaccinateN', { n: groupIds.length })}
+          </button>
+        </div>
+      )}
 
       <div className="toolbar">
         <div className="chip-row">
@@ -340,6 +456,44 @@ export function HealthPage() {
               />
             </div>
             <div className="field">
+              <label htmlFor="health-batchno">{t('health.batchNumber')}</label>
+              <input
+                id="health-batchno"
+                value={form.batchNumber ?? ''}
+                onChange={(e) => setForm((prev) => ({ ...prev, batchNumber: e.target.value || undefined }))}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="health-doses">{t('health.doseCount')}</label>
+              <input
+                id="health-doses"
+                type="number"
+                min="1"
+                max="60"
+                value={form.doseCount ?? ''}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    doseCount: e.target.value ? Number(e.target.value) : undefined,
+                  }))
+                }
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="health-meat">{t('health.meatWithholdUntil')}</label>
+              <input
+                id="health-meat"
+                type="date"
+                value={toDateInput(form.meatWithholdUntil)}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    meatWithholdUntil: e.target.value ? new Date(e.target.value) : undefined,
+                  }))
+                }
+              />
+            </div>
+            <div className="field">
               <label htmlFor="health-med">{t('health.medicine')}</label>
               <input
                 id="health-med"
@@ -399,8 +553,46 @@ export function HealthPage() {
                 ))}
               </select>
             </div>
+            <fieldset className="chip-fieldset">
+              <legend>{t('health.symptoms')}</legend>
+              {['FEVER', 'OFF_FEED', 'DIARRHOEA', 'LAMENESS', 'SWOLLEN_UDDER', 'ABNORMAL_MILK', 'LETHARGY'].map(
+                (s) => (
+                  <label key={s} className={`filter-chip ${symptoms.includes(s) ? 'active' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={symptoms.includes(s)}
+                      onChange={() =>
+                        setSymptoms((cur) => (cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]))
+                      }
+                    />
+                    {t(`enum.symptom.${s}`)}
+                  </label>
+                ),
+              )}
+            </fieldset>
             {commercial && (
               <>
+                <div className="field">
+                  <label htmlFor="health-app">{t('health.milkAppearance')}</label>
+                  <select
+                    id="health-app"
+                    value={appearance}
+                    onChange={(e) => setAppearance(e.target.value)}
+                  >
+                    {['NORMAL', 'WATERY', 'CLOTS', 'BLOOD', 'PUS'].map((v) => (
+                      <option key={v} value={v}>
+                        {t(`enum.milkAppearance.${v}`, { defaultValue: v })}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label>{t('health.mastitisClass')}</label>
+                  <input
+                    readOnly
+                    value={t(`enum.mastitis.${classifyMastitis(form.cmtResult, appearance)}`)}
+                  />
+                </div>
                 <div className="field">
                   <label htmlFor="health-cmt">{t('health.cmtResult')}</label>
                   <select
@@ -486,6 +678,12 @@ export function HealthPage() {
       )}
     </div>
   );
+}
+
+function classifyMastitis(cmt: HealthCreate['cmtResult'], appearance: string): 'CLINICAL' | 'SUBCLINICAL' | 'HEALTHY' {
+  if (appearance !== 'NORMAL') return 'CLINICAL';
+  if (cmt === 'TWO' || cmt === 'THREE') return 'SUBCLINICAL';
+  return 'HEALTHY';
 }
 
 function toDateInput(value: Date | string | undefined): string {

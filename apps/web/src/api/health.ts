@@ -22,6 +22,8 @@ export interface HealthRecordDto {
   followUpAt?: string | null;
   cmtResult?: string | null;
   milkWithholdUntil?: string | null;
+  meatWithholdUntil?: string | null;
+  batchNumber?: string | null;
   performedAt: string;
   nextDueAt: string | null;
   notes: string | null;
@@ -37,6 +39,13 @@ export function listHealthRecords(
 
 export function createHealthRecord(body: HealthCreate): Promise<HealthRecordDto> {
   return api('/v1/health-records', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function groupVaccinate(body: import('@farm/contracts').GroupVaccinate) {
+  return api<{ created: number; blocked: string[] }>('/v1/health-records/group-vaccinate', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
 }
 
 export function listHealthCalendar(from?: Date, to?: Date): Promise<HealthRecordDto[]> {

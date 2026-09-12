@@ -20,8 +20,11 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   animalCreateSchema,
+  animalImportCommitSchema,
   animalListQuerySchema,
   animalUpdateSchema,
+  markerPlaceSchema,
+  tagReplaceSchema,
   weightCreateSchema,
 } from '@farm/contracts';
 import type {
@@ -29,9 +32,12 @@ import type {
   AnimalDetailDto,
   AnimalDto,
   AnimalEconomicsDto,
+  AnimalImportCommit,
   AnimalListQuery,
   AnimalUpdate,
+  MarkerPlace,
   PageResult,
+  TagReplace,
   WeightCreate,
   WeightRecordDto,
 } from '@farm/contracts';
@@ -74,6 +80,63 @@ export class AnimalsController {
       `attachment; filename="animals-${new Date().toISOString().slice(0, 10)}.csv"`,
     );
     res.send(csv);
+  }
+
+  @Post('import/preview')
+  @RequirePermissions('animals:write')
+  @ApiOperation({ summary: 'Preview a spreadsheet of animals before committing' })
+  previewImport(@Body() body: { csv?: string }) {
+    return this.animals.previewImport(body.csv ?? '');
+  }
+
+  @Post('import')
+  @RequirePermissions('animals:write')
+  @ApiOperation({ summary: 'Commit a previewed animal import' })
+  commitImport(
+    @CurrentUser() user: RequestUser,
+    @Body(new ZodValidationPipe(animalImportCommitSchema)) body: AnimalImportCommit,
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    return this.animals.commitImport(user, body, requestId);
+  }
+
+  @Get('tags/print')
+  @RequirePermissions('animals:read')
+  @ApiOperation({ summary: 'Tag sheet data: large short number, QR underneath' })
+  printTags(@CurrentUser() user: RequestUser, @Query('ids') ids?: string) {
+    return this.animals.printTags(user, ids ? ids.split(',').filter(Boolean) : undefined);
+  }
+
+  @Post(':id/retag')
+  @RequirePermissions('animals:write')
+  replaceTag(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(tagReplaceSchema)) body: TagReplace,
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    return this.animals.replaceTag(user, id, body, requestId);
+  }
+
+  @Post('markers')
+  @RequirePermissions('animals:write')
+  placeMarker(
+    @CurrentUser() user: RequestUser,
+    @Body(new ZodValidationPipe(markerPlaceSchema)) body: MarkerPlace,
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    return this.animals.placeMarker(user, body, requestId);
+  }
+
+  @Post('markers/:id/remove')
+  @RequirePermissions('animals:write')
+  removeMarker(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { byScan?: boolean },
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    return this.animals.removeMarker(user, id, body.byScan !== false, requestId);
   }
 
   @Get(':id')

@@ -1377,3 +1377,158 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+.shed-mode {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  margin: -8px -8px 16px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: #1f4d38;
+  color: #f4f1ea;
+  border-radius: 12px;
+}
+.shed-mode[data-session='EVENING'] { background: #3d2b1f; }
+.shed-mode[data-session='MIDDAY'] { background: #2a3d4d; }
+.shed-mode[data-mode='VACCINATION'] { background: #1d3557; }
+.shed-mode[data-mode='TREATMENT'] { background: #4a1942; }
+.shed-mode[data-mode='BAND'] { background: #6b2d12; }
+.shed-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.shed-modes .btn { padding: 8px 10px; font-size: 0.85rem; }
+.shed-camera { min-height: 180px; margin: 8px 0; }
+.hold-banner {
+  font-weight: 700;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+}
+.hold-banner-red { background: #9b2226; color: #fff; }
+.hold-banner-blue { background: #1d3557; color: #fff; }
+.tag-sheet {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+}
+.tag-card {
+  background: #f4d03f;
+  color: #111;
+  text-align: center;
+  padding: 16px 8px 12px;
+  border: 2px solid #111;
+  page-break-inside: avoid;
+}
+.tag-number {
+  font-size: 40px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+.tag-number-back { font-size: 28px; opacity: 0.85; margin: 4px 0 8px; }
+@media print {
+  .sidebar, .topbar, .back-link, .page-header .btn, .page-actions { display: none !important; }
+}
+.shed-flash-ok { box-shadow: inset 0 0 0 6px #2d6a4f; }
+.shed-flash-bad { box-shadow: inset 0 0 0 6px #9b2226; }
+.shed-search-input,
+.shed-display {
+  width: 100%;
+  font-size: 2.4rem;
+  font-weight: 700;
+  text-align: center;
+  padding: 16px;
+  border: 2px solid var(--color-border);
+  border-radius: 12px;
+  background: #fff;
+}
+.shed-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 16px 0;
+}
+.shed-pad button {
+  min-height: 64px;
+  font-size: 1.6rem;
+  font-weight: 700;
+  border: 0;
+  border-radius: 12px;
+  background: #efe8dc;
+}
+.shed-row {
+  display: grid;
+  grid-template-columns: 72px 1fr auto;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 14px;
+  margin-bottom: 8px;
+  border: 0;
+  border-radius: 12px;
+  background: #fff;
+  font-size: 1.1rem;
+}
+.shed-row strong { font-size: 1.5rem; }
+.shed-dest, .shed-sessions, .shed-skip { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.shed-save, .shed-go, .shed-finish { width: 100%; min-height: 52px; margin-top: 8px; }
+.shed-who { display: flex; flex-direction: column; gap: 4px; }
+.shed-who strong { font-size: 2rem; }
+.shed-hold { color: #9b2226; font-weight: 700; }
+.shed-usual { color: var(--color-text-secondary); }
+.inbox-list { list-style: none; padding: 0; margin: 16px 0; }
+.inbox-item { background: #fff; border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+.inbox-critical { border-left: 6px solid #9b2226; }
+.inbox-high { border-left: 6px solid #ca6702; }
+.inbox-normal { border-left: 6px solid #1f4d38; }
+.inbox-low { border-left: 6px solid #888; }
+.inbox-main { display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: left; border: 0; background: transparent; }
+.inbox-actions, .inbox-dismiss { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.inbox-actions button, .inbox-dismiss button {
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #efe8dc;
+}
+.profit-price { font-size: 1.2rem; margin: 12px 0 20px; }
+.profit-low td { background: #fce8e6; }
+.workflow-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 20px;
+}
+.workflow-tab {
+  min-height: 48px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: #efe8dc;
+  font-weight: 700;
+}
+.workflow-tab.active { background: #1f4d38; color: #fff; }
+.chip-fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border: 0;
+  padding: 0;
+  margin: 16px 0;
+}
+.chip-fieldset legend { font-weight: 700; width: 100%; margin-bottom: 8px; }
+.chip-fieldset .filter-chip { display: inline-flex; align-items: center; gap: 6px; }
+.warn-text { color: #9b2226; font-weight: 700; }
+.hours-pill { display: inline-block; padding: 8px 12px; border-radius: 8px; font-weight: 700; }
+.hours-ok { background: #d8f3dc; color: #1b4332; }
+.hours-warn { background: #ffe8a3; color: #6b4f00; }
+.hours-bad { background: #fce8e6; color: #9b2226; }
+.herd-number-hero { font-size: 2.4rem; letter-spacing: 0.02em; }
+.herd-name { font-size: 1.4rem; font-weight: 600; opacity: 0.9; }
+.row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.inner-note { margin: 12px 0; padding: 12px; }
+.breeding-kpis .stat-card .muted { font-size: 0.85rem; }

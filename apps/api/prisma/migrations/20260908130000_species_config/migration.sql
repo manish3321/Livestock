@@ -6,8 +6,12 @@
 --
 -- Deliberately NOT farm-scoped: gestation length is biology, not farm policy,
 -- and a missing per-farm row would silently break breeding for a new farm.
+--
+-- Every statement here is idempotent. This database is shared with a second
+-- workstream whose migrations are not in this repo, so a migration that
+-- assumes it is the only writer will fail against the live schema.
 
-CREATE TABLE "SpeciesConfig" (
+CREATE TABLE IF NOT EXISTS "SpeciesConfig" (
     "id" UUID NOT NULL,
     "species" "Species" NOT NULL,
     "gestationDays" INTEGER NOT NULL,
@@ -25,4 +29,4 @@ CREATE TABLE "SpeciesConfig" (
     CONSTRAINT "SpeciesConfig_pkey" PRIMARY KEY ("id")
 );
 
-CREATE UNIQUE INDEX "SpeciesConfig_species_key" ON "SpeciesConfig"("species");
+CREATE UNIQUE INDEX IF NOT EXISTS "SpeciesConfig_species_key" ON "SpeciesConfig"("species");

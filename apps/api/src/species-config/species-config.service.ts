@@ -83,6 +83,8 @@ type SpeciesConfigRow = {
   targetCalvingIntervalDays: number;
   dryOffDaysBeforeCalving: number;
   minWeightFirstServiceKg: number;
+  fatMinPercent: unknown;
+  fatMaxPercent: unknown;
 };
 
 function toDto(row: SpeciesConfigRow): SpeciesConfigDto {
@@ -97,5 +99,7 @@ function toDto(row: SpeciesConfigRow): SpeciesConfigDto {
     targetCalvingIntervalDays: row.targetCalvingIntervalDays,
     dryOffDaysBeforeCalving: row.dryOffDaysBeforeCalving,
     minWeightFirstServiceKg: row.minWeightFirstServiceKg,
+    fatMinPercent: Number(row.fatMinPercent),
+    fatMaxPercent: Number(row.fatMaxPercent),
   };
 }

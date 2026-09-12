@@ -44,6 +44,14 @@ export function AnimalsListPage() {
           <p className="page-subtitle">{t('animals.subtitle')}</p>
         </div>
         <div className="page-actions">
+          {can('animals:write') && (
+            <Link to="/animals/import" className="btn secondary">
+              {t('animals.import')}
+            </Link>
+          )}
+          <Link to="/animals/tags" className="btn secondary">
+            {t('animals.printTags')}
+          </Link>
           {can('export:data') && (
             <>
               <button
@@ -151,7 +159,7 @@ export function AnimalsListPage() {
                   <p className="animal-card-title">
                     {row.name?.trim() || SPECIES_LABEL[row.species]}
                   </p>
-                  <div className="animal-card-tag">{row.tag}</div>
+                  <div className="animal-card-tag">{row.herdNumber ?? row.tag}</div>
                   <div className="animal-card-meta">
                     <span>{row.breed}</span>
                     <span>

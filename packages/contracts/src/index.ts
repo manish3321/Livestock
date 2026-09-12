@@ -5,3 +5,4 @@ export * from './domain';
 export * from './sync';
 export * from './format';
 export * from './modules';
+export * from './dairy';

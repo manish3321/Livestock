@@ -300,15 +300,23 @@ export class InventoryService {
       nextStock = current + input.quantity;
     } else if (input.type === 'OUT') {
       nextStock = current - input.quantity;
-      if (nextStock < 0) {
-        throw new BadRequestException({
-          code: 'INSUFFICIENT_STOCK',
-          message: 'Not enough stock for OUT movement',
-        });
-      }
     } else {
       // ADJUST: set absolute stock level
       nextStock = input.quantity;
+    }
+
+    if (nextStock < 0) {
+      const { ensureTask } = await import('../jobs/task-writer');
+      await ensureTask(this.prisma, {
+        farmId: user.farmId,
+        type: 'STOCK_REORDER',
+        titleEn: `Negative stock: ${item.name} — record the purchase`,
+        titleNp: `${item.name} स्टक ऋणात्मक — किनबेच रेकर्ड गर्नुहोस्`,
+        dueAt: new Date(),
+        priority: 'NORMAL',
+        sourceRefType: 'inventoryItem',
+        sourceRefId: item.id,
+      });
     }
 
     const movement = await this.prisma.$transaction(async (tx) => {

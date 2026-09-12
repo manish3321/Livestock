@@ -69,7 +69,10 @@ const ANIMALS: Array<{
 async function main(): Promise<void> {
   const farm = await prisma.farm.upsert({
     where: { id: FARM_ID },
-    update: {},
+    update: {
+      mode: 'COMMERCIAL',
+      livestockTrackingMode: 'INDIVIDUAL',
+    },
     create: {
       id: FARM_ID,
       name: 'Evoqed Mixed Farm',
@@ -78,6 +81,7 @@ async function main(): Promise<void> {
       timezone: 'Asia/Kathmandu',
       // Explicit: the demo data seeds tagged individual animals, so the farm
       // should land on the individual-first surface rather than batch counts.
+      mode: 'COMMERCIAL',
       livestockTrackingMode: 'INDIVIDUAL',
     },
   });
@@ -105,7 +109,7 @@ async function main(): Promise<void> {
       update: {
         name: a.name,
         source: a.source,
-        status: a.status ?? AnimalStatus.ACTIVE,
+        status: a.status ?? AnimalStatus.LACTATING,
       },
       create: {
         farmId: farm.id,
@@ -116,7 +120,7 @@ async function main(): Promise<void> {
         gender: a.gender,
         color: a.color,
         source: a.source,
-        status: a.status ?? AnimalStatus.ACTIVE,
+        status: a.status ?? AnimalStatus.LACTATING,
       },
     });
 
@@ -330,6 +334,8 @@ async function main(): Promise<void> {
       targetCalvingIntervalDays: 425,
       dryOffDaysBeforeCalving: 60,
       minWeightFirstServiceKg: 300,
+      fatMinPercent: 6.5,
+      fatMaxPercent: 8.0,
     },
     {
       species: Species.COW,
@@ -342,6 +348,8 @@ async function main(): Promise<void> {
       targetCalvingIntervalDays: 380,
       dryOffDaysBeforeCalving: 60,
       minWeightFirstServiceKg: 250,
+      fatMinPercent: 3.5,
+      fatMaxPercent: 4.5,
     },
     {
       species: Species.PIG,
@@ -354,6 +362,8 @@ async function main(): Promise<void> {
       targetCalvingIntervalDays: 180,
       dryOffDaysBeforeCalving: 0,
       minWeightFirstServiceKg: 120,
+      fatMinPercent: 5.0,
+      fatMaxPercent: 8.0,
     },
     {
       species: Species.GOAT,
@@ -366,6 +376,8 @@ async function main(): Promise<void> {
       targetCalvingIntervalDays: 240,
       dryOffDaysBeforeCalving: 30,
       minWeightFirstServiceKg: 25,
+      fatMinPercent: 5.0,
+      fatMaxPercent: 8.0,
     },
   ];
   for (const config of speciesConfigs) {

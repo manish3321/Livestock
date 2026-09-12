@@ -65,6 +65,8 @@ export const color = {
 
 /** Animal status chips. */
 export const animalStatusColor = {
+  GROWING: { fg: palette.green700, bg: palette.green100 },
+  HEIFER: { fg: palette.green700, bg: palette.green100 },
   ACTIVE: { fg: palette.green700, bg: palette.green100 },
   PREGNANT: { fg: palette.purple700, bg: palette.purple100 },
   SICK: { fg: palette.red700, bg: palette.red100 },

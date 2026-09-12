@@ -1,4 +1,5 @@
 import { Global, Module } from '@nestjs/common';
+import { SpeciesConfigController } from './species-config.controller';
 import { SpeciesConfigService } from './species-config.service';
 
 /**
@@ -8,6 +9,7 @@ import { SpeciesConfigService } from './species-config.service';
  */
 @Global()
 @Module({
+  controllers: [SpeciesConfigController],
   providers: [SpeciesConfigService],
   exports: [SpeciesConfigService],
 })

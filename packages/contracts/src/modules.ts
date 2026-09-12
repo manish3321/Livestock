@@ -243,6 +243,10 @@ export const healthCreateSchema = z.object({
   followUpAt: z.coerce.date().optional(),
   cmtResult: z.enum(['NEGATIVE', 'TRACE', 'ONE', 'TWO', 'THREE']).optional(),
   milkWithholdUntil: z.coerce.date().optional(),
+  meatWithholdUntil: z.coerce.date().optional(),
+  batchNumber: z.string().max(80).optional(),
+  doseCount: z.number().int().min(1).max(60).optional(),
+  doseIntervalHours: z.number().int().min(1).max(72).optional(),
   performedAt: z.coerce.date(),
   nextDueAt: z.coerce.date().optional(),
   notes: z.string().max(2000).optional(),
@@ -262,6 +266,7 @@ export const healthListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(25),
   type: z.enum(HEALTH_RECORD_TYPES).optional(),
+  animalId: z.string().uuid().optional(),
   due: z.enum(['overdue', 'due_soon', 'all']).default('all'),
 });
 export type HealthListQuery = z.infer<typeof healthListQuerySchema>;
@@ -332,8 +337,13 @@ export const productionCreateSchema = z.object({
   appearance: z.enum(['NORMAL', 'CLOTS', 'BLOOD', 'DISCOLORED']).optional(),
   fatPercent: z.number().min(0).max(20).optional(),
   snfPercent: z.number().min(0).max(20).optional(),
+  proteinPercent: z.number().min(0).max(20).optional(),
+  lactosePercent: z.number().min(0).max(20).optional(),
   scc: z.number().int().min(0).optional(),
   collectionMethod: z.enum(['HAND', 'MACHINE']).optional(),
+  session: z.enum(['MORNING', 'EVENING', 'MIDDAY']).optional(),
+  destination: z.enum(['SOLD', 'CALF', 'HOUSEHOLD', 'DISCARDED']).optional(),
+  udderFlag: z.boolean().optional(),
   notes: z.string().max(2000).optional(),
 });
 export type ProductionCreate = z.infer<typeof productionCreateSchema>;
