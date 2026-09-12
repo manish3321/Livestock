@@ -313,6 +313,69 @@ async function main(): Promise<void> {
     });
   }
 
+  // ---- Species reproductive constants ----
+  // Buffalo and cattle differ on every one of these. Nothing in application
+  // code may hardcode them, so an empty table breaks breeding by design.
+  // Buffalo and cow figures are the authoritative Nepal numbers; pig and goat
+  // are reasonable starting values and should be reviewed by a vet.
+  const speciesConfigs = [
+    {
+      species: Species.BUFFALO,
+      gestationDays: 310,
+      lactationDays: 242,
+      voluntaryWaitingDays: 60,
+      estrusCycleDays: 21,
+      ageFirstServiceMonths: 30,
+      pregnancyCheckEarliestDays: 45,
+      targetCalvingIntervalDays: 425,
+      dryOffDaysBeforeCalving: 60,
+      minWeightFirstServiceKg: 300,
+    },
+    {
+      species: Species.COW,
+      gestationDays: 283,
+      lactationDays: 286,
+      voluntaryWaitingDays: 50,
+      estrusCycleDays: 21,
+      ageFirstServiceMonths: 15,
+      pregnancyCheckEarliestDays: 35,
+      targetCalvingIntervalDays: 380,
+      dryOffDaysBeforeCalving: 60,
+      minWeightFirstServiceKg: 250,
+    },
+    {
+      species: Species.PIG,
+      gestationDays: 114,
+      lactationDays: 60,
+      voluntaryWaitingDays: 30,
+      estrusCycleDays: 21,
+      ageFirstServiceMonths: 8,
+      pregnancyCheckEarliestDays: 30,
+      targetCalvingIntervalDays: 180,
+      dryOffDaysBeforeCalving: 0,
+      minWeightFirstServiceKg: 120,
+    },
+    {
+      species: Species.GOAT,
+      gestationDays: 150,
+      lactationDays: 180,
+      voluntaryWaitingDays: 45,
+      estrusCycleDays: 21,
+      ageFirstServiceMonths: 10,
+      pregnancyCheckEarliestDays: 35,
+      targetCalvingIntervalDays: 240,
+      dryOffDaysBeforeCalving: 30,
+      minWeightFirstServiceKg: 25,
+    },
+  ];
+  for (const config of speciesConfigs) {
+    await prisma.speciesConfig.upsert({
+      where: { species: config.species },
+      update: config,
+      create: config,
+    });
+  }
+
   // AnimalGroup and FishBatch are deprecated — poultry and fish are seeded as
   // HerdBatch above. Seeding both produced two rows for one physical flock and
   // double-counted headcount, which is the denominator for mortality rate and

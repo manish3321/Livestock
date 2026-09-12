@@ -6,7 +6,7 @@ import { ROLE_PERMISSIONS } from '@farm/contracts';
 import { AnimalsService } from '../src/animals/animals.service';
 import type { RequestUser } from '../src/common/types';
 import type { PrismaService } from '../src/prisma/prisma.service';
-import { FakePrisma, fakeAudit } from './fakes';
+import { FakePrisma, fakeAudit, fakeSpeciesConfig } from './fakes';
 
 const FARM_ID = randomUUID();
 
@@ -47,6 +47,9 @@ class AnimalsFakePrisma extends FakePrisma {
                 (x: any, y: any) =>
                   new Date(y.recordedAt).getTime() - new Date(x.recordedAt).getTime(),
               )
+            : undefined,
+          statusHistory: include?.statusHistory
+            ? this.statusHistory.filter((h: any) => h.animalId === a.id)
             : undefined,
         };
       },
@@ -117,7 +120,11 @@ describe('AnimalsService', () => {
 
   beforeEach(() => {
     prisma = new AnimalsFakePrisma();
-    service = new AnimalsService(prisma as unknown as PrismaService, fakeAudit);
+    service = new AnimalsService(
+      prisma as unknown as PrismaService,
+      fakeAudit,
+      fakeSpeciesConfig,
+    );
   });
 
   it('creates an animal with optional initial weight', async () => {

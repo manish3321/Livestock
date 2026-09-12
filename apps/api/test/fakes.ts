@@ -1,10 +1,72 @@
 import { randomUUID } from 'node:crypto';
 import type { AuditService } from '../src/audit/audit.service';
+import type { SpeciesConfigService } from '../src/species-config/species-config.service';
 
 /** No-op audit sink for unit tests. */
 export const fakeAudit = {
   record: async () => undefined,
 } as unknown as AuditService;
+
+/**
+ * Reproductive constants for tests. Buffalo and cow values match the seed, so a
+ * test asserting a due date is checking the real gestation length.
+ */
+const SPECIES_CONSTANTS: Record<string, Record<string, number>> = {
+  BUFFALO: {
+    gestationDays: 310,
+    lactationDays: 242,
+    voluntaryWaitingDays: 60,
+    estrusCycleDays: 21,
+    ageFirstServiceMonths: 30,
+    pregnancyCheckEarliestDays: 45,
+    targetCalvingIntervalDays: 425,
+    dryOffDaysBeforeCalving: 60,
+    minWeightFirstServiceKg: 300,
+  },
+  COW: {
+    gestationDays: 283,
+    lactationDays: 286,
+    voluntaryWaitingDays: 50,
+    estrusCycleDays: 21,
+    ageFirstServiceMonths: 15,
+    pregnancyCheckEarliestDays: 35,
+    targetCalvingIntervalDays: 380,
+    dryOffDaysBeforeCalving: 60,
+    minWeightFirstServiceKg: 250,
+  },
+  PIG: {
+    gestationDays: 114,
+    lactationDays: 60,
+    voluntaryWaitingDays: 30,
+    estrusCycleDays: 21,
+    ageFirstServiceMonths: 8,
+    pregnancyCheckEarliestDays: 30,
+    targetCalvingIntervalDays: 180,
+    dryOffDaysBeforeCalving: 0,
+    minWeightFirstServiceKg: 120,
+  },
+  GOAT: {
+    gestationDays: 150,
+    lactationDays: 180,
+    voluntaryWaitingDays: 45,
+    estrusCycleDays: 21,
+    ageFirstServiceMonths: 10,
+    pregnancyCheckEarliestDays: 35,
+    targetCalvingIntervalDays: 240,
+    dryOffDaysBeforeCalving: 30,
+    minWeightFirstServiceKg: 25,
+  },
+};
+
+export const fakeSpeciesConfig = {
+  forSpecies: async (species: string) => ({
+    species,
+    ...SPECIES_CONSTANTS[species],
+  }),
+  all: async () =>
+    Object.entries(SPECIES_CONSTANTS).map(([species, c]) => ({ species, ...c })),
+  invalidate: () => undefined,
+} as unknown as SpeciesConfigService;
 
 interface AnimalRow {
   id: string;
@@ -21,6 +83,15 @@ interface AnimalRow {
   purchaseDate: Date | null;
   purchaseCost: number | null;
   status: string;
+  dobIsEstimated: boolean;
+  ageAtAcquisitionMonths: number | null;
+  isPregnant: boolean;
+  pregnancyConfirmedDate: Date | null;
+  expectedCalvingDate: Date | null;
+  lactationNumber: number;
+  lactationStartDate: Date | null;
+  expectedLactationDays: number | null;
+  breedComposition: unknown;
   notes: string | null;
   version: number;
   createdAt: Date;
@@ -108,6 +179,15 @@ export class FakePrisma {
         purchaseDate: data.purchaseDate ?? null,
         purchaseCost: data.purchaseCost ?? null,
         status: data.status ?? 'ACTIVE',
+        dobIsEstimated: data.dobIsEstimated ?? false,
+        ageAtAcquisitionMonths: data.ageAtAcquisitionMonths ?? null,
+        isPregnant: data.isPregnant ?? false,
+        pregnancyConfirmedDate: data.pregnancyConfirmedDate ?? null,
+        expectedCalvingDate: data.expectedCalvingDate ?? null,
+        lactationNumber: data.lactationNumber ?? 0,
+        lactationStartDate: data.lactationStartDate ?? null,
+        expectedLactationDays: data.expectedLactationDays ?? null,
+        breedComposition: data.breedComposition ?? null,
         notes: data.notes ?? null,
         version: data.version ?? 1,
         createdAt: new Date(),
@@ -128,4 +208,27 @@ export class FakePrisma {
   weightRecord = {
     create: async ({ data }: any) => ({ id: randomUUID(), ...data }),
   };
+
+  animalStatusHistory = {
+    create: async ({ data }: any) => {
+      const row = {
+        id: randomUUID(),
+        fromStatus: data.fromStatus ?? null,
+        reason: data.reason ?? null,
+        changedBy: data.changedBy ?? null,
+        deviceId: data.deviceId ?? null,
+        changedAt: new Date(),
+        createdAt: new Date(),
+        ...data,
+      };
+      this.statusHistory.push(row);
+      return row;
+    },
+    findMany: async ({ where }: any) =>
+      this.statusHistory.filter(
+        (h: any) => !where?.animalId || h.animalId === where.animalId,
+      ),
+  };
+
+  statusHistory: Array<Record<string, unknown>> = [];
 }

@@ -23,6 +23,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { PnlModule } from './pnl/pnl.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductionModule } from './production/production.module';
+import { SpeciesConfigModule } from './species-config/species-config.module';
 import { FeedModule } from './feed/feed.module';
 import { ReportsModule } from './reports/reports.module';
 import { RevenueModule } from './revenue/revenue.module';
@@ -33,6 +34,7 @@ import { SyncModule } from './sync/sync.module';
   imports: [
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
     PrismaModule,
+    SpeciesConfigModule,
     NotificationsModule,
     StorageModule,
     AuthModule,

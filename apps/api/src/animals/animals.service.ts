@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -14,17 +15,22 @@ import type {
   WeightCreate,
   WeightRecordDto,
 } from '@farm/contracts';
-import { Prisma, type Animal, type WeightRecord } from '@prisma/client';
+import { MIN_DAM_AGE_GAP_MONTHS, type AnimalStatusHistoryDto, type BreedComposition, type Species } from '@farm/contracts';
+import { Prisma, type Animal, type AnimalStatusHistory, type WeightRecord } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
+import { SpeciesConfigService } from '../species-config/species-config.service';
 import { toSnapshot } from '../sync/animal.applier';
+
+const MONTH_MS = 30.44 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class AnimalsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly speciesConfig: SpeciesConfigService,
   ) {}
 
   async list(
@@ -78,6 +84,7 @@ export class AnimalsService {
         weights: { orderBy: { recordedAt: 'desc' } },
         dam: { select: { tag: true } },
         sire: { select: { tag: true } },
+        statusHistory: { orderBy: { changedAt: 'desc' } },
       },
     });
     if (!animal) {
@@ -86,6 +93,7 @@ export class AnimalsService {
     return {
       ...toDto(animal, animal.weights[0] ?? null),
       weights: animal.weights.map(toWeightDto),
+      statusHistory: animal.statusHistory.map(toStatusHistoryDto),
     };
   }
 
@@ -181,6 +189,13 @@ export class AnimalsService {
     }
 
     const { initialWeightKg, ...data } = input;
+    await this.validateParents(user.farmId, data.damId, data.sireId, data.dateOfBirth);
+
+    // A DOB the farmer could not supply is derived from age at acquisition, and
+    // flagged so nothing downstream presents a guess as a known date.
+    const { dateOfBirth, dobIsEstimated } = resolveDateOfBirth(data);
+    const { lactationDays } = await this.speciesConfig.forSpecies(data.species as Species);
+
     const animal = await this.prisma.$transaction(async (tx) => {
       const created = await tx.animal.create({
         data: {
@@ -189,7 +204,9 @@ export class AnimalsService {
           name: data.name,
           species: data.species,
           breed: data.breed,
-          dateOfBirth: data.dateOfBirth,
+          dateOfBirth,
+          dobIsEstimated,
+          ageAtAcquisitionMonths: data.ageAtAcquisitionMonths,
           gender: data.gender,
           color: data.color,
           source: data.source,
@@ -197,12 +214,31 @@ export class AnimalsService {
           purchaseDate: data.purchaseDate,
           purchaseCost: data.purchaseCost,
           status: data.status,
+          isPregnant: data.isPregnant ?? false,
+          pregnancyConfirmedDate: data.pregnancyConfirmedDate,
+          expectedCalvingDate: data.expectedCalvingDate,
+          lactationNumber: data.lactationNumber ?? 0,
+          lactationStartDate: data.lactationStartDate,
+          expectedLactationDays: lactationDays,
+          breedComposition: data.breedComposition ?? Prisma.DbNull,
           breedingStock: data.breedingStock ?? true,
           shed: data.shed,
           damId: data.damId,
           sireId: data.sireId,
           notes: data.notes,
           version: 1,
+        },
+      });
+
+      // Opens the trail, so the first status has a recorded origin too.
+      await tx.animalStatusHistory.create({
+        data: {
+          farmId: user.farmId,
+          animalId: created.id,
+          fromStatus: null,
+          toStatus: created.status,
+          reason: 'Registered',
+          changedBy: user.id,
         },
       });
 
@@ -263,11 +299,41 @@ export class AnimalsService {
       }
     }
 
+    await this.validateParents(
+      user.farmId,
+      input.damId ?? current.damId ?? undefined,
+      input.sireId ?? current.sireId ?? undefined,
+      input.dateOfBirth ?? current.dateOfBirth ?? undefined,
+      id,
+    );
+
+    const { breedComposition, ...rest } = input;
     const updated = await this.prisma.$transaction(async (tx) => {
       const row = await tx.animal.update({
         where: { id },
-        data: { ...input, version: current.version + 1 },
+        data: {
+          ...rest,
+          ...(breedComposition !== undefined
+            ? { breedComposition: breedComposition ?? Prisma.DbNull }
+            : {}),
+          version: current.version + 1,
+        },
       });
+
+      // Never overwrite a status silently — the trail is how "why is she marked
+      // DRY" stays answerable months later.
+      if (input.status !== undefined && input.status !== current.status) {
+        await tx.animalStatusHistory.create({
+          data: {
+            farmId: user.farmId,
+            animalId: row.id,
+            fromStatus: current.status,
+            toStatus: row.status,
+            changedBy: user.id,
+          },
+        });
+      }
+
       await tx.changeLogEntry.create({
         data: {
           farmId: user.farmId,
@@ -463,6 +529,98 @@ export class AnimalsService {
     }
     return animal;
   }
+
+  /**
+   * A dam must be female and old enough to have actually borne the offspring.
+   * These checks need the parent rows, so they live here rather than in the Zod
+   * schema. Sire must be male for the same reason.
+   */
+  private async validateParents(
+    farmId: string,
+    damId: string | undefined,
+    sireId: string | undefined,
+    dateOfBirth: Date | undefined,
+    selfId?: string,
+  ): Promise<void> {
+    if (damId && damId === selfId) {
+      throw new BadRequestException({
+        code: 'INVALID_DAM',
+        message: 'An animal cannot be its own dam',
+      });
+    }
+    if (sireId && sireId === selfId) {
+      throw new BadRequestException({
+        code: 'INVALID_SIRE',
+        message: 'An animal cannot be its own sire',
+      });
+    }
+
+    if (damId) {
+      const dam = await this.prisma.animal.findFirst({
+        where: { id: damId, farmId, deletedAt: null },
+      });
+      if (!dam) {
+        throw new BadRequestException({ code: 'INVALID_DAM', message: 'Dam not found' });
+      }
+      if (dam.gender !== 'FEMALE') {
+        throw new BadRequestException({
+          code: 'INVALID_DAM',
+          message: 'Dam must be female',
+        });
+      }
+      // Only checkable when both dates are known; an unknown DOB must not block
+      // registration, so a missing date skips the check rather than failing it.
+      if (dateOfBirth && dam.dateOfBirth) {
+        const gapMonths = (dateOfBirth.getTime() - dam.dateOfBirth.getTime()) / MONTH_MS;
+        if (gapMonths < MIN_DAM_AGE_GAP_MONTHS) {
+          throw new BadRequestException({
+            code: 'INVALID_DAM',
+            message: `Dam must be at least ${MIN_DAM_AGE_GAP_MONTHS} months older than her offspring`,
+          });
+        }
+      }
+    }
+
+    if (sireId) {
+      const sire = await this.prisma.animal.findFirst({
+        where: { id: sireId, farmId, deletedAt: null },
+      });
+      if (!sire) {
+        throw new BadRequestException({ code: 'INVALID_SIRE', message: 'Sire not found' });
+      }
+      if (sire.gender !== 'MALE') {
+        throw new BadRequestException({
+          code: 'INVALID_SIRE',
+          message: 'Sire must be male',
+        });
+      }
+    }
+  }
+}
+
+/**
+ * Works out a usable date of birth. When the farmer knows it, that date is
+ * used as-is. When they only know roughly how old the animal was when bought,
+ * a DOB is derived from that and marked estimated. Registration is never
+ * blocked for want of a birth date.
+ */
+function resolveDateOfBirth(data: {
+  dateOfBirth?: Date;
+  dobIsEstimated?: boolean;
+  ageAtAcquisitionMonths?: number;
+  purchaseDate?: Date;
+}): { dateOfBirth: Date | undefined; dobIsEstimated: boolean } {
+  if (data.dateOfBirth) {
+    return { dateOfBirth: data.dateOfBirth, dobIsEstimated: data.dobIsEstimated ?? false };
+  }
+  if (data.ageAtAcquisitionMonths !== undefined) {
+    const from = data.purchaseDate ?? new Date();
+    const derived = new Date(from.getTime() - data.ageAtAcquisitionMonths * MONTH_MS);
+    return { dateOfBirth: derived, dobIsEstimated: true };
+  }
+  // Nothing to go on. Still a valid animal; age-based figures simply cannot be
+  // computed for her until someone fills this in.
+  return { dateOfBirth: undefined, dobIsEstimated: true };
 }
 
 function toDto(
@@ -477,6 +635,8 @@ function toDto(
     species: animal.species,
     breed: animal.breed,
     dateOfBirth: animal.dateOfBirth?.toISOString() ?? null,
+    dobIsEstimated: animal.dobIsEstimated,
+    ageAtAcquisitionMonths: animal.ageAtAcquisitionMonths,
     gender: animal.gender,
     color: animal.color,
     source: animal.source,
@@ -484,6 +644,13 @@ function toDto(
     purchaseDate: animal.purchaseDate?.toISOString() ?? null,
     purchaseCost: animal.purchaseCost ? Number(animal.purchaseCost) : null,
     status: animal.status,
+    isPregnant: animal.isPregnant,
+    pregnancyConfirmedDate: animal.pregnancyConfirmedDate?.toISOString() ?? null,
+    expectedCalvingDate: animal.expectedCalvingDate?.toISOString() ?? null,
+    lactationNumber: animal.lactationNumber,
+    lactationStartDate: animal.lactationStartDate?.toISOString() ?? null,
+    expectedLactationDays: animal.expectedLactationDays,
+    breedComposition: (animal.breedComposition as BreedComposition | null) ?? null,
     breedingStock: animal.breedingStock,
     shed: animal.shed,
     photoUrl: animal.photoUrl,
@@ -497,6 +664,18 @@ function toDto(
     createdAt: animal.createdAt.toISOString(),
     updatedAt: animal.updatedAt.toISOString(),
     deletedAt: animal.deletedAt?.toISOString() ?? null,
+  };
+}
+
+function toStatusHistoryDto(h: AnimalStatusHistory): AnimalStatusHistoryDto {
+  return {
+    id: h.id,
+    animalId: h.animalId,
+    fromStatus: h.fromStatus,
+    toStatus: h.toStatus,
+    reason: h.reason,
+    changedAt: h.changedAt.toISOString(),
+    changedBy: h.changedBy,
   };
 }
 

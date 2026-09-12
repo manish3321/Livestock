@@ -24,9 +24,14 @@ export const SPECIES_LABEL: Record<Species, string> = {
   GOAT: 'Goat',
 };
 
+/**
+ * A single point-in-time state. PREGNANT is deliberately absent: a buffalo is
+ * routinely lactating AND pregnant at once, so pregnancy is the separate
+ * `isPregnant` flag. Putting it here would force a choice between two facts
+ * that are both true and lose one of them.
+ */
 export const ANIMAL_STATUSES = [
   'ACTIVE',
-  'PREGNANT',
   'SICK',
   'QUARANTINE',
   'DRY',
@@ -39,7 +44,6 @@ export type AnimalStatus = (typeof ANIMAL_STATUSES)[number];
 
 export const ANIMAL_STATUS_LABEL: Record<AnimalStatus, string> = {
   ACTIVE: 'Active',
-  PREGNANT: 'Pregnant',
   SICK: 'Sick',
   QUARANTINE: 'Quarantine',
   DRY: 'Dry',
@@ -49,18 +53,46 @@ export const ANIMAL_STATUS_LABEL: Record<AnimalStatus, string> = {
   DEAD: 'Dead',
 };
 
+/**
+ * Statuses a user may never set directly — leaving the herd is always an
+ * explicit, deliberate act, never a side effect of an automated rule.
+ */
+export const ANIMAL_EXIT_STATUSES = ['CULLED', 'SOLD', 'DEAD'] as const;
+
 export const GENDERS = ['FEMALE', 'MALE'] as const;
 export type Gender = (typeof GENDERS)[number];
 
 export const ANIMAL_SOURCES = ['PURCHASED', 'BORN', 'TRANSFERRED'] as const;
 export type AnimalSource = (typeof ANIMAL_SOURCES)[number];
 
-export const animalCreateSchema = z.object({
+/**
+ * Fractional breed makeup, e.g. `{ murrah: 0.75, local: 0.25 }`.
+ * Crossbreds are the norm, and "Murrah cross" on its own tells you nothing
+ * about how much Murrah is actually in the animal.
+ */
+export const breedCompositionSchema = z
+  .record(z.string().min(1).max(40), z.number().min(0).max(1))
+  .refine((v) => Object.keys(v).length > 0, 'Breed composition cannot be empty')
+  .refine(
+    (v) => Math.abs(Object.values(v).reduce((s, n) => s + n, 0) - 1) < 0.001,
+    'Breed fractions must add up to 1.0',
+  );
+export type BreedComposition = z.infer<typeof breedCompositionSchema>;
+
+const animalBaseSchema = z.object({
   tag: z.string().regex(/^[A-Z]{3}\d{3,5}$/, 'Tag must look like BUF001'),
   name: z.string().max(80).optional(),
   species: z.enum(SPECIES),
   breed: z.string().min(1).max(80),
   dateOfBirth: z.coerce.date().optional(),
+  /**
+   * Registration is never blocked on an unknown DOB. Farmers buying an adult
+   * animal usually do not know its birth date, and refusing the record would
+   * just push them back to a paper notebook.
+   */
+  dobIsEstimated: z.boolean().optional(),
+  /** Age in months at acquisition; used to derive a DOB when none is known. */
+  ageAtAcquisitionMonths: z.number().int().min(0).max(360).optional(),
   gender: z.enum(GENDERS),
   color: z.string().max(60).optional(),
   source: z.enum(ANIMAL_SOURCES).optional(),
@@ -70,6 +102,13 @@ export const animalCreateSchema = z.object({
   /** Initial weight in kg when creating; stored as first weight history entry. */
   initialWeightKg: z.number().positive().max(5000).optional(),
   status: z.enum(ANIMAL_STATUSES).default('ACTIVE'),
+  /** Pregnancy is a flag, not a status: she can be lactating and pregnant. */
+  isPregnant: z.boolean().optional(),
+  pregnancyConfirmedDate: z.coerce.date().optional(),
+  expectedCalvingDate: z.coerce.date().optional(),
+  lactationNumber: z.number().int().min(0).max(30).optional(),
+  lactationStartDate: z.coerce.date().optional(),
+  breedComposition: breedCompositionSchema.optional(),
   /** When true, animal can be used as a breeding parent. */
   breedingStock: z.boolean().optional(),
   shed: z.string().max(80).optional(),
@@ -77,12 +116,46 @@ export const animalCreateSchema = z.object({
   sireId: z.string().uuid().optional(),
   notes: z.string().max(2000).optional(),
 });
+
+/**
+ * Rules that span more than one field. Applied to both create and update so a
+ * record cannot be edited into a state it could not have been created in.
+ */
+function checkAnimalConsistency(
+  value: Partial<z.infer<typeof animalBaseSchema>>,
+  ctx: z.RefinementCtx,
+): void {
+  if (value.dateOfBirth && value.purchaseDate && value.dateOfBirth > value.purchaseDate) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['dateOfBirth'],
+      message: 'Date of birth cannot be after the acquisition date',
+    });
+  }
+  if (value.source === 'PURCHASED' && value.purchaseCost === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['purchaseCost'],
+      message: 'Purchase price is required for a purchased animal',
+    });
+  }
+}
+
+export const animalCreateSchema = animalBaseSchema.superRefine(checkAnimalConsistency);
 export type AnimalCreate = z.infer<typeof animalCreateSchema>;
 
-export const animalUpdateSchema = animalCreateSchema
+export const animalUpdateSchema = animalBaseSchema
   .omit({ initialWeightKg: true })
-  .partial();
+  .partial()
+  .superRefine(checkAnimalConsistency);
 export type AnimalUpdate = z.infer<typeof animalUpdateSchema>;
+
+/**
+ * A dam must be female and old enough to actually be the mother. 20 months is
+ * below the earliest realistic age at first calving for any species here, so
+ * anything under it is a data-entry error rather than an unusual animal.
+ */
+export const MIN_DAM_AGE_GAP_MONTHS = 20;
 
 export const animalListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -116,6 +189,9 @@ export interface AnimalDto {
   species: Species;
   breed: string;
   dateOfBirth: string | null;
+  /** True when dateOfBirth is a derived estimate rather than a known date. */
+  dobIsEstimated: boolean;
+  ageAtAcquisitionMonths: number | null;
   gender: Gender;
   color: string | null;
   source: AnimalSource | null;
@@ -123,6 +199,14 @@ export interface AnimalDto {
   purchaseDate: string | null;
   purchaseCost: number | null;
   status: AnimalStatus;
+  /** Independent of status — she may be lactating and pregnant at once. */
+  isPregnant: boolean;
+  pregnancyConfirmedDate: string | null;
+  expectedCalvingDate: string | null;
+  lactationNumber: number;
+  lactationStartDate: string | null;
+  expectedLactationDays: number | null;
+  breedComposition: BreedComposition | null;
   breedingStock: boolean;
   shed: string | null;
   photoUrl: string | null;
@@ -139,9 +223,28 @@ export interface AnimalDto {
   deletedAt: string | null;
 }
 
+/** One entry in an animal's append-only status trail. */
+export interface AnimalStatusHistoryDto {
+  id: string;
+  animalId: string;
+  fromStatus: AnimalStatus | null;
+  toStatus: AnimalStatus;
+  reason: string | null;
+  changedAt: string;
+  changedBy: string | null;
+}
+
 export interface AnimalDetailDto extends AnimalDto {
   weights: WeightRecordDto[];
+  statusHistory: AnimalStatusHistoryDto[];
 }
+
+/** Status changes carry a reason so the trail is worth reading later. */
+export const animalStatusChangeSchema = z.object({
+  status: z.enum(ANIMAL_STATUSES),
+  reason: z.string().max(500).optional(),
+});
+export type AnimalStatusChange = z.infer<typeof animalStatusChangeSchema>;
 
 export interface AnimalProductionStatsDto {
   animalId: string;
@@ -243,13 +346,43 @@ export type HealthRecordType = (typeof HEALTH_RECORD_TYPES)[number];
 export const QUALITY_GRADES_MILK_EGGS = ['A', 'B', 'C'] as const;
 export const QUALITY_GRADES_FISH = ['PREMIUM', 'STANDARD'] as const;
 
-/** Gestation length in days, used to auto-calculate breeding due dates. */
-export const GESTATION_DAYS: Record<Species, number> = {
-  BUFFALO: 310,
-  COW: 283,
-  PIG: 114,
-  GOAT: 150,
-};
+// ---------------------------------------------------------------------------
+// Species reproductive constants
+// ---------------------------------------------------------------------------
+
+/**
+ * Reproductive constants per species, served from the SpeciesConfig table.
+ *
+ * These are NOT hardcoded anywhere in application code. Buffalo and cattle
+ * differ on every one of them, and the familiar 305-day lactation is a
+ * Holstein figure that is simply wrong for Nepal. Read them through the API's
+ * SpeciesConfigService instead.
+ */
+export interface SpeciesConfigDto {
+  species: Species;
+  gestationDays: number;
+  lactationDays: number;
+  voluntaryWaitingDays: number;
+  estrusCycleDays: number;
+  ageFirstServiceMonths: number;
+  pregnancyCheckEarliestDays: number;
+  targetCalvingIntervalDays: number;
+  dryOffDaysBeforeCalving: number;
+  minWeightFirstServiceKg: number;
+}
+
+export const speciesConfigUpdateSchema = z.object({
+  gestationDays: z.number().int().min(1).max(400).optional(),
+  lactationDays: z.number().int().min(1).max(600).optional(),
+  voluntaryWaitingDays: z.number().int().min(0).max(365).optional(),
+  estrusCycleDays: z.number().int().min(1).max(90).optional(),
+  ageFirstServiceMonths: z.number().int().min(1).max(120).optional(),
+  pregnancyCheckEarliestDays: z.number().int().min(1).max(200).optional(),
+  targetCalvingIntervalDays: z.number().int().min(1).max(900).optional(),
+  dryOffDaysBeforeCalving: z.number().int().min(0).max(200).optional(),
+  minWeightFirstServiceKg: z.number().int().min(1).max(1500).optional(),
+});
+export type SpeciesConfigUpdate = z.infer<typeof speciesConfigUpdateSchema>;
 
 export const SYNC_ENTITY_TYPES = ['animal'] as const;
 export type SyncEntityType = (typeof SYNC_ENTITY_TYPES)[number];

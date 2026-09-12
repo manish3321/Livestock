@@ -50,6 +50,7 @@ model User {
   sessions    RefreshSession[]
   devices     Device[]
   auditEvents AuditEvent[]
+  assignedTasks Task[] @relation("TaskAssignee")
 }
 
 model Farm {
@@ -95,6 +96,8 @@ model Farm {
   feedLogs         FeedLog[]
   heatLogs         HeatLog[]
   expenseAllocations ExpenseAllocation[]
+  animalStatusHistory AnimalStatusHistory[]
+  tasks            Task[]
 }
 
 model FarmMembership {
@@ -175,9 +178,11 @@ enum Species {
   GOAT
 }
 
+/// Status is a single point-in-time state. Pregnancy is deliberately NOT here:
+/// a buffalo is routinely lactating and pregnant at the same time, so it lives
+/// on Animal.isPregnant as a flag.
 enum AnimalStatus {
   ACTIVE
-  PREGNANT
   SICK
   QUARANTINE
   DRY
@@ -185,6 +190,32 @@ enum AnimalStatus {
   CULLED
   SOLD
   DEAD
+}
+
+/// Reproductive constants per species. Buffalo and cattle differ on every one
+/// of these, and a 305-day lactation is a Holstein number that is simply wrong
+/// for Nepal — so nothing here may be hardcoded in application code.
+///
+/// Reference data rather than farm data: gestation length is biology, not farm
+/// policy, and a missing per-farm row would break breeding for a new farm.
+model SpeciesConfig {
+  id                         String   @id @default(uuid()) @db.Uuid
+  species                    Species  @unique
+  /// Days from conception to birth.
+  gestationDays              Int
+  /// Expected length of a lactation. NOT 305 — that is a Holstein figure.
+  lactationDays              Int
+  /// Deliberate wait after calving before she may be served again.
+  voluntaryWaitingDays       Int
+  estrusCycleDays            Int
+  ageFirstServiceMonths      Int
+  /// Earliest a pregnancy diagnosis can be trusted.
+  pregnancyCheckEarliestDays Int
+  targetCalvingIntervalDays  Int
+  dryOffDaysBeforeCalving    Int
+  minWeightFirstServiceKg    Int
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
 }
 
 enum Gender {
@@ -206,6 +237,13 @@ model Animal {
   species        Species
   breed          String
   dateOfBirth    DateTime?
+  /// Nepali farmers rarely know the exact DOB of a purchased animal.
+  /// Registration is never blocked on DOB, so age-driven calculations must
+  /// show a marker when the date behind them is a guess.
+  dobIsEstimated Boolean       @default(false)
+  /// Fallback when DOB is unknown: age in months when acquired, from which a
+  /// synthetic dateOfBirth is computed.
+  ageAtAcquisitionMonths Int?
   gender         Gender
   color          String?
   source         AnimalSource?
@@ -213,6 +251,18 @@ model Animal {
   purchaseDate   DateTime?
   purchaseCost   Decimal?      @db.Decimal(12, 2)
   status         AnimalStatus  @default(ACTIVE)
+  /// Pregnancy is a flag, not a status — she can be lactating and pregnant
+  /// at once. Making these mutually exclusive is a schema bug.
+  isPregnant     Boolean       @default(false)
+  pregnancyConfirmedDate DateTime?
+  expectedCalvingDate    DateTime?
+  /// Which lactation she is on; 0 means she has never calved.
+  lactationNumber Int          @default(0)
+  lactationStartDate DateTime?
+  /// Seeded from SpeciesConfig.lactationDays at registration.
+  expectedLactationDays Int?
+  /// Fractional breed makeup, e.g. {"murrah":0.75,"local":0.25}. Sums to 1.0.
+  breedComposition Json?
   /** When true, animal can be used as a breeding parent. */
   breedingStock  Boolean       @default(true)
   shed           String?
@@ -241,14 +291,39 @@ model Animal {
   heatLogs   HeatLog[]
   expenseAllocations ExpenseAllocation[]
   calvingRecords BreedingRecord[] @relation("BreedingOffspring")
+  statusHistory  AnimalStatusHistory[]
+  tasks          Task[]
 
   @@unique([farmId, tag])
   @@index([farmId, updatedAt])
   @@index([farmId, species])
   @@index([farmId, status])
   @@index([farmId, breedingStock])
+  @@index([farmId, isPregnant])
   @@index([damId])
   @@index([sireId])
+}
+
+/// Append-only record of every status change. A status is never overwritten
+/// silently: "why is she marked DRY" has to be answerable months later.
+model AnimalStatusHistory {
+  id         String        @id @default(uuid()) @db.Uuid
+  farmId     String        @db.Uuid
+  animalId   String        @db.Uuid
+  /// Null for the row written at registration.
+  fromStatus AnimalStatus?
+  toStatus   AnimalStatus
+  reason     String?
+  changedAt  DateTime      @default(now())
+  changedBy  String?       @db.Uuid
+  deviceId   String?
+  createdAt  DateTime      @default(now())
+
+  farm   Farm   @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal Animal @relation(fields: [animalId], references: [id], onDelete: Cascade)
+
+  @@index([farmId, animalId, changedAt])
+  @@index([farmId, changedAt])
 }
 
 model WeightRecord {
@@ -423,6 +498,7 @@ model HerdBatch {
   expenses     Expense[]
   revenues     Revenue[]
   feedLogs     FeedLog[]
+  tasks        Task[]
 
   @@index([farmId, kind])
   @@index([farmId, category])
@@ -1060,6 +1136,102 @@ model SyncMutationRecord {
   farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
 
   @@index([farmId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Domain: Tasks — the farmer's work queue
+// ---------------------------------------------------------------------------
+
+enum TaskType {
+  VACCINATION_DUE
+  MEDICATION_DOSE
+  COLOSTRUM_FEED
+  CALVING_WATCH
+  HEAT_WATCH
+  SILENT_HEAT_CHECK
+  SERVICE_WINDOW
+  PREGNANCY_CHECK
+  DRY_OFF
+  POSTPARTUM_CHECK
+  MILK_WITHHOLD_END
+  STOCK_REORDER
+  LOT_EXPIRING
+  MISSING_PRODUCTION
+  YIELD_DROP
+  APPLY_MARKER
+  REMOVE_MARKER
+  RETAG_REQUIRED
+}
+
+enum TaskPriority {
+  CRITICAL
+  HIGH
+  NORMAL
+  LOW
+}
+
+enum TaskStatus {
+  PENDING
+  DONE
+  SNOOZED
+  DISMISSED
+  EXPIRED
+}
+
+/// AUTO tasks come from the nightly generators and must be idempotent.
+enum TaskSource {
+  AUTO
+  MANUAL
+}
+
+/// Dismissing is a real answer, not a shrug — the reason is required so the
+/// generator can learn that the farmer already did it offline.
+enum TaskDismissReason {
+  NOT_NEEDED
+  ALREADY_DONE_OFFLINE
+  ANIMAL_SOLD
+  WRONG_ANIMAL
+  OTHER
+}
+
+model Task {
+  id            String       @id @default(uuid()) @db.Uuid
+  farmId        String       @db.Uuid
+  animalId      String?      @db.Uuid
+  batchId       String?      @db.Uuid
+  type          TaskType
+  titleEn       String
+  titleNp       String
+  dueAt         DateTime
+  priority      TaskPriority @default(NORMAL)
+  status        TaskStatus   @default(PENDING)
+  assignedToId  String?      @db.Uuid
+  source        TaskSource   @default(AUTO)
+  /// What produced this task, so completing it can open the right form.
+  sourceRefType String?
+  sourceRefId   String?      @db.Uuid
+  /// Snoozing is capped at 3 times; after that the task is non-snoozable.
+  snoozedUntil  DateTime?
+  snoozeCount   Int          @default(0)
+  completedAt   DateTime?
+  completedById String?      @db.Uuid
+  dismissReason TaskDismissReason?
+  dismissNote   String?
+  deviceId      String?
+  createdBy     String?      @db.Uuid
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  deletedAt     DateTime?
+
+  farm       Farm    @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal     Animal? @relation(fields: [animalId], references: [id], onDelete: Cascade)
+  batch      HerdBatch? @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  assignedTo User?   @relation("TaskAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  @@index([farmId, status, dueAt])
+  @@index([farmId, animalId, status])
+  @@index([farmId, assignedToId, status])
+  @@index([farmId, priority, dueAt])
 }
 
 /// Monotonic per-server change feed consumed by /sync/pull.

@@ -1,16 +1,16 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import {
-  GESTATION_DAYS,
-  type BreedingCreate,
-  type BreedingListQuery,
-  type BreedingUpdate,
-  type PageResult,
-  type Species,
+import type {
+  BreedingCreate,
+  BreedingListQuery,
+  BreedingUpdate,
+  PageResult,
+  Species,
 } from '@farm/contracts';
 import type { Animal, BreedingRecord } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
+import { SpeciesConfigService } from '../species-config/species-config.service';
 
 export interface BreedingRecordDto {
   id: string;
@@ -47,6 +47,7 @@ export class BreedingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly speciesConfig: SpeciesConfigService,
   ) {}
 
   async list(
@@ -111,7 +112,7 @@ export class BreedingService {
       });
     }
 
-    const gestationDays = GESTATION_DAYS[mother.species as Species];
+    const { gestationDays } = await this.speciesConfig.forSpecies(mother.species as Species);
     const dueDate = new Date(input.matingDate);
     dueDate.setDate(dueDate.getDate() + gestationDays);
 
