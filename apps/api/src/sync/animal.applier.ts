@@ -14,7 +14,7 @@ export type ApplyOutcome =
 /** Applies animal create/update/delete mutations inside a sync transaction. */
 @Injectable()
 export class AnimalApplier {
-  constructor(private readonly herdNumbers = new HerdNumberService()) {}
+  private readonly herdNumbers = new HerdNumberService();
 
   async apply(
     tx: Prisma.TransactionClient,
