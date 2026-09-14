@@ -142,7 +142,7 @@ await writeFile(
   join(funcDir, '.vc-config.json'),
   `${JSON.stringify(
     {
-      runtime: 'nodejs22.x',
+      runtime: 'nodejs24.x',
       handler: 'index.js',
       launcherType: 'Nodejs',
       shouldAddHelpers: false,
@@ -168,4 +168,13 @@ await writeFile(
 );
 
 console.log(`Vercel output: ${packages.size} packages, ${copied} files hoisted to the function`);
-console.log('Wrote .vercel/output. In the Vercel project, leave Output Directory empty so this folder is used.');
+
+const leftoverLinks = [];
+const outputEntries = await readdir(output, { recursive: true, withFileTypes: true });
+for (const entry of outputEntries) {
+  if (!entry.isSymbolicLink()) continue;
+  leftoverLinks.push(relative(output, join(entry.parentPath ?? output, entry.name)));
+}
+if (leftoverLinks.length > 0) {
+  throw new Error(`Build output still has symlinks (Vercel rejects these): ${leftoverLinks.slice(0, 20).join(', ')}`);
+}
