@@ -10,6 +10,7 @@ import {
 import { getAnimal, getAnimalEconomics, updateAnimal } from '../api/animals';
 import { getBatch, getBatchEconomics } from '../api/batches';
 import { useAuth } from '../auth/auth-context';
+import { AnimalActionGrid } from './AnimalActionGrid';
 import { ErrorState, LoadingState } from './PageState';
 import type { QrTarget } from '../lib/qr';
 
@@ -105,6 +106,22 @@ function AnimalResult({ id, onClose }: { id: string; onClose: () => void }) {
         )}
       </div>
 
+      <h3 className="scan-modal-subtitle">{t('qr.whatNext')}</h3>
+      <p className="muted">{t('qr.whatNextHint')}</p>
+      <AnimalActionGrid animalId={animal.id} onNavigate={onClose} />
+      {can('animals:write') && (
+        <div className="page-actions" style={{ marginTop: 16 }}>
+          <button
+            className="btn secondary"
+            type="button"
+            disabled={breedingMut.isPending}
+            onClick={() => breedingMut.mutate(!animal.breedingStock)}
+          >
+            {animal.breedingStock ? t('qr.unsetBreeding') : t('qr.setBreeding')}
+          </button>
+        </div>
+      )}
+
       <EconomicsBlock
         invested={econ.investedTotal}
         earned={econ.earnedTotal}
@@ -116,43 +133,6 @@ function AnimalResult({ id, onClose }: { id: string; onClose: () => void }) {
           { label: t('qr.revenue'), value: econ.revenueTotal },
         ]}
       />
-
-      <h3 className="scan-modal-subtitle">{t('qr.quickActions')}</h3>
-      <div className="page-actions" style={{ flexWrap: 'wrap', justifyContent: 'flex-start' }}>
-        <Link className="btn" to={`/animals/${animal.id}`} onClick={onClose}>
-          {t('qr.openDetail')}
-        </Link>
-        {can('expenses:submit') && (
-          <Link className="btn secondary" to={`/expenses?animalId=${animal.id}`} onClick={onClose}>
-            {t('qr.addExpense')}
-          </Link>
-        )}
-        {can('health:write') && (
-          <Link className="btn secondary" to={`/health?animalId=${animal.id}`} onClick={onClose}>
-            {t('qr.addHealth')}
-          </Link>
-        )}
-        {can('revenue:write') && (
-          <Link className="btn secondary" to={`/revenue?animalId=${animal.id}`} onClick={onClose}>
-            {t('qr.addRevenue')}
-          </Link>
-        )}
-        {can('breeding:write') && (
-          <Link className="btn secondary" to={`/breeding?animalId=${animal.id}`} onClick={onClose}>
-            {t('qr.breeding')}
-          </Link>
-        )}
-        {can('animals:write') && (
-          <button
-            className="btn secondary"
-            type="button"
-            disabled={breedingMut.isPending}
-            onClick={() => breedingMut.mutate(!animal.breedingStock)}
-          >
-            {animal.breedingStock ? t('qr.unsetBreeding') : t('qr.setBreeding')}
-          </button>
-        )}
-      </div>
     </div>
   );
 }

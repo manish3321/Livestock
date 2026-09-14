@@ -42,26 +42,25 @@ export function LoginPage() {
 
   return (
     <div className="login-wrap">
-      <section className="login-hero">
-        <p className="login-kicker">{t('appName')}</p>
-        <h1>{t('login.heroTitle')}</h1>
-        <p>{t('login.heroBody')}</p>
-        <ul className="login-points">
-          <li>{t('login.point1')}</li>
-          <li>{t('login.point2')}</li>
-          <li>{t('login.point3')}</li>
-        </ul>
-      </section>
       <div className="login-panel">
         <form className="card login-card" onSubmit={(e) => void onSubmit(e)}>
-          <p className="login-kicker muted">{t('appName')}</p>
+          <span className="login-mark" aria-hidden="true">
+            <svg width="32" height="32" viewBox="0 0 28 28" fill="none">
+              <rect width="28" height="28" rx="8" fill="currentColor" />
+              <path
+                d="M8 18.5c2.2-4.2 4.6-6.5 6-6.5s3.8 2.3 6 6.5"
+                stroke="#fff"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+              />
+              <circle cx="14" cy="10" r="2.2" fill="#fff" />
+            </svg>
+          </span>
+          <p className="login-kicker">{t('appName')}</p>
           <h1>{t('login.title')}</h1>
-          <p style={{ color: 'var(--color-text-secondary)', marginTop: 0, fontSize: '1.05rem' }}>
-            {t('login.subtitle')}
-          </p>
+          <p className="login-pocket">{t('login.pocket')}</p>
           <div className="field">
             <label htmlFor="email">{t('login.email')}</label>
-            <p className="field-hint">{t('login.emailHint')}</p>
             <input
               id="email"
               type="email"
@@ -73,7 +72,6 @@ export function LoginPage() {
           </div>
           <div className="field">
             <label htmlFor="password">{t('login.password')}</label>
-            <p className="field-hint">{t('login.passwordHint')}</p>
             <input
               id="password"
               type="password"

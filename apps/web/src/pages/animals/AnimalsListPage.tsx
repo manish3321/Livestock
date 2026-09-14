@@ -1,47 +1,87 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   ANIMAL_STATUS_LABEL,
   ANIMAL_STATUSES,
   SPECIES,
   SPECIES_LABEL,
+  type AnimalDto,
   type AnimalStatus,
   type Species,
 } from '@farm/contracts';
 import { useAuth } from '../../auth/auth-context';
+import { AnimalActionGrid } from '../../components/AnimalActionGrid';
 import { SpeciesGlyph } from '../../components/ModuleIcon';
 import { ErrorState, LoadingState } from '../../components/PageState';
 import { StatusChip } from '../../components/StatusChip';
 import { downloadAnimalsCsv, listAnimals } from '../../api/animals';
 import { downloadTablePdf } from '../../lib/pdf';
+import { parseSpeciesParam } from '../../lib/livestock';
 
 export function AnimalsListPage() {
   const { t } = useTranslation();
   const { can } = useAuth();
   const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const species = parseSpeciesParam(params.get('species'));
   const [q, setQ] = useState('');
-  const [species, setSpecies] = useState<Species | ''>('');
   const [status, setStatus] = useState<AnimalStatus | ''>('');
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const searching = q.trim().length > 0;
+  const showPicker = !species && !searching;
+
+  const counts = useQueries({
+    queries: SPECIES.map((s) => ({
+      queryKey: ['animals', 'count', s],
+      queryFn: () => listAnimals({ species: s, pageSize: 1 }),
+    })),
+  });
 
   const query = useQuery({
     queryKey: ['animals', q, species, status],
     queryFn: () =>
       listAnimals({
-        q: q || undefined,
+        q: q.trim() || undefined,
         species: species || undefined,
         status: status || undefined,
-        pageSize: 100,
+        pageSize: 200,
       }),
+    enabled: !showPicker,
   });
+
+  const setSpecies = (next: Species | '') => {
+    setOpenId(null);
+    setParams(
+      (current) => {
+        const copy = new URLSearchParams(current);
+        if (next) copy.set('species', next);
+        else copy.delete('species');
+        return copy;
+      },
+      { replace: true },
+    );
+  };
+
+  const addPath = species ? `/animals/new?species=${species}` : '/animals/new';
 
   return (
     <div>
       <div className="page-header">
         <div>
-          <h1>{t('nav.animals')}</h1>
-          <p className="page-subtitle">{t('animals.subtitle')}</p>
+          {!showPicker && (
+            <button type="button" className="back-link" onClick={() => setSpecies('')}>
+              ← {t('animals.backToKinds')}
+            </button>
+          )}
+          <h1>
+            {species ? SPECIES_LABEL[species] : t('nav.animals')}
+          </h1>
+          <p className="page-subtitle">
+            {showPicker ? t('animals.chooseKindHint') : t('animals.subtitle')}
+          </p>
         </div>
         <div className="page-actions">
           {can('animals:write') && (
@@ -99,77 +139,67 @@ export function AnimalsListPage() {
           className="toolbar-search"
           placeholder={t('animals.searchPlaceholder')}
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setOpenId(null);
+          }}
         />
-        <div className="chip-row">
-          <button
-            type="button"
-            className={`filter-chip ${species === '' ? 'active' : ''}`}
-            onClick={() => setSpecies('')}
+        {!showPicker && (
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value as AnimalStatus | '')}
+            aria-label={t('animals.status')}
           >
-            {t('animals.filterAll')}
-          </button>
-          {SPECIES.map((s) => (
+            <option value="">{t('animals.anyStatus')}</option>
+            {ANIMAL_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {t(`enum.animalStatus.${s}`, { defaultValue: ANIMAL_STATUS_LABEL[s] })}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      {showPicker && (
+        <div className="species-pick-grid">
+          {SPECIES.map((s, i) => (
             <button
               key={s}
               type="button"
-              className={`filter-chip ${species === s ? 'active' : ''}`}
+              className="species-pick"
               onClick={() => setSpecies(s)}
             >
-              {SPECIES_LABEL[s]}
+              <SpeciesGlyph species={s} />
+              <strong>{SPECIES_LABEL[s]}</strong>
+              <span className="species-pick-count">
+                {counts[i]?.data?.total ?? (counts[i]?.isLoading ? '…' : 0)}
+              </span>
             </button>
           ))}
         </div>
-        <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value as AnimalStatus | '')}
-          aria-label={t('animals.status')}
-        >
-          <option value="">{t('animals.anyStatus')}</option>
-              {ANIMAL_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {t(`enum.animalStatus.${s}`, { defaultValue: ANIMAL_STATUS_LABEL[s] })}
-                </option>
-              ))}
-        </select>
-      </div>
+      )}
 
-      {query.isLoading && <LoadingState />}
-      {query.isError && <ErrorState onRetry={() => void query.refetch()} />}
-      {query.data && (
+      {!showPicker && query.isLoading && <LoadingState />}
+      {!showPicker && query.isError && <ErrorState onRetry={() => void query.refetch()} />}
+      {!showPicker && query.data && (
         <>
           <p className="result-count">
-            {t('animals.resultCount', { count: query.data.total })}
+            {query.data.total > query.data.items.length
+              ? t('animals.showingFirst', {
+                  shown: query.data.items.length,
+                  total: query.data.total,
+                })
+              : t('animals.resultCount', { count: query.data.total })}
           </p>
-          <div className="animal-grid">
+          <div className="herd-list">
             {query.data.items.map((row) => (
-              <Link key={row.id} to={`/animals/${row.id}`} className="animal-card">
-                <div className="animal-card-media" data-species={row.species}>
-                  <SpeciesGlyph species={row.species} />
-                  <div className="animal-card-status">
-                    <StatusChip
-                      status={row.status}
-                      label={t(`enum.animalStatus.${row.status}`, {
-                        defaultValue: ANIMAL_STATUS_LABEL[row.status],
-                      })}
-                    />
-                  </div>
-                </div>
-                <div className="animal-card-body">
-                  <p className="animal-card-title">
-                    {row.name?.trim() || SPECIES_LABEL[row.species]}
-                  </p>
-                  <div className="animal-card-tag">{row.herdNumber ?? row.tag}</div>
-                  <div className="animal-card-meta">
-                    <span>{row.breed}</span>
-                    <span>
-                      {row.currentWeightKg != null
-                        ? `${row.currentWeightKg} kg`
-                        : '—'}
-                    </span>
-                  </div>
-                </div>
-              </Link>
+              <HerdRow
+                key={row.id}
+                row={row}
+                showSpecies={!species}
+                open={openId === row.id}
+                onToggle={() => setOpenId((id) => (id === row.id ? null : row.id))}
+              />
             ))}
           </div>
           {query.data.items.length === 0 && (
@@ -179,14 +209,72 @@ export function AnimalsListPage() {
       )}
 
       {can('animals:write') && (
-        <button
-          className="btn fab"
-          type="button"
-          onClick={() => navigate('/animals/new')}
-        >
+        <button className="btn fab" type="button" onClick={() => navigate(addPath)}>
           + {t('animals.add')}
         </button>
       )}
     </div>
+  );
+}
+
+function HerdRow({
+  row,
+  showSpecies,
+  open,
+  onToggle,
+}: {
+  row: AnimalDto;
+  showSpecies: boolean;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const { t } = useTranslation();
+  const label = row.herdNumber ?? row.tag;
+  const name = row.name?.trim();
+
+  return (
+    <article className={`herd-row${open ? ' open' : ''}`}>
+      <button
+        type="button"
+        className="herd-row-toggle"
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        <span className="herd-row-id">{label}</span>
+        <span className="herd-row-name">
+          {name || SPECIES_LABEL[row.species]}
+          {showSpecies && name ? ` · ${SPECIES_LABEL[row.species]}` : ''}
+        </span>
+        <StatusChip
+          status={row.status}
+          label={t(`enum.animalStatus.${row.status}`, {
+            defaultValue: ANIMAL_STATUS_LABEL[row.status],
+          })}
+        />
+        <span className="herd-row-kg">
+          {row.currentWeightKg != null ? `${row.currentWeightKg} kg` : '—'}
+        </span>
+        <span className="herd-chevron" aria-hidden="true">
+          ▾
+        </span>
+      </button>
+      {open && (
+        <div className="herd-row-panel">
+          <div className="herd-snap">
+            <span>
+              {t('animals.breed')}: {row.breed || '—'}
+            </span>
+            <span>
+              {t('animals.shed')}: {row.shed || '—'}
+            </span>
+            {row.isPregnant && <span>{t('enum.animalStatus.PREGNANT')}</span>}
+            {row.gender === 'FEMALE' || row.gender === 'MALE' ? (
+              <span>{row.gender === 'FEMALE' ? t('animals.female') : t('animals.male')}</span>
+            ) : null}
+          </div>
+          <AnimalActionGrid animalId={row.id} compact />
+        </div>
+      )}
+    </article>
   );
 }

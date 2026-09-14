@@ -1,30 +1,30 @@
 /**
- * Semantic design tokens for the Farm Management ERP.
+ * Semantic design tokens — Visual v2.1.
  *
- * Visual language aligned with the Cattle Management concept:
- * forest green CTAs, soft cream surfaces, large rounded cards —
- * adapted for multi-species ERP (tag + status chips, no marketplace chrome).
+ * Compact product UI with a quiet farm voice: bone canvas, moss brand,
+ * ember only for Scan and milk. Display serif is applied in CSS on a
+ * few voice lines, not here.
  */
 
 export const palette = {
-  // Brand — moss / pasture
-  green800: '#163A2A',
-  green700: '#1F5C3B',
-  green600: '#2E7A4F',
-  green100: '#E6F3EA',
-  // Linen / warm paper
-  cream: '#F4F1EA',
-  creamDark: '#E7E1D4',
+  // Brand — moss
+  green800: '#1F4D38',
+  green700: '#2A6A4A',
+  green600: '#3A7D58',
+  green100: '#E6F0E9',
+  // Neutrals — warm bone / paper
+  cream: '#F3EFE6',
+  creamDark: '#E6DFD2',
   gray900: '#1C211D',
-  gray700: '#3E463F',
-  gray500: '#6A726B',
-  gray300: '#D5CFC3',
-  gray100: '#EEE9DF',
-  gray50: '#F4F1EA',
-  white: '#FFFdf8',
-  // Accent
+  gray700: '#3D433E',
+  gray500: '#6B6F68',
+  gray300: '#DDD6C8',
+  gray100: '#EFE9DC',
+  gray50: '#F3EFE6',
+  white: '#FFFBF5',
+  // Ember — Scan FAB and milk figures only
   terracotta: '#C45C26',
-  terracottaDark: '#A3491C',
+  terracottaDark: '#A34A1C',
   // Signals
   red700: '#C62828',
   red100: '#FFEBEE',
@@ -44,15 +44,17 @@ export const color = {
   brand: palette.green700,
   brandStrong: palette.green800,
   brandSubtle: palette.green100,
-  accent: palette.terracotta,
-  accentStrong: palette.terracottaDark,
+  accent: palette.green700,
+  accentStrong: palette.green800,
+  ember: palette.terracotta,
+  emberStrong: palette.terracottaDark,
   textPrimary: palette.gray900,
   textSecondary: palette.gray700,
   textMuted: palette.gray500,
   border: palette.gray300,
   surface: palette.white,
   surfaceSubtle: palette.cream,
-  surfaceMuted: palette.creamDark,
+  surfaceMuted: palette.gray100,
   danger: palette.red700,
   dangerSubtle: palette.red100,
   warning: palette.amber700,
@@ -117,26 +119,26 @@ export const spacing = {
   sm: 8,
   md: 12,
   lg: 16,
-  xl: 24,
-  xxl: 32,
+  xl: 20,
+  xxl: 28,
 } as const;
 
 export const radius = {
   sm: 8,
-  md: 12,
-  lg: 18,
+  md: 10,
+  lg: 14,
   pill: 999,
 } as const;
 
-/** Type scale sized for outdoor/adult legibility; body stays ≥17. */
+/** Compact product scale. Shed pad overrides size in CSS. */
 export const fontSize = {
-  xs: 14,
-  sm: 15,
-  md: 17,
-  lg: 19,
-  xl: 26,
-  xxl: 32,
-  display: 40,
+  xs: 12,
+  sm: 13,
+  md: 15,
+  lg: 17,
+  xl: 22,
+  xxl: 28,
+  display: 34,
 } as const;
 
 export const fontWeight = {
@@ -146,5 +148,5 @@ export const fontWeight = {
   bold: '700',
 } as const;
 
-/** Minimum interactive target size (web px). */
+/** Minimum interactive target size for Shed / scan (web px). */
 export const touchTarget = 48;

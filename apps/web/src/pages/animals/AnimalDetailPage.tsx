@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -23,31 +23,29 @@ import { ErrorState, LoadingState } from '../../components/PageState';
 import { StatusChip } from '../../components/StatusChip';
 import { useFarmMode } from '../../hooks/useFarmMode';
 import {
-  addWeight,
   createAnimal,
   deleteAnimal,
   getAnimal,
   getAnimalEconomics,
-  getAnimalProductionStats,
   listAnimals,
   updateAnimal,
   uploadAnimalPhoto,
 } from '../../api/animals';
 import { listBreeding } from '../../api/breeding';
 import { QrPrintCard } from '../../components/QrPrintCard';
+import { AnimalRecordPanel, AnimalTopicTabs } from '../../components/AnimalRecordTabs';
 import { WithholdBanner } from '../../components/WithholdBanner';
 import { animalScanUrl } from '../../lib/qr';
+import { parseAnimalTab, parseSpeciesParam } from '../../lib/livestock';
 
 export function AnimalDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { t } = useTranslation();
   const { can } = useAuth();
-  const { commercial } = useFarmMode();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [weightKg, setWeightKg] = useState('');
-  const [bcs, setBcs] = useState('');
-  const [weightError, setWeightError] = useState(false);
+  const [params] = useSearchParams();
+  const tab = parseAnimalTab(params.get('tab'));
 
   const query = useQuery({
     queryKey: ['animal', id],
@@ -64,35 +62,13 @@ export function AnimalDetailPage() {
   const breedingQ = useQuery({
     queryKey: ['breeding', 'mother', id],
     queryFn: () => listBreeding({ motherId: id!, pageSize: 50 }),
-    enabled: Boolean(id) && can('breeding:read'),
-  });
-
-  const statsQ = useQuery({
-    queryKey: ['animal', id, 'production-stats'],
-    queryFn: () => getAnimalProductionStats(id!),
-    enabled: Boolean(id),
+    enabled: Boolean(id) && can('breeding:read') && tab === 'overview',
   });
 
   const photoMut = useMutation({
     mutationFn: (file: File) => uploadAnimalPhoto(id!, file),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['animal', id] });
-    },
-  });
-
-  const weightMutation = useMutation({
-    mutationFn: () =>
-      addWeight(id!, {
-        weightKg: Number(weightKg),
-        recordedAt: new Date(),
-        bcs: bcs ? Number(bcs) : undefined,
-      }),
-    onSuccess: () => {
-      setWeightKg('');
-      setBcs('');
-      setWeightError(false);
-      void qc.invalidateQueries({ queryKey: ['animal', id] });
-      void qc.invalidateQueries({ queryKey: ['animals'] });
     },
   });
 
@@ -116,8 +92,8 @@ export function AnimalDetailPage() {
       {animal.activeWithhold && (
         <WithholdBanner messageNp={animal.activeWithhold.messageNp} endDate={animal.activeWithhold.endDate} />
       )}
-      <Link to="/animals" className="back-link">
-        ← {t('batches.breedingStock')}
+      <Link to={`/animals?species=${animal.species}`} className="back-link">
+        ← {SPECIES_LABEL[animal.species]}
       </Link>
       <AnimalBanners isPregnant={animal.isPregnant} />
       <div className="animal-hero" data-species={animal.species}>
@@ -173,7 +149,10 @@ export function AnimalDetailPage() {
         </div>
       </div>
 
-      {economicsQ.data && (
+      <AnimalTopicTabs animalId={animal.id} />
+      <AnimalRecordPanel animal={animal} />
+
+      {tab === 'overview' && economicsQ.data && (
         <div className="stats-grid" style={{ marginBottom: 24 }}>
           <div className="stat-card">
             <span className="stat-label">{t('qr.invested')}</span>
@@ -190,23 +169,7 @@ export function AnimalDetailPage() {
         </div>
       )}
 
-      {statsQ.data && statsQ.data.milkEntryCount > 0 && (
-        <div className="stats-grid" style={{ marginBottom: 24 }}>
-          <div className="stat-card">
-            <span className="stat-label">{t('animals.milkAverage')}</span>
-            <span className="stat-value">{statsQ.data.milkAverage.toFixed(1)} L</span>
-          </div>
-          <div className="stat-card">
-            <span className="stat-label">{t('animals.herdAverage')}</span>
-            <span className="stat-value">{statsQ.data.herdAverage.toFixed(1)} L</span>
-          </div>
-          <div className="stat-card">
-            <span className="stat-label">{t('animals.milkTotal')}</span>
-            <span className="stat-value">{statsQ.data.milkTotalLiters.toFixed(1)} L</span>
-          </div>
-        </div>
-      )}
-
+      {tab === 'overview' && (
       <div className="detail-grid">
         <div className="card">
           <h2>{t('animals.basicInfo')}</h2>
@@ -322,70 +285,6 @@ export function AnimalDetailPage() {
           url={animalScanUrl(animal.id)}
         />
 
-        <div className="card">
-          <h2>{t('animals.weightHistory')}</h2>
-          {can('animals:write') && (
-            <form
-              className="inline-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!weightKg || Number(weightKg) <= 0) {
-                  setWeightError(true);
-                  return;
-                }
-                weightMutation.mutate();
-              }}
-            >
-              <input
-                type="number"
-                step="0.1"
-                min="0.1"
-                placeholder={t('animals.weightKg')}
-                value={weightKg}
-                onChange={(e) => setWeightKg(e.target.value)}
-              />
-              {commercial && (
-                <input
-                  type="number"
-                  min="1"
-                  max="5"
-                  placeholder={t('animals.bcs')}
-                  value={bcs}
-                  onChange={(e) => setBcs(e.target.value)}
-                />
-              )}
-              <button className="btn" type="submit" disabled={weightMutation.isPending}>
-                {t('animals.addWeight')}
-              </button>
-            </form>
-          )}
-          {weightError && <p className="error-text">{t('animals.weightRequired')}</p>}
-          {animal.weights.length === 0 ? (
-            <p className="muted">{t('common.empty')}</p>
-          ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>{t('animals.date')}</th>
-                  <th>{t('animals.weight')}</th>
-                  {commercial && <th>{t('animals.bcs')}</th>}
-                  <th>{t('animals.notes')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {animal.weights.map((w) => (
-                  <tr key={w.id}>
-                    <td>{formatDate(w.recordedAt)}</td>
-                    <td>{w.weightKg} kg</td>
-                    {commercial && <td>{w.bcs ?? '—'}</td>}
-                    <td>{w.notes ?? '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-
         {can('breeding:read') && (
           <div className="card">
             <div className="page-header" style={{ marginBottom: 12 }}>
@@ -464,33 +363,8 @@ export function AnimalDetailPage() {
             </p>
           </div>
         )}
-
-        {statsQ.data && statsQ.data.last30Days.length > 0 && (
-          <div className="card">
-            <h2>{t('animals.lactationTrend')}</h2>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>{t('common.date')}</th>
-                  <th>{t('production.quantity')}</th>
-                  <th>{t('production.fatPercent')}</th>
-                  <th>{t('production.scc')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {statsQ.data.last30Days.map((row) => (
-                  <tr key={row.date}>
-                    <td>{formatDate(row.date)}</td>
-                    <td>{row.quantity}</td>
-                    <td>{row.fatPercent ?? '—'}</td>
-                    <td>{row.scc ?? '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
+      )}
     </div>
   );
 }
@@ -501,6 +375,8 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
   const { commercial } = useFarmMode();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [params] = useSearchParams();
+  const createSpecies = parseSpeciesParam(params.get('species')) || 'BUFFALO';
 
   const existing = useQuery({
     queryKey: ['animal', id],
@@ -509,11 +385,11 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
   });
 
   const [form, setForm] = useState<Partial<AnimalCreate>>({
-    species: 'BUFFALO',
+    species: createSpecies,
     gender: 'FEMALE',
     status: 'ACTIVE',
     breedingStock: true,
-    tag: 'BUF001',
+    tag: `${SPECIES_TAG_PREFIX[createSpecies]}001`,
   });
   const [error, setError] = useState<string | null>(null);
 
@@ -617,8 +493,11 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
     <div>
       <div className="page-header">
         <div>
-          <Link to="/animals" className="back-link">
-            ← {t('batches.breedingStock')}
+          <Link
+            to={form.species ? `/animals?species=${form.species}` : '/animals'}
+            className="back-link"
+          >
+            ← {form.species ? SPECIES_LABEL[form.species as Species] : t('nav.animals')}
           </Link>
           <h1>{mode === 'create' ? t('animals.add') : t('animals.edit')}</h1>
         </div>

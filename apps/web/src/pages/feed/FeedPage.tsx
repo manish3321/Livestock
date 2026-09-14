@@ -1,4 +1,5 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { formatDate, formatNPR, type FeedCreate } from '@farm/contracts';
@@ -19,6 +20,7 @@ export function FeedPage() {
   const { can } = useAuth();
   const { commercial } = useFarmMode();
   const qc = useQueryClient();
+  const [searchParams] = useSearchParams();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<Partial<FeedCreate>>({
     feedType: '',
@@ -26,6 +28,13 @@ export function FeedPage() {
     occurredAt: new Date(),
   });
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const animalId = searchParams.get('animalId') ?? undefined;
+    if (!animalId) return;
+    setShowForm(true);
+    setForm((prev) => ({ ...prev, animalId }));
+  }, [searchParams]);
 
   const query = useQuery({
     queryKey: ['feed'],

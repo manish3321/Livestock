@@ -21,9 +21,11 @@ export function ModuleIcon({ module, size = 22 }: { module: ModuleKey; size?: nu
     case 'animals':
       return (
         <svg {...props}>
-          <circle {...stroke} cx="12" cy="10" r="4" />
-          <path {...stroke} d="M6 20c1.5-3 4-4.5 6-4.5S16.5 17 18 20" />
-          <path {...stroke} d="M8 8.5 6 6M16 8.5 18 6" />
+          <path {...stroke} d="M7.2 9.2 4.8 5.4M16.8 9.2 19.2 5.4" />
+          <path {...stroke} d="M6.4 13.2c.7-3.4 2.9-5.4 5.6-5.4s4.9 2 5.6 5.4c.4 1.7-.3 3.3-1.6 4.2-1.2.8-2.6 1.1-4 1.1s-2.8-.3-4-1.1c-1.3-.9-2-2.5-1.6-4.2Z" />
+          <circle cx="10.2" cy="12.4" r="0.7" fill="currentColor" />
+          <circle cx="13.8" cy="12.4" r="0.7" fill="currentColor" />
+          <path {...stroke} d="M9.5 20.5c.7-2.2 1.7-3.2 2.5-3.2s1.8 1 2.5 3.2" />
         </svg>
       );
     case 'batches':
@@ -53,8 +55,9 @@ export function ModuleIcon({ module, size = 22 }: { module: ModuleKey; size?: nu
     case 'shed':
       return (
         <svg {...props}>
-          <path {...stroke} d="M4 18V8l8-4 8 4v10" />
-          <path {...stroke} d="M9 18v-5h6v5" />
+          <path {...stroke} d="M3.5 10.5 12 3.5l8.5 7V20.5H3.5v-10Z" />
+          <path {...stroke} d="M9 20.5v-6h6v6" />
+          <path {...stroke} d="m9 14.5 6 6M15 14.5l-6 6" />
         </svg>
       );
     case 'inbox':
@@ -67,8 +70,9 @@ export function ModuleIcon({ module, size = 22 }: { module: ModuleKey; size?: nu
     case 'scan':
       return (
         <svg {...props}>
-          <path {...stroke} d="M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3" />
-          <rect {...stroke} x="8" y="8" width="8" height="8" rx="1" />
+          <path {...stroke} d="M9 6.5h6a2 2 0 0 1 2 2v8.4l-5 2.6-5-2.6V8.5a2 2 0 0 1 2-2Z" />
+          <circle {...stroke} cx="12" cy="10.2" r="1.15" />
+          <path {...stroke} d="M10 13.6h4M10 16h2.8" />
         </svg>
       );
     case 'expenses':
@@ -102,7 +106,8 @@ export function ModuleIcon({ module, size = 22 }: { module: ModuleKey; size?: nu
     case 'health':
       return (
         <svg {...props}>
-          <path {...stroke} d="M12 21s-7-4.4-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 11c0 5.6-7 10-7 10Z" />
+          <rect {...stroke} x="4.5" y="4.5" width="15" height="15" rx="3.5" />
+          <path {...stroke} d="M12 8.2v7.6M8.2 12h7.6" />
         </svg>
       );
     case 'breeding':
@@ -116,15 +121,17 @@ export function ModuleIcon({ module, size = 22 }: { module: ModuleKey; size?: nu
     case 'production':
       return (
         <svg {...props}>
-          <path {...stroke} d="M8 8c0-2 1.8-4 4-4s4 2 4 4c2.5.5 4 2.2 4 4.5S17.5 17 15 17H9c-2.5 0-4-2-4-4.5S5.5 8.5 8 8Z" />
-          <path {...stroke} d="M10 17v3M14 17v3" />
+          <path {...stroke} d="M7.2 8.5h9.6l-.7 10.2H7.9L7.2 8.5Z" />
+          <path {...stroke} d="M8.4 8.5V6.8A3.6 3.6 0 0 1 12 4.4a3.6 3.6 0 0 1 3.6 2.4v1.7" />
+          <path {...stroke} d="M9.6 13.6h4.8" />
         </svg>
       );
     case 'feed':
       return (
         <svg {...props}>
-          <path {...stroke} d="M4 18h16M6 18V9l6-4 6 4v9" />
-          <path {...stroke} d="M9 14h6M10 11h4" />
+          <path {...stroke} d="M5 14.5c0-2.2 3.1-4 7-4s7 1.8 7 4V19H5v-4.5Z" />
+          <path {...stroke} d="M8.2 10.6c.6-3.2 2.1-5.4 3.8-5.4s3.2 2.2 3.8 5.4" />
+          <path {...stroke} d="M9.5 16.4h5" />
         </svg>
       );
     case 'reports':

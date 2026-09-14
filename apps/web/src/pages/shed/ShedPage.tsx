@@ -21,6 +21,7 @@ import {
 } from '../../api/rounds';
 import { parseQrPayload } from '../../lib/qr';
 import { shedFeedback } from '../../lib/shed-feedback';
+import { useScanOverlay } from '../../components/ScanAnywhere';
 import {
   cacheScan,
   cachedScan,
@@ -64,6 +65,7 @@ export function ShedPage() {
   const { t, i18n } = useTranslation();
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const { open: scanOverlayOpen } = useScanOverlay();
   const [params] = useSearchParams();
   const modeParam = params.get('mode') as RecordingMode | null;
   const farmQ = useQuery({
@@ -403,6 +405,7 @@ export function ShedPage() {
   };
 
   useEffect(() => {
+    if (scanOverlayOpen) return;
     if (!roundId || remainingQ.data?.round.status === 'FINISHED') return;
     const el = cameraHostRef.current;
     if (!el) return;
@@ -435,7 +438,7 @@ export function ShedPage() {
       void scanner.stop().catch(() => undefined);
       scannerRef.current = null;
     };
-  }, [roundId, openAnimal, remainingQ.data?.round.status]);
+  }, [roundId, openAnimal, remainingQ.data?.round.status, scanOverlayOpen]);
 
   const cached = useMemo(() => readShedCache(), [cacheTick, remainingQ.data]);
   const remaining = remainingQ.data?.remaining ?? cached.remaining;

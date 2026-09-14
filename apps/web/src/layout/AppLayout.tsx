@@ -1,8 +1,15 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { modulesForRole, type ModuleKey } from '@farm/contracts';
 import { useAuth } from '../auth/auth-context';
 import { ModuleIcon } from '../components/ModuleIcon';
+import {
+  ScanAnywhere,
+  ScanOverlayProvider,
+  TopbarScanButton,
+  useScanOverlay,
+} from '../components/ScanAnywhere';
 import { useFarmMode } from '../hooks/useFarmMode';
 import { setLocale } from '../i18n';
 import {
@@ -46,6 +53,20 @@ function navGroups(livestock: ModuleKey[]): { labelKey: string; modules: ModuleK
   ];
 }
 
+function MoreGlyph() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        d="M5 7h14M5 12h14M5 17h10"
+      />
+    </svg>
+  );
+}
+
 function FarmMark() {
   return (
     <span className="brand-mark" aria-hidden="true">
@@ -53,22 +74,37 @@ function FarmMark() {
         <rect width="28" height="28" rx="8" fill="currentColor" />
         <path
           d="M8 18.5c2.2-4.2 4.6-6.5 6-6.5s3.8 2.3 6 6.5"
-          stroke="#F4F1EA"
+          stroke="#fff"
           strokeWidth="1.7"
           strokeLinecap="round"
         />
-        <circle cx="14" cy="10" r="2.2" fill="#F4F1EA" />
+        <circle cx="14" cy="10" r="2.2" fill="#fff" />
       </svg>
     </span>
   );
 }
 
-/** Role-aware shell: light pasture sidebar + top bar. */
+/** Role-aware shell: compact sidebar + top bar. */
 export function AppLayout() {
+  return (
+    <ScanOverlayProvider>
+      <AppLayoutInner />
+    </ScanOverlayProvider>
+  );
+}
+
+function AppLayoutInner() {
   const { user, signOut, can } = useAuth();
   const { household, livestockTrackingMode } = useFarmMode();
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { openScan } = useScanOverlay();
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  useEffect(() => {
+    setMoreOpen(false);
+  }, [location.pathname]);
 
   if (!user) return null;
   const allowed = new Set(modulesForRole(user.role));
@@ -86,7 +122,13 @@ export function AppLayout() {
   }).format(new Date());
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${moreOpen ? ' more-open' : ''}`}>
+      <button
+        type="button"
+        className="sidebar-backdrop"
+        aria-label={t('common.close')}
+        onClick={() => setMoreOpen(false)}
+      />
       <nav className="sidebar" aria-label={t('appName')}>
         <div className="sidebar-brand">
           <FarmMark />
@@ -152,6 +194,7 @@ export function AppLayout() {
             <span>{today}</span>
           </div>
           <div className="topbar-actions">
+            <TopbarScanButton />
             <div className="topbar-user">
               <span className="avatar">{user.name.slice(0, 1).toUpperCase()}</span>
               <span>
@@ -176,6 +219,35 @@ export function AppLayout() {
           <Outlet />
         </main>
       </div>
+      <ScanAnywhere />
+      <nav className="tab-bar no-print" aria-label={t('appName')}>
+        {allowed.has('dashboard') && (
+          <NavLink to="/dashboard" className={({ isActive }) => (isActive ? 'active' : '')}>
+            <ModuleIcon module="dashboard" size={20} />
+            {t('nav.dashboard')}
+          </NavLink>
+        )}
+        {allowed.has('shed') && (
+          <NavLink to="/shed" className={({ isActive }) => (isActive ? 'active' : '')}>
+            <ModuleIcon module="shed" size={20} />
+            {t('nav.shed')}
+          </NavLink>
+        )}
+        {allowed.has('scan') && (
+          <button type="button" onClick={openScan}>
+            <ModuleIcon module="scan" size={20} />
+            {t('nav.scan')}
+          </button>
+        )}
+        <button
+          type="button"
+          className={moreOpen ? 'active' : ''}
+          onClick={() => setMoreOpen((v) => !v)}
+        >
+          <MoreGlyph />
+          {t('nav.more')}
+        </button>
+      </nav>
     </div>
   );
 }

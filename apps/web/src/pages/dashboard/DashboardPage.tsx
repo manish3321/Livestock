@@ -9,6 +9,17 @@ import {
   SPECIES_LABEL,
   type Species,
 } from '@farm/contracts';
+import { speciesColor } from '@farm/design-tokens';
+import { useAuth } from '../../auth/auth-context';
+import { getDashboardSummary } from '../../api/dashboard';
+import { ErrorState, LoadingState } from '../../components/PageState';
+import { StatusChip } from '../../components/StatusChip';
+import { useFarmMode } from '../../hooks/useFarmMode';
+
+function speciesAccent(key: string): string {
+  const cat = key.includes(':') ? key.slice(key.lastIndexOf(':') + 1) : key;
+  return speciesColor[cat as Species] ?? speciesColor.COW;
+}
 
 function batchDistributionLabel(key: string): string {
   const parts = key.split(':');
@@ -28,13 +39,6 @@ function batchDistributionLabel(key: string): string {
           : kind;
   return `${kindLabel} · ${cat}`;
 }
-import { useAuth } from '../../auth/auth-context';
-import { getDashboardSummary } from '../../api/dashboard';
-import { ModuleIcon } from '../../components/ModuleIcon';
-import { ErrorState, LoadingState } from '../../components/PageState';
-import { StatusChip } from '../../components/StatusChip';
-import { useFarmMode } from '../../hooks/useFarmMode';
-import { navigableModules } from '../../lib/navigation';
 
 export function DashboardPage() {
   const { t, i18n } = useTranslation();
@@ -83,9 +87,7 @@ export function DashboardPage() {
   const maxSpecies = Math.max(1, ...species.map((s) => s.count));
   const urgentCount =
     alerts.healthOverdue.length + alerts.inventoryCritical.length;
-  const shortcuts = (user ? navigableModules(user.role, { household }) : []).filter(
-    (m) => m !== 'dashboard',
-  );
+  const vaccineDue = alerts.vaccineToday?.length ?? 0;
 
   return (
     <div>
@@ -95,77 +97,16 @@ export function DashboardPage() {
           {user?.name ? `, ${user.name.split(' ')[0]}` : ''}
         </h1>
         <p className="greeting-date">{todayLabel}</p>
-      </div>
-
-      {commercial && (
-        <section
-          className="weather-strip rise-in rise-in-delay-1"
-          aria-label={t('dashboard.weather')}
-        >
-          <div>
-            <div className="weather-temp">+24°C</div>
-            <div style={{ fontWeight: 700, marginTop: 8, fontSize: '1.05rem' }}>
-              {t('dashboard.farmWeather')} — {user?.farmName ?? 'Farm'}
-            </div>
-          </div>
-          <div className="weather-meta">
-            <span>
-              {t('dashboard.humidity')}: <strong>62%</strong>
-            </span>
-            <span>
-              {t('dashboard.wind')}: <strong>8 m/s</strong>
-            </span>
-            <span>
-              {t('dashboard.location')}: <strong>Nepal</strong>
-            </span>
-          </div>
-        </section>
-      )}
-
-      <div className="section-block rise-in rise-in-delay-2">
-        <div className="section-head">
-          <div>
-            <h2 className="section-title">{t('dashboard.quickAccess')}</h2>
-            <p className="section-hint">{t('dashboard.quickAccessHint')}</p>
-          </div>
-        </div>
-        <div className="shortcut-grid">
-          {shortcuts.map((m) => (
-            <Link key={m} to={`/${m}`} className="shortcut-tile">
-              <span className="shortcut-icon">
-                <ModuleIcon module={m} size={26} />
-              </span>
-              {t(`nav.${m}`)}
-            </Link>
-          ))}
-        </div>
-        <div className="page-actions" style={{ marginTop: 16 }}>
-          {can('production:write') && (
-            <Link className="btn" to="/production">
-              {t('dashboard.quickAddProduction')}
-            </Link>
-          )}
-          {can('feed:write') && (
-            <Link className="btn secondary" to="/feed">
-              {t('dashboard.quickAddFeed')}
-            </Link>
-          )}
-          {can('health:write') && (
-            <Link className="btn secondary" to="/health">
-              {t('dashboard.quickAddHealth')}
-            </Link>
-          )}
-          {can('expenses:submit') && (
-            <Link className="btn secondary" to="/expenses">
-              {t('dashboard.quickAddExpense')}
-            </Link>
-          )}
-        </div>
+        {vaccineDue > 0 && (
+          <p className="greeting-pulse">
+            {t('dashboard.vaccineToday')} · {vaccineDue}
+          </p>
+        )}
       </div>
 
       {data.yesterdayProduction && (
         <div className="stats-grid" style={{ marginBottom: 24 }}>
-          <div className="stat-card">
+          <div className="stat-card stat-milk">
             <span className="stat-label">{t('dashboard.yesterdayMilk')}</span>
             <span className="stat-value">{data.yesterdayProduction.milkLiters} L</span>
           </div>
@@ -200,6 +141,17 @@ export function DashboardPage() {
           <div className="stat-card">
             <span className="stat-label">{t('dashboard.animals')}</span>
             <span className="stat-value">{data.animalCount}</span>
+            {species.length > 0 && (
+              <span className="herd-dots" aria-hidden="true">
+                {species.map((row) => (
+                  <i
+                    key={row.species}
+                    className="herd-dot"
+                    style={{ background: speciesAccent(row.species) }}
+                  />
+                ))}
+              </span>
+            )}
           </div>
           {showFinance && (
             <>
