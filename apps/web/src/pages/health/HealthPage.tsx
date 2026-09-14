@@ -4,6 +4,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   HEALTH_RECORD_TYPES,
+  MILK_APPEARANCES,
+  SYMPTOMS,
+  UDDER_SIGNS,
   formatDate,
   formatNPR,
   type HealthCreate,
@@ -14,7 +17,16 @@ import { listAnimals } from '../../api/animals';
 import { listBatches } from '../../api/batches';
 import { NEPAL_VACCINE_PROTOCOLS } from '@farm/contracts';
 import { listInventory } from '../../api/inventory';
-import { batchVaccinate, createHealthRecord, listHealthCalendar, listHealthRecords, type HealthRecordDto } from '../../api/health';
+import { listSpeciesConfig } from '../../api/config';
+import {
+  batchVaccinate,
+  createHealthRecord,
+  createUdderCheck,
+  listHealthCalendar,
+  listHealthRecords,
+  recordMortality,
+  type HealthRecordDto,
+} from '../../api/health';
 import { listActiveWithholds } from '../../api/withholds';
 import { WithholdBanner } from '../../components/WithholdBanner';
 import { useAuth } from '../../auth/auth-context';
@@ -40,9 +52,13 @@ export function HealthPage() {
   const [expiredLotReason, setExpiredLotReason] = useState('');
   const [symptoms, setSymptoms] = useState<string[]>([]);
   const [appearance, setAppearance] = useState('NORMAL');
+  const [quarters, setQuarters] = useState({ LF: 0, RF: 0, LR: 0, RR: 0 });
+  const [udderSigns, setUdderSigns] = useState<string[]>([]);
+  const [mortalityCause, setMortalityCause] = useState('DISEASE');
   const [form, setForm] = useState<Partial<HealthCreate>>({
     type: (searchParams.get('type') as HealthCreate['type']) || 'VACCINATION',
     performedAt: new Date(),
+    frequencyPerDay: 2,
   });
   const [error, setError] = useState<string | null>(null);
 
@@ -87,10 +103,12 @@ export function HealthPage() {
     enabled: showGroup,
   });
 
+  const configQ = useQuery({ queryKey: ['species-config'], queryFn: listSpeciesConfig });
+
   const animalById = useMemo(() => {
-    const map = new Map<string, { tag: string; name: string | null }>();
+    const map = new Map<string, { tag: string; name: string | null; species?: string }>();
     for (const a of animalsQ.data?.items ?? []) {
-      map.set(a.id, { tag: a.tag, name: a.name });
+      map.set(a.id, { tag: a.tag, name: a.name, species: a.species });
     }
     return map;
   }, [animalsQ.data?.items]);
@@ -141,19 +159,56 @@ export function HealthPage() {
         batchNumber: form.batchNumber,
         inventoryItemId: form.inventoryItemId,
         durationDays: form.durationDays,
+        frequencyPerDay: form.frequencyPerDay,
+        doseAmount: form.doseAmount,
+        route: form.route,
+        symptoms: symptoms as HealthCreate['symptoms'],
+        temperatureC: form.temperatureC,
+        severity: form.severity,
+        provisionalDiagnosis: form.provisionalDiagnosis,
+        diagnosedBy: form.diagnosedBy,
         doseCount: form.doseCount,
         doseIntervalHours: form.doseIntervalHours,
         performedAt: form.performedAt ?? new Date(),
         nextDueAt: form.nextDueAt,
-        notes: [form.notes, symptoms.length ? `Symptoms: ${symptoms.join(',')}` : null, appearance !== 'NORMAL' ? `Milk: ${appearance}` : null]
-          .filter(Boolean)
-          .join(' · ') || undefined,
+        notes: form.notes,
       }),
     onSuccess: () => {
       setShowForm(false);
       setError(null);
-      setForm({ type: 'VACCINATION', performedAt: new Date() });
+      setForm({ type: 'VACCINATION', performedAt: new Date(), frequencyPerDay: 2 });
       void qc.invalidateQueries({ queryKey: ['health-records'] });
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const udderSave = useMutation({
+    mutationFn: () =>
+      createUdderCheck({
+        animalId: form.animalId!,
+        method: 'CMT',
+        quarterScores: quarters,
+        appearance: appearance as 'NORMAL' | 'WATERY' | 'CLOTS' | 'BLOOD' | 'PUS' | 'DISCOLORED',
+        signs: udderSigns as Array<'HEAT' | 'SWELLING' | 'PAIN' | 'HARDNESS' | 'ASYMMETRY' | 'NONE'>,
+      }),
+    onSuccess: () => {
+      setError(null);
+      void qc.invalidateQueries({ queryKey: ['health-records'] });
+      void qc.invalidateQueries({ queryKey: ['tasks'] });
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const deathSave = useMutation({
+    mutationFn: () =>
+      recordMortality({
+        animalId: form.animalId!,
+        deathAt: new Date(),
+        causeCategory: mortalityCause as 'DISEASE' | 'INJURY' | 'CALVING_COMPLICATION' | 'PREDATION' | 'POISONING' | 'UNKNOWN',
+      }),
+    onSuccess: () => {
+      setError(null);
+      void qc.invalidateQueries({ queryKey: ['animals'] });
     },
     onError: (err: Error) => setError(err.message),
   });
@@ -581,9 +636,91 @@ export function HealthPage() {
                 ))}
               </select>
             </div>
+            <div className="field">
+              <label htmlFor="health-temp">{t('health.temperatureC')}</label>
+              <input
+                id="health-temp"
+                type="number"
+                step="0.1"
+                value={form.temperatureC ?? ''}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    temperatureC: e.target.value ? Number(e.target.value) : undefined,
+                  }))
+                }
+              />
+              {form.animalId &&
+                (() => {
+                  const species = animalById.get(form.animalId)?.species;
+                  const band = configQ.data?.find((c) => c.species === species);
+                  if (!band || form.temperatureC == null) return band ? (
+                    <span className="muted">
+                      {t('health.tempRange', { min: band.tempMinC, max: band.tempMaxC })}
+                    </span>
+                  ) : null;
+                  const out = form.temperatureC < band.tempMinC || form.temperatureC > band.tempMaxC;
+                  return (
+                    <span className={out ? 'shed-hold' : 'muted'}>
+                      {out
+                        ? t('health.tempOut', { min: band.tempMinC, max: band.tempMaxC })
+                        : t('health.tempRange', { min: band.tempMinC, max: band.tempMaxC })}
+                    </span>
+                  );
+                })()}
+            </div>
+            <div className="field">
+              <label htmlFor="health-sev">{t('health.severity')}</label>
+              <select
+                id="health-sev"
+                value={form.severity ?? ''}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    severity: (e.target.value || undefined) as HealthCreate['severity'],
+                  }))
+                }
+              >
+                <option value="">—</option>
+                {(['MILD', 'MODERATE', 'SEVERE'] as const).map((v) => (
+                  <option key={v} value={v}>
+                    {t(`enum.severity.${v}`)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="health-dx">{t('health.diagnosis')}</label>
+              <input
+                id="health-dx"
+                value={form.provisionalDiagnosis ?? ''}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    provisionalDiagnosis: e.target.value || undefined,
+                  }))
+                }
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="health-freq">{t('health.frequencyPerDay')}</label>
+              <input
+                id="health-freq"
+                type="number"
+                min="1"
+                max="6"
+                value={form.frequencyPerDay ?? ''}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    frequencyPerDay: e.target.value ? Number(e.target.value) : undefined,
+                  }))
+                }
+              />
+            </div>
             <fieldset className="chip-fieldset">
               <legend>{t('health.symptoms')}</legend>
-              {['FEVER', 'OFF_FEED', 'DIARRHOEA', 'LAMENESS', 'SWOLLEN_UDDER', 'ABNORMAL_MILK', 'LETHARGY'].map(
+              {SYMPTOMS.map(
                 (s) => (
                   <label key={s} className={`filter-chip ${symptoms.includes(s) ? 'active' : ''}`}>
                     <input
@@ -607,9 +744,9 @@ export function HealthPage() {
                     value={appearance}
                     onChange={(e) => setAppearance(e.target.value)}
                   >
-                    {['NORMAL', 'WATERY', 'CLOTS', 'BLOOD', 'PUS'].map((v) => (
+                    {MILK_APPEARANCES.map((v) => (
                       <option key={v} value={v}>
-                        {t(`enum.milkAppearance.${v}`, { defaultValue: v })}
+                        {t(`enum.milkAppearance.${v}`)}
                       </option>
                     ))}
                   </select>
@@ -692,6 +829,112 @@ export function HealthPage() {
             </button>
           </div>
         </form>
+      )}
+
+      {form.animalId && (
+        <div className="card">
+          <h2>{t('health.udderTitle')}</h2>
+          <p className="muted">{t('health.udderHelp')}</p>
+          <div className="field">
+            <label htmlFor="udder-app">{t('health.milkAppearance')}</label>
+            <select
+              id="udder-app"
+              value={appearance}
+              onChange={(e) => setAppearance(e.target.value)}
+            >
+              {MILK_APPEARANCES.map((v) => (
+                <option key={v} value={v}>
+                  {t(`enum.milkAppearance.${v}`)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p>
+            {t(`enum.mastitis.${classifyQuarterMastitis(quarters, appearance, udderSigns)}`)}
+          </p>
+          <div className="form-grid">
+            {(['LF', 'RF', 'LR', 'RR'] as const).map((q) => (
+              <div className="field" key={q}>
+                <label htmlFor={`cmt-${q}`}>{q}</label>
+                <input
+                  id={`cmt-${q}`}
+                  type="number"
+                  min="0"
+                  max="3"
+                  value={quarters[q]}
+                  onChange={(e) =>
+                    setQuarters((prev) => ({ ...prev, [q]: Number(e.target.value) }))
+                  }
+                />
+              </div>
+            ))}
+          </div>
+          <fieldset className="chip-fieldset">
+            <legend>{t('health.udderSigns')}</legend>
+            {UDDER_SIGNS.filter((s) => s !== 'NONE').map((s) => (
+              <label key={s} className={`filter-chip ${udderSigns.includes(s) ? 'active' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={udderSigns.includes(s)}
+                  onChange={() =>
+                    setUdderSigns((cur) => (cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]))
+                  }
+                />
+                {t(`enum.udderSign.${s}`)}
+              </label>
+            ))}
+          </fieldset>
+          <div className="page-actions">
+            <button
+              className="btn"
+              type="button"
+              disabled={udderSave.isPending}
+              onClick={() => udderSave.mutate()}
+            >
+              {t('health.saveUdder')}
+            </button>
+            {udderSave.data && (
+              <span>
+                {t(`enum.mastitis.${udderSave.data.classification}`)}
+                {udderSave.data.discardMilk ? ` · ${t('health.discardMilk')}` : ''}
+                {udderSave.data.chronicFlag ? ` · ${t('health.chronicMastitis')}` : ''}
+              </span>
+            )}
+          </div>
+          <h2>{t('health.mortalityTitle')}</h2>
+          <p className="muted">{t('health.mortalityHelp')}</p>
+          <div className="field">
+            <label htmlFor="death-cause">{t('health.cause')}</label>
+            <select
+              id="death-cause"
+              value={mortalityCause}
+              onChange={(e) => setMortalityCause(e.target.value)}
+            >
+              {['DISEASE', 'INJURY', 'CALVING_COMPLICATION', 'PREDATION', 'POISONING', 'UNKNOWN'].map(
+                (c) => (
+                  <option key={c} value={c}>
+                    {t(`enum.cause.${c}`)}
+                  </option>
+                ),
+              )}
+            </select>
+          </div>
+          <div className="page-actions">
+            <button
+              className="btn secondary"
+              type="button"
+              disabled={deathSave.isPending}
+              onClick={() => deathSave.mutate()}
+            >
+              {t('health.recordDeath')}
+            </button>
+            {deathSave.data && (
+              <span>
+                {t('health.loss', { n: Math.round(deathSave.data.estimatedLossNpr ?? 0) })}
+              </span>
+            )}
+          </div>
+        </div>
       )}
 
       {query.isLoading && <LoadingState />}
@@ -791,6 +1034,16 @@ function InventoryWithholdFields({
 function classifyMastitis(cmt: HealthCreate['cmtResult'], appearance: string): 'CLINICAL' | 'SUBCLINICAL' | 'HEALTHY' {
   if (appearance !== 'NORMAL') return 'CLINICAL';
   if (cmt === 'TWO' || cmt === 'THREE') return 'SUBCLINICAL';
+  return 'HEALTHY';
+}
+
+function classifyQuarterMastitis(
+  scores: { LF: number; RF: number; LR: number; RR: number },
+  appearance: string,
+  signs: string[],
+): 'CLINICAL' | 'SUBCLINICAL' | 'HEALTHY' {
+  if (appearance !== 'NORMAL' || signs.some((s) => s !== 'NONE')) return 'CLINICAL';
+  if (Math.max(scores.LF, scores.RF, scores.LR, scores.RR) >= 2) return 'SUBCLINICAL';
   return 'HEALTHY';
 }
 

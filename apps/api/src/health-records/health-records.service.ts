@@ -1,18 +1,36 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import {
   HEALTH_DEFAULT_INTERVAL_DAYS,
   NEPAL_VACCINE_PROTOCOLS,
   type GroupVaccinate,
   type HealthCreate,
   type HealthListQuery,
+  type MortalityRecordCreate,
+  type MortalityRecordDto,
   type PageResult,
+  type UdderCheckCreate,
+  type UdderCheckDto,
 } from '@farm/contracts';
 import { ensureTask } from '../jobs/task-writer';
 import type { HealthRecord, Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
+import { ProfitService } from '../profit/profit.service';
+import { daysInMilk } from '../profit/profit-rules';
+import { SpeciesConfigService } from '../species-config/species-config.service';
 import { WithholdsService } from '../withholds/withholds.service';
+import {
+  affectedQuarters,
+  classifyMastitis,
+  estimatedMortalityLoss,
+  hoursBetweenDoses,
+  remainingDoseCount,
+  remainingLactationValue,
+  temperatureOutOfRange,
+  type QuarterScores,
+} from './health-rules';
 
 export interface HealthRecordDto {
   id: string;
@@ -41,6 +59,11 @@ export interface HealthRecordDto {
   notes: string | null;
   createdAt: string;
   updatedAt: string;
+  symptoms?: string[];
+  temperatureC?: number | null;
+  temperatureOutOfRange?: boolean;
+  severity?: string | null;
+  provisionalDiagnosis?: string | null;
 }
 
 type HealthWithRelations = HealthRecord & {
@@ -54,6 +77,8 @@ export class HealthRecordsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly withholds: WithholdsService,
+    private readonly speciesConfig?: SpeciesConfigService,
+    private readonly profit?: ProfitService,
   ) {}
 
   async list(
@@ -206,24 +231,9 @@ export class HealthRecordsService {
       });
     }
 
-    if (input.animalId && input.doseCount && input.doseCount > 1) {
-      const hours = input.doseIntervalHours ?? 12;
-      for (let i = 1; i < input.doseCount; i++) {
-        await ensureTask(this.prisma, {
-          farmId: user.farmId,
-          animalId: input.animalId,
-          type: 'MEDICATION_DOSE',
-          titleEn: `Dose ${i + 1}/${input.doseCount} — ${input.title}`,
-          titleNp: `खुराक ${i + 1}/${input.doseCount} — ${input.title}`,
-          dueAt: new Date(input.performedAt.getTime() + i * hours * 60 * 60 * 1000),
-          priority: 'HIGH',
-          sourceRefType: 'healthRecord',
-          sourceRefId: row.id,
-        });
-      }
-    }
+    const extras = await this.recordEventAndCourse(user, row, input);
 
-    return this.get(user, row.id);
+    return { ...(await this.get(user, row.id)), ...extras };
   }
 
   async groupVaccinate(user: RequestUser, input: GroupVaccinate, requestId?: string) {
@@ -345,6 +355,276 @@ export class HealthRecordsService {
     });
   }
 
+  async createUdderCheck(user: RequestUser, input: UdderCheckCreate): Promise<UdderCheckDto> {
+    const animal = await this.prisma.animal.findFirst({
+      where: { id: input.animalId, farmId: user.farmId, deletedAt: null },
+    });
+    if (!animal) {
+      throw new NotFoundException({ code: 'ANIMAL_NOT_FOUND', message: 'Animal not found' });
+    }
+    const classification = classifyMastitis({
+      quarterScores: input.quarterScores,
+      appearance: input.appearance,
+      signs: input.signs,
+      sccThousand: input.sccThousand,
+    });
+    const quarters = affectedQuarters(input.quarterScores, classification);
+    const checkDate = input.checkDate ?? new Date();
+    const prior = await this.prisma.udderCheck.findMany({
+      where: {
+        farmId: user.farmId,
+        animalId: animal.id,
+        classification: 'SUBCLINICAL',
+        ...(animal.lactationStartDate ? { checkDate: { gte: animal.lactationStartDate } } : {}),
+      },
+    });
+    const chronicFlag = classification === 'SUBCLINICAL' && prior.length + 1 >= 3;
+    const row = await this.prisma.udderCheck.create({
+      data: {
+        id: randomUUID(),
+        farmId: user.farmId,
+        animalId: animal.id,
+        checkDate,
+        method: input.method,
+        quarterScores: input.quarterScores as Prisma.InputJsonValue,
+        sccThousand: input.sccThousand,
+        appearance: input.appearance,
+        signs: input.signs,
+        classification,
+        affectedQuarters: quarters,
+        discardMilk: classification === 'CLINICAL',
+        chronicFlag,
+        checkedById: user.id,
+      },
+    });
+    if (chronicFlag) {
+      await this.prisma.animal.update({
+        where: { id: animal.id },
+        data: { chronicMastitis: true },
+      });
+    }
+    if (classification === 'CLINICAL') {
+      await ensureTask(this.prisma, {
+        farmId: user.farmId,
+        animalId: animal.id,
+        type: 'VET_URGENT',
+        titleEn: `Treat clinical mastitis — ${animal.herdNumber ?? animal.tag}`,
+        titleNp: `${animal.herdNumber ?? animal.tag} — देखिने मास्टिटिसको उपचार`,
+        dueAt: new Date(),
+        priority: 'HIGH',
+        sourceRefType: 'udderCheck',
+        sourceRefId: row.id,
+      });
+    }
+    await this.audit.record({
+      farmId: user.farmId,
+      userId: user.id,
+      action: 'udder.check',
+      entityType: 'udderCheck',
+      entityId: row.id,
+    });
+    return toUdderDto(row);
+  }
+
+  async recordMortality(user: RequestUser, input: MortalityRecordCreate): Promise<MortalityRecordDto> {
+    const animal = await this.prisma.animal.findFirst({
+      where: { id: input.animalId, farmId: user.farmId, deletedAt: null },
+    });
+    if (!animal) {
+      throw new NotFoundException({ code: 'ANIMAL_NOT_FOUND', message: 'Animal not found' });
+    }
+    const existing = await this.prisma.mortalityRecord.findUnique({ where: { animalId: animal.id } });
+    if (existing) {
+      throw new ConflictException({
+        code: 'MORTALITY_EXISTS',
+        message: 'A death record already exists for this animal',
+      });
+    }
+    const cfg = this.speciesConfig ? await this.speciesConfig.forSpecies(animal.species) : null;
+    const dim = daysInMilk(animal.lactationStartDate, input.deathAt);
+    const latestMetric = await this.prisma.dailyMetric.findFirst({
+      where: { farmId: user.farmId, animalId: animal.id },
+      orderBy: { date: 'desc' },
+    });
+    const rearing = await this.prisma.dailyMetric.aggregate({
+      where: { farmId: user.farmId, animalId: animal.id },
+      _sum: { feedCostNpr: true, healthCostNpr: true, allocatedLabourNpr: true, otherCostNpr: true },
+    });
+    const rearingCost =
+      Number(rearing._sum.feedCostNpr ?? 0) +
+      Number(rearing._sum.healthCostNpr ?? 0) +
+      Number(rearing._sum.allocatedLabourNpr ?? 0) +
+      Number(rearing._sum.otherCostNpr ?? 0);
+    const baseValue = animal.purchaseCost != null ? Number(animal.purchaseCost) : rearingCost;
+    const price = this.profit ? (await this.profit.effectivePrice(user.farmId)).effectivePrice : 0;
+    const remaining = remainingLactationValue({
+      status: animal.status,
+      daysInMilk: dim,
+      lactationDays: cfg?.lactationDays ?? animal.expectedLactationDays ?? 0,
+      rolling7Mean: latestMetric?.rolling7Mean != null ? Number(latestMetric.rolling7Mean) : null,
+      effectivePriceNpr: price,
+    });
+    const loss = estimatedMortalityLoss(baseValue, remaining);
+    const row = await this.prisma.mortalityRecord.create({
+      data: {
+        id: randomUUID(),
+        farmId: user.farmId,
+        animalId: animal.id,
+        deathAt: input.deathAt,
+        causeCategory: input.causeCategory,
+        suspectedDisease: input.suspectedDisease,
+        postMortemDone: input.postMortemDone ?? false,
+        postMortemFindings: input.postMortemFindings,
+        disposalMethod: input.disposalMethod,
+        estimatedLossNpr: loss,
+        insuranceClaimFiled: input.insuranceClaimFiled ?? false,
+        insuranceClaimStatus: input.insuranceClaimStatus,
+        reportedToVetOffice: input.reportedToVetOffice ?? false,
+      },
+    });
+    await this.prisma.animal.update({
+      where: { id: animal.id },
+      data: { status: 'DEAD' },
+    });
+    await this.prisma.animalStatusHistory.create({
+      data: {
+        farmId: user.farmId,
+        animalId: animal.id,
+        fromStatus: animal.status,
+        toStatus: 'DEAD',
+        reason: input.causeCategory,
+        changedBy: user.id,
+      },
+    });
+    await this.audit.record({
+      farmId: user.farmId,
+      userId: user.id,
+      action: 'animal.mortality',
+      entityType: 'mortalityRecord',
+      entityId: row.id,
+    });
+    return {
+      id: row.id,
+      animalId: row.animalId,
+      deathAt: row.deathAt.toISOString(),
+      causeCategory: row.causeCategory,
+      suspectedDisease: row.suspectedDisease,
+      estimatedLossNpr: Number(row.estimatedLossNpr),
+      remainingLactationValue: remaining,
+      baseValue,
+      postMortemDone: row.postMortemDone,
+      disposalMethod: row.disposalMethod,
+    };
+  }
+
+  private async recordEventAndCourse(
+    user: RequestUser,
+    row: HealthWithRelations,
+    input: HealthCreate,
+  ): Promise<Pick<HealthRecordDto, 'symptoms' | 'temperatureC' | 'temperatureOutOfRange' | 'severity' | 'provisionalDiagnosis'>> {
+    let temperatureOut = false;
+    if (input.animalId && this.prisma.healthEvent?.create) {
+      const animal = await this.prisma.animal.findFirst({
+        where: { id: input.animalId, farmId: user.farmId },
+      });
+      if (animal && this.speciesConfig && input.temperatureC != null) {
+        const cfg = await this.speciesConfig.forSpecies(animal.species);
+        temperatureOut = temperatureOutOfRange(input.temperatureC, cfg.tempMinC, cfg.tempMaxC);
+      }
+      const eventType =
+        input.type === 'VACCINATION'
+          ? 'VACCINATION'
+          : input.type === 'DEWORMING'
+            ? 'DEWORMING'
+            : input.type === 'TREATMENT'
+              ? 'TREATMENT'
+              : 'OBSERVATION';
+      const event = await this.prisma.healthEvent.create({
+        data: {
+          farmId: user.farmId,
+          animalId: input.animalId,
+          type: eventType,
+          eventAt: input.performedAt,
+          symptoms: input.symptoms ?? [],
+          temperatureC: input.temperatureC,
+          severity: input.severity,
+          provisionalDiagnosis: input.provisionalDiagnosis,
+          diagnosedBy: input.diagnosedBy ?? 'FARMER',
+          vetName: input.vetName,
+          outcome: input.outcome === 'RECOVERED' ? 'RECOVERED' : 'ONGOING',
+          totalCostNpr: input.cost,
+          notes: input.notes,
+          healthRecordId: row.id,
+        },
+      });
+      const freq =
+        input.frequencyPerDay ??
+        (input.doseIntervalHours ? Math.max(1, Math.round(24 / input.doseIntervalHours)) : 1);
+      const duration = input.durationDays ?? 0;
+      const remaining =
+        duration > 0
+          ? remainingDoseCount(duration, freq, 1)
+          : input.doseCount
+            ? Math.max(0, input.doseCount - 1)
+            : 0;
+      if (remaining > 0 || duration > 0) {
+        await this.prisma.medicationAdministration.create({
+          data: {
+            id: randomUUID(),
+            healthEventId: event.id,
+            animalId: input.animalId,
+            itemId: input.inventoryItemId,
+            lotNumber: input.batchNumber,
+            doseAmount: input.doseAmount ?? 1,
+            route: input.route ?? 'INTRAMUSCULAR',
+            frequencyPerDay: freq,
+            durationDays: duration || 1,
+            firstDoseAt: input.performedAt,
+            dosesGiven: 1,
+            costNpr: input.cost,
+          },
+        });
+      }
+      const hours = hoursBetweenDoses(freq);
+      const total = remaining + 1;
+      for (let i = 1; i <= remaining; i++) {
+        await ensureTask(this.prisma, {
+          farmId: user.farmId,
+          animalId: input.animalId,
+          type: 'MEDICATION_DOSE',
+          titleEn: `Dose ${i + 1}/${total} — ${input.title}`,
+          titleNp: `खुराक ${i + 1}/${total} — ${input.title}`,
+          dueAt: new Date(input.performedAt.getTime() + i * hours * 60 * 60 * 1000),
+          priority: 'HIGH',
+          sourceRefType: 'medicationDose',
+          sourceRefId: randomUUID(),
+        });
+      }
+      if (input.type === 'TREATMENT') {
+        for (const days of [3, 7]) {
+          await ensureTask(this.prisma, {
+            farmId: user.farmId,
+            animalId: input.animalId,
+            type: 'TREATMENT_FOLLOWUP',
+            titleEn: `Treatment follow-up day ${days} — ${input.title}`,
+            titleNp: `उपचार फलोअप दिन ${days} — ${input.title}`,
+            dueAt: new Date(input.performedAt.getTime() + days * 24 * 60 * 60 * 1000),
+            priority: 'NORMAL',
+            sourceRefType: 'healthEventFollowup',
+            sourceRefId: randomUUID(),
+          });
+        }
+      }
+    }
+    return {
+      symptoms: input.symptoms ?? [],
+      temperatureC: input.temperatureC ?? null,
+      temperatureOutOfRange: temperatureOut,
+      severity: input.severity ?? null,
+      provisionalDiagnosis: input.provisionalDiagnosis ?? null,
+    };
+  }
+
   private async requireRecord(farmId: string, id: string): Promise<HealthRecord> {
     const row = await this.prisma.healthRecord.findFirst({ where: { id, farmId } });
     if (!row) {
@@ -385,5 +665,35 @@ function toDto(r: HealthWithRelations): HealthRecordDto {
     notes: r.notes,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
+  };
+}
+
+function toUdderDto(row: {
+  id: string;
+  animalId: string;
+  checkDate: Date;
+  method: string;
+  quarterScores: unknown;
+  sccThousand: number | null;
+  appearance: string;
+  signs: string[];
+  classification: string;
+  affectedQuarters: string[];
+  discardMilk: boolean;
+  chronicFlag: boolean;
+}): UdderCheckDto {
+  return {
+    id: row.id,
+    animalId: row.animalId,
+    checkDate: row.checkDate.toISOString(),
+    method: row.method,
+    quarterScores: row.quarterScores as QuarterScores,
+    sccThousand: row.sccThousand,
+    appearance: row.appearance,
+    signs: row.signs,
+    classification: row.classification as UdderCheckDto['classification'],
+    affectedQuarters: row.affectedQuarters,
+    discardMilk: row.discardMilk,
+    chronicFlag: row.chronicFlag,
   };
 }

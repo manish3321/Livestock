@@ -1,7 +1,25 @@
-import { Controller, Get, Query, Res } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, Query, Res } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { herdMonthlyReportQuerySchema, periodReportQuerySchema, reportQuerySchema } from '@farm/contracts';
-import type { HerdMonthlyReportQuery, PeriodReportQuery, ReportQuery } from '@farm/contracts';
+import {
+  cooperativeReportQuerySchema,
+  dailyReportQuerySchema,
+  herdMonthlyReportQuerySchema,
+  insuranceClaimQuerySchema,
+  monthlyReportQuerySchema,
+  periodReportQuerySchema,
+  reportQuerySchema,
+  vaccinationProofQuerySchema,
+} from '@farm/contracts';
+import type {
+  CooperativeReportQuery,
+  DailyReportQuery,
+  HerdMonthlyReportQuery,
+  InsuranceClaimQuery,
+  MonthlyReportQuery,
+  PeriodReportQuery,
+  ReportQuery,
+  VaccinationProofQuery,
+} from '@farm/contracts';
 import type { Response } from 'express';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/types';
@@ -120,5 +138,65 @@ export class ReportsController {
       `attachment; filename="period-${query.kind}-${new Date().toISOString().slice(0, 10)}.csv"`,
     );
     res.send(csv);
+  }
+
+  @Get('daily')
+  @RequirePermissions('reports:read')
+  @ApiOperation({ summary: 'What happened today: milk, treatments, breeding, tasks' })
+  daily(
+    @CurrentUser() user: RequestUser,
+    @Query(new ZodValidationPipe(dailyReportQuerySchema)) query: DailyReportQuery,
+  ) {
+    return this.reports.daily(user, query);
+  }
+
+  @Get('monthly')
+  @RequirePermissions('reports:read')
+  @ApiOperation({ summary: 'Monthly milk, money, health, breeding, feed, herd vs budget and last year' })
+  monthly(
+    @CurrentUser() user: RequestUser,
+    @Query(new ZodValidationPipe(monthlyReportQuerySchema)) query: MonthlyReportQuery,
+  ) {
+    return this.reports.monthly(user, query);
+  }
+
+  @Get('cooperative')
+  @RequirePermissions('reports:read')
+  @ApiOperation({ summary: 'Cooperative volume and quality by day' })
+  cooperative(
+    @CurrentUser() user: RequestUser,
+    @Query(new ZodValidationPipe(cooperativeReportQuerySchema)) query: CooperativeReportQuery,
+  ) {
+    return this.reports.cooperative(user, query);
+  }
+
+  @Get('vaccination-proof')
+  @RequirePermissions('reports:read')
+  @ApiOperation({ summary: 'Vaccination proof for the livestock office' })
+  vaccinationProof(
+    @CurrentUser() user: RequestUser,
+    @Query(new ZodValidationPipe(vaccinationProofQuerySchema)) query: VaccinationProofQuery,
+  ) {
+    return this.reports.vaccinationProof(user, query);
+  }
+
+  @Get('insurance-claim')
+  @RequirePermissions('reports:read')
+  @ApiOperation({ summary: 'Animal details and cause of death for an insurance claim' })
+  insuranceClaim(
+    @CurrentUser() user: RequestUser,
+    @Query(new ZodValidationPipe(insuranceClaimQuerySchema)) query: InsuranceClaimQuery,
+  ) {
+    return this.reports.insuranceClaim(user, query);
+  }
+
+  @Get('vet-history/:animalId')
+  @RequirePermissions('reports:read')
+  @ApiOperation({ summary: 'Full veterinary history for one animal' })
+  vetHistory(
+    @CurrentUser() user: RequestUser,
+    @Param('animalId', ParseUUIDPipe) animalId: string,
+  ) {
+    return this.reports.vetHistory(user, animalId);
   }
 }

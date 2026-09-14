@@ -81,7 +81,12 @@ class BreedingFake {
       null,
     findMany: async ({ where, include }: any) =>
       this.heatEvents
-        .filter((h) => h.farmId === where.farmId)
+        .filter((h) => {
+          if (where?.farmId && h.farmId !== where.farmId) return false;
+          if (where?.animalId && h.animalId !== where.animalId) return false;
+          if (where?.observedAt?.gte && h.observedAt < where.observedAt.gte) return false;
+          return true;
+        })
         .map((h) => ({ ...h, animal: include?.animal ? this.animals.get(h.animalId) : undefined })),
   };
 
@@ -165,7 +170,14 @@ class BreedingFake {
     },
     findFirst: async ({ where }: any) =>
       this.calvings.filter((c) => c.damId === where.damId && c.outcome !== 'ABORTED').at(-1) ?? null,
-    findMany: async () => this.calvings,
+    findMany: async ({ where }: any) =>
+      this.calvings.filter((c) => {
+        if (where?.farmId && c.farmId !== where.farmId) return false;
+        if (where?.damId && c.damId !== where.damId) return false;
+        if (where?.outcome?.not === 'ABORTED' && c.outcome === 'ABORTED') return false;
+        if (where?.outcome && !where.outcome.not && c.outcome !== where.outcome) return false;
+        return true;
+      }),
     count: async ({ where }: any) =>
       this.calvings.filter((c) => c.damId === where.damId && c.outcome === where.outcome).length,
   };
@@ -250,12 +262,27 @@ class BreedingFake {
     findMany: async () => this.farms,
   };
 
+  dailyMetric = {
+    findMany: async ({ where }: any) =>
+      (this.metrics ?? []).filter((m: any) => !where?.farmId || m.farmId === where.farmId),
+  };
+  metrics: any[] = [];
+
+  users: any[] = [];
+  user = {
+    findMany: async ({ where }: any) => {
+      const ids: string[] = where?.id?.in ?? [];
+      return this.users.filter((u) => ids.includes(u.id));
+    },
+  };
+
   milkWithhold = { findMany: async () => [] };
   inventoryItem = { findMany: async () => [] };
   productionEntry = { findMany: async () => [] };
 }
 
 function matchAnimal(a: any, where: any): boolean {
+  if (!where) return true;
   if (where.id && a.id !== where.id) return false;
   if (where.farmId && a.farmId !== where.farmId) return false;
   if (where.deletedAt === null && a.deletedAt) return false;
@@ -466,6 +493,97 @@ describe('BreedingService Phase 4', () => {
     });
     const updated = db.animals.get(mother.id);
     expect(updated.expectedCalvingDate.toISOString().slice(0, 10)).toBe('2026-11-16');
+  });
+});
+
+describe('BreedingService Phase 9', () => {
+  let db: BreedingFake;
+  let svc: BreedingService;
+  const profit = { effectivePrice: async () => ({ effectivePrice: 48.36 }) };
+
+  beforeEach(() => {
+    db = new BreedingFake();
+    svc = new BreedingService(
+      db as never,
+      fakeAudit,
+      fakeSpeciesConfig,
+      { issue: async () => 'B99' } as never,
+      profit as never,
+    );
+  });
+
+  it('includes remaining-interval cost using effective price, not the headline rate', async () => {
+    const mother = dam({ status: 'LACTATING', isPregnant: false });
+    db.animals.set(mother.id, mother);
+    db.calvings.push({
+      id: randomUUID(),
+      farmId: FARM,
+      damId: mother.id,
+      calvingAt: new Date('2025-01-01'),
+      outcome: 'LIVE_SINGLE',
+      calvingIntervalDays: 450,
+      daysOpenDays: 100,
+    });
+    db.metrics.push({ farmId: FARM, animalId: mother.id, rolling7Mean: 8, date: new Date() });
+    db.services.push(
+      { id: randomUUID(), farmId: FARM, animalId: mother.id, serviceNo: 1, result: 'FAILED', serviceDate: new Date() },
+      { id: randomUUID(), farmId: FARM, animalId: mother.id, serviceNo: 2, result: 'PREGNANT', serviceDate: new Date() },
+    );
+    const metrics = await svc.herdMetrics(user());
+    expect(metrics.daysOpen).toBeGreaterThanOrEqual(100);
+    expect(metrics.calvingIntervalDays).toBe(450);
+    expect(metrics.costOfOpenDaysNpr).toBeCloseTo(25 * 8 * 48.36);
+    expect(metrics.conceptionRatePct).toBe(50);
+    expect(metrics.firstServiceRatePct).toBe(0);
+    expect(metrics.servicesPerConception).toBe(2);
+    expect(metrics.targets.conceptionRateMinPct).toBe(45);
+    expect(metrics.targets.daysOpenMax).toBe(120);
+    expect(metrics.targets.calvingIntervalMaxDays).toBe(425);
+  });
+
+  it('warns at service when dam and sire share a grandparent', async () => {
+    const grand = dam({ tag: 'G1', herdNumber: 'G1', gender: 'FEMALE' });
+    const mother = dam({ damId: grand.id, isPregnant: false, status: 'LACTATING' });
+    const sire = dam({
+      tag: 'S1',
+      herdNumber: 'S1',
+      gender: 'MALE',
+      damId: grand.id,
+      isPregnant: false,
+      status: 'ACTIVE',
+    });
+    db.animals.set(grand.id, grand);
+    db.animals.set(mother.id, mother);
+    db.animals.set(sire.id, sire);
+    const rec = await svc.create(user(), {
+      motherId: mother.id,
+      sireId: sire.id,
+      matingDate: new Date(),
+      pregnancyStatus: 'PREGNANT',
+    });
+    expect(rec.inbreedingWarning).toBe(true);
+    expect(rec.sharedAncestorIds).toContain(grand.id);
+  });
+
+  it('reports heat detection rate by observer', async () => {
+    const mother = dam({ status: 'LACTATING', isPregnant: false });
+    db.animals.set(mother.id, mother);
+    const observer = user();
+    db.users.push({ id: observer.id, name: 'Ram' });
+    db.heatEvents.push({
+      id: randomUUID(),
+      farmId: FARM,
+      animalId: mother.id,
+      observedAt: new Date(),
+      observerId: observer.id,
+      signs: ['STANDING_HEAT'],
+    });
+    const metrics = await svc.herdMetrics(observer);
+    expect(metrics.observers).toHaveLength(1);
+    const row = metrics.observers[0]!;
+    expect(row.heatsObserved).toBe(1);
+    expect(row.standingHeatCount).toBe(1);
+    expect(row.observerName).toBe('Ram');
   });
 });
 

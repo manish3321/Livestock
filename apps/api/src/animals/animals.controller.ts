@@ -45,6 +45,7 @@ import type { Response } from 'express';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/types';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import { ProfitService } from '../profit/profit.service';
 import { STORAGE_PORT, type StoragePort } from '../storage/storage.port';
 import { AnimalsService } from './animals.service';
 
@@ -53,6 +54,7 @@ import { AnimalsService } from './animals.service';
 export class AnimalsController {
   constructor(
     private readonly animals: AnimalsService,
+    private readonly profit: ProfitService,
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
   ) {}
 
@@ -61,6 +63,23 @@ export class AnimalsController {
   @ApiOperation({ summary: 'Numeric shed search: 42 finds B42 and C42' })
   search(@CurrentUser() user: RequestUser, @Query('q') q: string) {
     return this.animals.search(user, q ?? '');
+  }
+
+  @Get('profitability')
+  @RequirePermissions('finance:read')
+  @ApiOperation({ summary: 'Ranked profit per animal at the effective milk price' })
+  profitability(
+    @CurrentUser() user: RequestUser,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('sort') sort?: 'profit_desc' | 'profit_asc',
+  ) {
+    return this.profit.profitability(
+      user.farmId,
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
+      sort === 'profit_asc' ? 'profit_asc' : 'profit_desc',
+    );
   }
 
   @Get()

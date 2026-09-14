@@ -2,38 +2,52 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import type {
   BreedingCreate,
   BreedingListQuery,
+  BreedingMetricsDto,
   BreedingUpdate,
   CalvingInput,
   ColostrumInput,
   PageResult,
+  PedigreeNodeDto,
   PregnancyCheck,
   Species,
 } from '@farm/contracts';
+import { BREEDING_HERD_TARGETS } from '@farm/contracts';
 import { HerdNumberService } from '../herd-number/herd-number.service';
 import { ensureTask } from '../jobs/task-writer';
 import type { Animal, BreedingRecord, Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
+import { ProfitService } from '../profit/profit.service';
 import { SpeciesConfigService } from '../species-config/species-config.service';
 import {
   addDays,
   addHours,
   atLocalHour,
+  buildPedigreeTree,
   colostrumSlotHours,
   colostrumTargetLitres,
+  costOfOpenDaysNpr,
   daysBetween,
   derivedSlotId,
   expectedCalvingFromPd,
+  expectedHeats,
+  heatDetectionRatePct,
   hoursAfterBirth,
   inferCalvingOutcome,
+  inbreedingSharedIds,
   isFreemartinSuspect,
   mapColostrumSource,
   mapPdResult,
+  mean,
   mergeBreedComposition,
+  monthsBetween,
   nextColostrumHours,
   parseComplications,
   parseHeatSigns,
+  ratePct,
+  servicesPerConception,
+  type ParentLink,
 } from './breeding-rules';
 
 export interface BreedingRecordDto {
@@ -58,6 +72,8 @@ export interface BreedingRecordDto {
   daysOpen: number | null;
   calvingIntervalDays: number | null;
   repeatBreeder: boolean;
+  inbreedingWarning?: boolean;
+  sharedAncestorIds?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -73,6 +89,7 @@ export class BreedingService {
     private readonly audit: AuditService,
     private readonly speciesConfig: SpeciesConfigService,
     private readonly herdNumbers: HerdNumberService,
+    private readonly profit?: ProfitService,
   ) {}
 
   async list(
@@ -222,7 +239,15 @@ export class BreedingService {
       requestId,
     });
 
-    return toDto(row);
+    let inbreedingWarning = false;
+    let sharedAncestorIds: string[] = [];
+    if (input.sireId) {
+      const links = await this.parentLinks(user.farmId);
+      sharedAncestorIds = inbreedingSharedIds(mother.id, input.sireId, links);
+      inbreedingWarning = sharedAncestorIds.length > 0;
+    }
+
+    return { ...toDto(row), inbreedingWarning, sharedAncestorIds };
   }
 
   async listHeat(user: RequestUser, query: import('@farm/contracts').HeatListQuery) {
@@ -1198,6 +1223,164 @@ export class BreedingService {
       nextTaskHours: nextHours,
       breeding,
     };
+  }
+
+  async herdMetrics(user: RequestUser): Promise<BreedingMetricsDto> {
+    const EXIT = ['SOLD', 'DEAD', 'CULLED'];
+    const now = new Date();
+    const windowStart = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+    const animals = await this.prisma.animal.findMany({
+      where: { farmId: user.farmId, deletedAt: null, gender: 'FEMALE' },
+    });
+    const [calvings, services, heats, metrics, configs] = await Promise.all([
+      this.prisma.calvingEvent.findMany({
+        where: { farmId: user.farmId, outcome: { not: 'ABORTED' } },
+        orderBy: { calvingAt: 'asc' },
+      }),
+      this.prisma.breedingService.findMany({ where: { farmId: user.farmId } }),
+      this.prisma.heatEvent.findMany({
+        where: { farmId: user.farmId, observedAt: { gte: windowStart } },
+      }),
+      this.prisma.dailyMetric.findMany({
+        where: { farmId: user.farmId },
+        orderBy: { date: 'desc' },
+        take: 500,
+      }),
+      this.speciesConfig.all(),
+    ]);
+    const cfgBySpecies = new Map(configs.map((c) => [c.species, c]));
+    const yieldByAnimal = new Map<string, number>();
+    for (const row of metrics) {
+      if (row.animalId && row.rolling7Mean != null && !yieldByAnimal.has(row.animalId)) {
+        yieldByAnimal.set(row.animalId, Number(row.rolling7Mean));
+      }
+    }
+    const herdYield = mean([...yieldByAnimal.values()]);
+    const price = this.profit ? (await this.profit.effectivePrice(user.farmId)).effectivePrice : 0;
+
+    const daysOpenVals: number[] = [];
+    for (const ev of calvings) {
+      if (ev.daysOpenDays != null) daysOpenVals.push(ev.daysOpenDays);
+    }
+    for (const animal of animals) {
+      if (EXIT.includes(animal.status) || animal.isPregnant) continue;
+      const lastCalving = [...calvings].reverse().find((c) => c.damId === animal.id);
+      const start = lastCalving?.calvingAt ?? animal.lactationStartDate;
+      if (!start) continue;
+      daysOpenVals.push(daysBetween(start, now));
+    }
+
+    const intervalVals: number[] = [];
+    let costTotal = 0;
+    for (const ev of calvings) {
+      if (ev.calvingIntervalDays == null) continue;
+      intervalVals.push(ev.calvingIntervalDays);
+      const dam = animals.find((a) => a.id === ev.damId);
+      const target =
+        (dam ? cfgBySpecies.get(dam.species as Species) : undefined)?.targetCalvingIntervalDays ??
+        cfgBySpecies.get('BUFFALO')?.targetCalvingIntervalDays ??
+        0;
+      const yld = (dam ? yieldByAnimal.get(dam.id) : undefined) ?? herdYield ?? 0;
+      costTotal += costOfOpenDaysNpr(ev.calvingIntervalDays, target, yld, price);
+    }
+
+    const decided = services.filter((s) => s.result === 'PREGNANT' || s.result === 'FAILED');
+    const conceptions = decided.filter((s) => s.result === 'PREGNANT').length;
+    const first = decided.filter((s) => s.serviceNo === 1);
+    const firstOk = first.filter((s) => s.result === 'PREGNANT').length;
+
+    const standing = (signs: string[]) => signs.includes('STANDING_HEAT');
+    const observerIds = [...new Set(heats.map((h) => h.observerId).filter((id): id is string => Boolean(id)))];
+    const users = observerIds.length
+      ? await this.prisma.user.findMany({ where: { id: { in: observerIds } }, select: { id: true, name: true } })
+      : [];
+    const nameById = new Map(users.map((u) => [u.id, u.name]));
+
+    let expectedTotal = 0;
+    for (const animal of animals) {
+      if (EXIT.includes(animal.status)) continue;
+      const cfg = cfgBySpecies.get(animal.species as Species);
+      const cycle = cfg?.estrusCycleDays ?? 21;
+      const lastCalving = [...calvings].reverse().find((c) => c.damId === animal.id);
+      const pregnantService = [...services]
+        .filter((s) => s.animalId === animal.id && s.result === 'PREGNANT')
+        .sort((a, b) => b.serviceDate.getTime() - a.serviceDate.getTime())[0];
+      const openStart = lastCalving?.calvingAt ?? animal.lactationStartDate ?? windowStart;
+      const openEnd = animal.isPregnant && pregnantService ? pregnantService.serviceDate : now;
+      const from = openStart > windowStart ? openStart : windowStart;
+      const to = openEnd < now ? openEnd : now;
+      if (to > from) expectedTotal += expectedHeats(daysBetween(from, to), cycle);
+    }
+
+    const firstCalves = new Map<string, Date>();
+    for (const ev of calvings) {
+      const prev = firstCalves.get(ev.damId);
+      if (!prev || ev.calvingAt < prev) firstCalves.set(ev.damId, ev.calvingAt);
+    }
+    const firstAges: number[] = [];
+    for (const animal of animals) {
+      const firstAt = firstCalves.get(animal.id);
+      if (firstAt && animal.dateOfBirth) firstAges.push(monthsBetween(animal.dateOfBirth, firstAt));
+    }
+
+    const buffaloTarget = cfgBySpecies.get('BUFFALO')?.targetCalvingIntervalDays ?? null;
+
+    return {
+      daysOpen: mean(daysOpenVals) != null ? Math.round(mean(daysOpenVals)!) : null,
+      calvingIntervalDays: mean(intervalVals) != null ? Math.round(mean(intervalVals)!) : null,
+      servicesPerConception: servicesPerConception(decided.length, conceptions),
+      conceptionRatePct: ratePct(conceptions, decided.length),
+      firstServiceRatePct: ratePct(firstOk, first.length),
+      heatDetectionRatePct: heatDetectionRatePct(heats.length, expectedTotal),
+      ageAtFirstCalvingMonths: mean(firstAges) != null ? Math.round(mean(firstAges)!) : null,
+      costOfOpenDaysNpr: intervalVals.length ? costTotal : null,
+      avgDailyYield: herdYield,
+      effectivePriceNpr: price,
+      targets: {
+        conceptionRateMinPct: BREEDING_HERD_TARGETS.conceptionRateMinPct,
+        daysOpenMax: BREEDING_HERD_TARGETS.daysOpenMax,
+        calvingIntervalMaxDays: buffaloTarget,
+      },
+      observers: observerIds.map((id) => {
+        const theirs = heats.filter((h) => h.observerId === id);
+        return {
+          observerId: id,
+          observerName: nameById.get(id) ?? null,
+          heatsObserved: theirs.length,
+          standingHeatCount: theirs.filter((h) => standing(h.signs ?? [])).length,
+          heatDetectionRatePct: heatDetectionRatePct(theirs.length, expectedTotal),
+        };
+      }),
+    };
+  }
+
+  async pedigree(user: RequestUser, animalId: string): Promise<PedigreeNodeDto> {
+    const animal = await this.prisma.animal.findFirst({
+      where: { id: animalId, farmId: user.farmId, deletedAt: null },
+    });
+    if (!animal) {
+      throw new NotFoundException({ code: 'ANIMAL_NOT_FOUND', message: 'Animal not found' });
+    }
+    const herd = await this.prisma.animal.findMany({
+      where: { farmId: user.farmId },
+      select: { id: true, tag: true, herdNumber: true, name: true, damId: true, sireId: true },
+    });
+    const byId = new Map(herd.map((a) => [a.id, a]));
+    const tree = buildPedigreeTree(animal.id, byId, 3);
+    if (!tree) {
+      throw new NotFoundException({ code: 'ANIMAL_NOT_FOUND', message: 'Animal not found' });
+    }
+    return tree;
+  }
+
+  private async parentLinks(farmId: string): Promise<Record<string, ParentLink>> {
+    const herd = await this.prisma.animal.findMany({
+      where: { farmId },
+      select: { id: true, damId: true, sireId: true },
+    });
+    const links: Record<string, ParentLink> = {};
+    for (const a of herd) links[a.id] = { damId: a.damId, sireId: a.sireId };
+    return links;
   }
 }
 

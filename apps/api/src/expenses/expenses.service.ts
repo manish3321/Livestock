@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
-  EXPENSE_ESCALATION_THRESHOLDS,
+  EXPENSE_CATEGORIES,
   type ExpenseBudgetQuery,
   type ExpenseBudgetUpsert,
   type ExpenseCreate,
@@ -23,6 +23,7 @@ import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
 import type { StoragePort } from '../storage/storage.port';
+import { approvalStatusFor, budgetVariance, nepalSeason } from './expense-rules';
 
 export interface ExpenseAllocationDto {
   animalId: string;
@@ -56,14 +57,19 @@ export interface ExpenseDto {
 }
 
 export interface ExpenseBudgetDto {
-  id: string;
+  id: string | null;
   farmId: string;
   category: string;
   year: number;
   month: number;
   amount: number;
-  createdAt: string;
-  updatedAt: string;
+  actual: number;
+  variance: number;
+  variancePct: number | null;
+  alert: 'OVER' | 'OK' | 'NONE';
+  season: 'MONSOON' | 'DRY';
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export interface RecurringExpenseDto {
@@ -123,8 +129,7 @@ export class ExpensesService {
     input: ExpenseCreate,
     requestId?: string,
   ): Promise<ExpenseDto> {
-    const threshold = EXPENSE_ESCALATION_THRESHOLDS[input.category];
-    const status = input.amount > threshold ? 'ESCALATED' : 'PENDING';
+    const status = approvalStatusFor(input.category, input.amount);
     const allocations = input.allocations ?? [];
     if (allocations.length > 0) {
       const sum = allocations.reduce((s, a) => s + a.amount, 0);
@@ -309,11 +314,46 @@ export class ExpensesService {
     user: RequestUser,
     query: ExpenseBudgetQuery,
   ): Promise<ExpenseBudgetDto[]> {
-    const rows = await this.prisma.expenseBudget.findMany({
-      where: { farmId: user.farmId, year: query.year, month: query.month },
-      orderBy: { category: 'asc' },
+    const from = new Date(Date.UTC(query.year, query.month - 1, 1));
+    const to = new Date(Date.UTC(query.year, query.month, 1));
+    const [rows, expenses] = await Promise.all([
+      this.prisma.expenseBudget.findMany({
+        where: { farmId: user.farmId, year: query.year, month: query.month },
+        orderBy: { category: 'asc' },
+      }),
+      this.prisma.expense.findMany({
+        where: {
+          farmId: user.farmId,
+          status: 'APPROVED',
+          expenseDate: { gte: from, lt: to },
+        },
+        select: { category: true, amount: true },
+      }),
+    ]);
+    const actualByCat = new Map<string, number>();
+    for (const e of expenses) {
+      actualByCat.set(e.category, (actualByCat.get(e.category) ?? 0) + Number(e.amount));
+    }
+    const byCat = new Map(rows.map((r) => [r.category, r]));
+    return EXPENSE_CATEGORIES.map((category) => {
+      const row = byCat.get(category);
+      const actual = actualByCat.get(category) ?? 0;
+      const amount = row ? Number(row.amount) : 0;
+      const v = budgetVariance(actual, amount);
+      return {
+        id: row?.id ?? null,
+        farmId: user.farmId,
+        category,
+        year: query.year,
+        month: query.month,
+        amount,
+        actual,
+        ...v,
+        season: nepalSeason(query.month),
+        createdAt: row?.createdAt.toISOString() ?? null,
+        updatedAt: row?.updatedAt.toISOString() ?? null,
+      };
     });
-    return rows.map(toBudgetDto);
   }
 
   async upsertBudget(
@@ -355,7 +395,7 @@ export class ExpensesService {
       requestId,
     });
 
-    return toBudgetDto(row);
+    return toBudgetDto(row, 0);
   }
 
   async listRecurring(user: RequestUser): Promise<RecurringExpenseDto[]> {
@@ -418,8 +458,7 @@ export class ExpensesService {
       const day = Math.min(tpl.dayOfMonth, daysInMonth(year, month));
       const expenseDate = new Date(Date.UTC(year, month - 1, day));
       const amount = Number(tpl.amount);
-      const threshold = EXPENSE_ESCALATION_THRESHOLDS[tpl.category];
-      const status = amount > threshold ? 'ESCALATED' : 'PENDING';
+      const status = approvalStatusFor(tpl.category, amount);
 
       const expense = await this.prisma.$transaction(async (tx) => {
         const row = await tx.expense.create({
@@ -514,14 +553,19 @@ function toDto(e: ExpenseWithAllocations): ExpenseDto {
   };
 }
 
-function toBudgetDto(b: ExpenseBudget): ExpenseBudgetDto {
+function toBudgetDto(b: ExpenseBudget, actual = 0): ExpenseBudgetDto {
+  const amount = Number(b.amount);
+  const v = budgetVariance(actual, amount);
   return {
     id: b.id,
     farmId: b.farmId,
     category: b.category,
     year: b.year,
     month: b.month,
-    amount: Number(b.amount),
+    amount,
+    actual,
+    ...v,
+    season: nepalSeason(b.month),
     createdAt: b.createdAt.toISOString(),
     updatedAt: b.updatedAt.toISOString(),
   };

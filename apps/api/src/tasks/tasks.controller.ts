@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Patch, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  taskCompleteSchema,
   taskDismissSchema,
   taskListQuerySchema,
   taskReassignSchema,
@@ -8,6 +9,7 @@ import {
 } from '@farm/contracts';
 import type {
   PageResult,
+  TaskComplete,
   TaskDismiss,
   TaskDto,
   TaskListQuery,
@@ -40,9 +42,10 @@ export class TasksController {
   complete(
     @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(taskCompleteSchema)) body: TaskComplete,
     @Headers('x-request-id') requestId?: string,
   ): Promise<TaskDto> {
-    return this.tasks.complete(user, id, requestId);
+    return this.tasks.complete(user, id, body, requestId);
   }
 
   @Patch(':id/snooze')

@@ -114,10 +114,6 @@ export function FeedPage() {
       setError(t('feed.requiredFields'));
       return;
     }
-    if (!form.animalId && !form.herdBatchId) {
-      setError(t('feed.targetRequired'));
-      return;
-    }
     save.mutate();
   };
 

@@ -46,6 +46,8 @@ model User {
   phone        String?
   passwordHash String
   isActive     Boolean  @default(true)
+  /// Voice/IVR is the default channel when the user asked for literacy support.
+  literacySupport Boolean @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -54,6 +56,8 @@ model User {
   devices     Device[]
   auditEvents AuditEvent[]
   assignedTasks Task[] @relation("TaskAssignee")
+  notificationLogs NotificationLog[]
+  notificationPreferences NotificationPreference[]
 }
 
 model Farm {
@@ -68,6 +72,11 @@ model Farm {
   /// milking mode at these times without being asked.
   morningMilkingHour Int @default(5)
   eveningMilkingHour Int @default(17)
+  /// Advertised coop rate. Never use this in a profit figure.
+  milkPriceNpr      Decimal  @default(62) @db.Decimal(8, 2)
+  /// Weighted mean of the last 3 CooperativePayment periods.
+  effectivePriceNpr Decimal? @db.Decimal(8, 2)
+  labourMonthlyNpr  Decimal  @default(0) @db.Decimal(12, 2)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -100,6 +109,7 @@ model Farm {
   recurringExpenses RecurringExpense[]
   stockMovements   StockMovement[]
   notificationLogs NotificationLog[]
+  notificationPreferences NotificationPreference[]
   feedLogs         FeedLog[]
   heatLogs         HeatLog[]
   heatEvents       HeatEvent[]
@@ -112,6 +122,7 @@ model Farm {
   animalStatusHistory AnimalStatusHistory[]
   tasks            Task[]
   herdNumberSequences HerdNumberSequence[]
+  tagSequenceBlocks TagSequenceBlock[]
   animalPhotos     AnimalPhoto[]
   animalTags       AnimalTag[]
   animalMarkers    AnimalMarker[]
@@ -127,7 +138,12 @@ model Farm {
   vaccineProtocols VaccineProtocol[]
   healthEvents     HealthEvent[]
   vaccinationRecords VaccinationRecord[]
+  udderChecks      UdderCheck[]
+  mortalityRecords MortalityRecord[]
   stockLots        StockLot[]
+  feedRecords      FeedRecord[]
+  dailyMetrics     DailyMetric[]
+  coopPayments     CooperativePayment[]
 }
 
 model FarmMembership {
@@ -254,6 +270,9 @@ model SpeciesConfig {
   /// Normal butterfat band for this species in Nepal. Buffalo 6.5–8.0, cattle 3.5–4.5.
   fatMinPercent              Decimal  @default(3.5) @db.Decimal(4, 2)
   fatMaxPercent              Decimal  @default(4.5) @db.Decimal(4, 2)
+  /// Normal rectal temperature band. Application code reads these; it must not hardcode 38.5.
+  tempMinC                   Decimal  @default(37.5) @db.Decimal(4, 1)
+  tempMaxC                   Decimal  @default(39.5) @db.Decimal(4, 1)
   createdAt                  DateTime @default(now())
   updatedAt                  DateTime @updatedAt
 }
@@ -308,6 +327,7 @@ model Animal {
   expectedDryOff     DateTime?
   /// Calf missed the colostrum absorption window (~6h).
   highRiskFPT        Boolean       @default(false)
+  chronicMastitis    Boolean       @default(false)
   birthWeightKg      Decimal?      @db.Decimal(5, 2)
   /// Female of a mixed-sex twin pair — likely infertile.
   isFreemartinSuspect Boolean      @default(false)
@@ -336,6 +356,8 @@ model Animal {
   health     HealthRecord[]
   healthEvents HealthEvent[]
   vaccinationRecords VaccinationRecord[]
+  feedRecords    FeedRecord[]
+  dailyMetrics   DailyMetric[]
   breeding   BreedingRecord[]
   production ProductionEntry[]
   expenses   Expense[]
@@ -357,6 +379,8 @@ model Animal {
   markers        AnimalMarker[]
   milkWithholds  MilkWithhold[]
   meatWithholds  MeatWithhold[]
+  udderChecks    UdderCheck[]
+  mortalityRecord MortalityRecord?
 
   @@unique([farmId, tag])
   @@unique([farmId, herdNumber])
@@ -417,12 +441,30 @@ model HerdNumberSequence {
   farmId      String  @db.Uuid
   species     Species
   nextNumber  Int     @default(1)
-  /// Next block reserved for an offline device. Incremented in chunks of 20.
+  /// High-water mark of numbers handed to offline devices. Blocks of 100.
   reservedThrough Int @default(0)
 
   farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
 
   @@unique([farmId, species])
+}
+
+/// Offline ID allocation. Blocks of 100 per device per species.
+/// Without this, two offline phones produce the same tag number.
+model TagSequenceBlock {
+  id          String    @id @default(uuid()) @db.Uuid
+  farmId      String    @db.Uuid
+  species     Species
+  deviceId    String
+  rangeStart  Int
+  rangeEnd    Int
+  nextValue   Int
+  issuedAt    DateTime  @default(now())
+  exhaustedAt DateTime?
+
+  farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@index([farmId, species, deviceId])
 }
 
 model AnimalPhoto {
@@ -497,6 +539,7 @@ model AnimalMarker {
   placedAt        DateTime      @default(now())
   placedById      String?       @db.Uuid
   placedByScan    Boolean       @default(false)
+  validUntil      DateTime?
   removedAt       DateTime?
   removedById     String?       @db.Uuid
   removedByScan   Boolean       @default(false)
@@ -775,8 +818,10 @@ model BatchFeedEvent {
 
 enum MilkAppearance {
   NORMAL
+  WATERY
   CLOTS
   BLOOD
+  PUS
   DISCOLORED
 }
 
@@ -934,6 +979,89 @@ model FeedLog {
   @@index([farmId, occurredAt])
   @@index([animalId, occurredAt])
   @@index([herdBatchId, occurredAt])
+}
+
+/// Herd-level when animalId is null — cost is split per head in DailyMetric.
+model FeedRecord {
+  id           String   @id @default(uuid()) @db.Uuid
+  farmId       String   @db.Uuid
+  date         DateTime @db.Date
+  animalId     String?  @db.Uuid
+  penId        String?
+  itemId       String?  @db.Uuid
+  lotId        String?  @db.Uuid
+  qty          Decimal  @db.Decimal(9, 3)
+  unit         String   @default("KG")
+  costPerUnit  Decimal  @db.Decimal(8, 2)
+  refusedQty   Decimal? @db.Decimal(9, 3)
+  recordedById String?  @db.Uuid
+  createdAt    DateTime @default(now())
+  deviceId     String?
+
+  farm   Farm    @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal Animal? @relation(fields: [animalId], references: [id], onDelete: SetNull)
+
+  @@index([farmId, date])
+  @@index([animalId, date])
+}
+
+model DailyMetric {
+  id                  String   @id @default(uuid()) @db.Uuid
+  animalId            String   @db.Uuid
+  farmId              String   @db.Uuid
+  date                DateTime @db.Date
+  litres              Decimal  @default(0) @db.Decimal(8, 2)
+  avgFatPct           Decimal? @db.Decimal(4, 2)
+  daysInMilk          Int?
+  feedCostNpr         Decimal  @default(0) @db.Decimal(10, 2)
+  healthCostNpr       Decimal  @default(0) @db.Decimal(10, 2)
+  allocatedLabourNpr  Decimal  @default(0) @db.Decimal(10, 2)
+  otherCostNpr        Decimal  @default(0) @db.Decimal(10, 2)
+  revenueNpr          Decimal  @default(0) @db.Decimal(10, 2)
+  profitNpr           Decimal  @default(0) @db.Decimal(10, 2)
+  costPerLitreNpr     Decimal? @db.Decimal(8, 2)
+  feedCostPerLitreNpr Decimal? @db.Decimal(8, 2)
+  rolling7Mean        Decimal? @db.Decimal(8, 2)
+  rolling7Stdev       Decimal? @db.Decimal(8, 2)
+
+  farm   Farm   @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal Animal @relation(fields: [animalId], references: [id], onDelete: Cascade)
+
+  @@unique([animalId, date])
+  @@index([farmId, date])
+}
+
+model CooperativePayment {
+  id                     String    @id @default(uuid()) @db.Uuid
+  farmId                 String    @db.Uuid
+  cooperativeId          String
+  periodStart            DateTime  @db.Date
+  periodEnd              DateTime  @db.Date
+  litresSupplied         Decimal   @db.Decimal(12, 2)
+  avgFatPct              Decimal?  @db.Decimal(4, 2)
+  avgSnfPct              Decimal?  @db.Decimal(4, 2)
+  basePriceNpr           Decimal   @db.Decimal(12, 2)
+  fatBonusNpr            Decimal   @default(0) @db.Decimal(10, 2)
+  snfBonusNpr            Decimal   @default(0) @db.Decimal(10, 2)
+  qualityPenaltyNpr      Decimal   @default(0) @db.Decimal(10, 2)
+  coolingDeductionNpr    Decimal   @default(0) @db.Decimal(10, 2)
+  transportDeductionNpr  Decimal   @default(0) @db.Decimal(10, 2)
+  membershipDeductionNpr Decimal   @default(0) @db.Decimal(10, 2)
+  loanRepaymentNpr       Decimal   @default(0) @db.Decimal(10, 2)
+  otherDeductionsNpr     Decimal   @default(0) @db.Decimal(10, 2)
+  otherDeductionsNote    String?
+  netPayableNpr          Decimal   @db.Decimal(12, 2)
+  effectivePriceNpr      Decimal?  @db.Decimal(8, 2)
+  paidOn                 DateTime? @db.Date
+  paymentMethod          String?
+  reconciliationGapNpr   Decimal?  @db.Decimal(12, 2)
+  statementFileId        String?
+  disputed               Boolean   @default(false)
+  disputeNote            String?
+
+  farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@unique([farmId, cooperativeId, periodStart])
 }
 
 model HeatLog {
@@ -1328,9 +1456,16 @@ enum Symptom {
   OFF_FEED
   DIARRHOEA
   LAMENESS
+  NASAL_DISCHARGE
+  COUGHING
   SWOLLEN_UDDER
   ABNORMAL_MILK
+  WEIGHT_LOSS
   LETHARGY
+  BLOAT
+  DIFFICULTY_BREATHING
+  VULVAR_DISCHARGE
+  SKIN_LESIONS
 }
 
 enum Severity {
@@ -1341,13 +1476,19 @@ enum Severity {
 
 enum DiagnosedBy {
   FARMER
+  PARAVET
   VET
+  VETERINARIAN
+  LAB
 }
 
 enum TreatmentOutcome {
   ONGOING
+  RECOVERING
   RECOVERED
+  CHRONIC
   FAILED
+  DIED
   CULLED
 }
 
@@ -1397,10 +1538,12 @@ model HealthEvent {
   createdAt            DateTime          @default(now())
   deletedAt            DateTime?
   deviceId             String?
+  healthRecordId       String?           @db.Uuid
 
   farm        Farm               @relation(fields: [farmId], references: [id], onDelete: Cascade)
   animal      Animal             @relation(fields: [animalId], references: [id], onDelete: Cascade)
   vaccination VaccinationRecord?
+  medications MedicationAdministration[]
 
   @@index([animalId, eventAt])
   @@index([farmId, outcome])
@@ -1433,6 +1576,117 @@ model VaccinationRecord {
   protocol     VaccineProtocol? @relation(fields: [protocolId], references: [id], onDelete: SetNull)
 
   @@index([animalId, disease, administeredAt])
+}
+
+model MedicationAdministration {
+  id              String   @id @default(uuid()) @db.Uuid
+  healthEventId   String   @db.Uuid
+  animalId        String   @db.Uuid
+  itemId          String?  @db.Uuid
+  lotId           String?  @db.Uuid
+  lotNumber       String?
+  doseAmount      Decimal  @db.Decimal(8, 2)
+  doseUnit        String   @default("DOSE")
+  route           AdminRoute
+  frequencyPerDay Int      @default(1)
+  durationDays    Int      @default(1)
+  firstDoseAt     DateTime
+  dosesGiven      Int      @default(1)
+  costNpr         Decimal? @db.Decimal(10, 2)
+
+  healthEvent HealthEvent @relation(fields: [healthEventId], references: [id], onDelete: Cascade)
+
+  @@index([animalId, firstDoseAt])
+}
+
+enum UdderMethod {
+  VISUAL
+  STRIP_CUP
+  CMT
+  LAB_SCC
+}
+
+enum UdderSign {
+  HEAT
+  SWELLING
+  PAIN
+  HARDNESS
+  ASYMMETRY
+  NONE
+}
+
+enum MastitisClass {
+  HEALTHY
+  SUBCLINICAL
+  CLINICAL
+}
+
+enum Quarter {
+  LF
+  RF
+  LR
+  RR
+}
+
+model UdderCheck {
+  id               String         @id @default(uuid()) @db.Uuid
+  animalId         String         @db.Uuid
+  farmId           String         @db.Uuid
+  checkDate        DateTime       @db.Date
+  method           UdderMethod
+  quarterScores    Json
+  sccThousand      Int?
+  appearance       MilkAppearance @default(NORMAL)
+  signs            UdderSign[]    @default([])
+  classification   MastitisClass
+  affectedQuarters Quarter[]      @default([])
+  discardMilk      Boolean        @default(false)
+  chronicFlag      Boolean        @default(false)
+  checkedById      String?        @db.Uuid
+  createdAt        DateTime       @default(now())
+
+  farm   Farm   @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal Animal @relation(fields: [animalId], references: [id], onDelete: Cascade)
+
+  @@index([animalId, checkDate])
+}
+
+enum CauseCategory {
+  DISEASE
+  INJURY
+  CALVING_COMPLICATION
+  PREDATION
+  POISONING
+  UNKNOWN
+}
+
+enum DisposalMethod {
+  BURIED
+  BURNED
+  RENDERED
+  SOLD_FOR_MEAT
+}
+
+model MortalityRecord {
+  id                   String          @id @default(uuid()) @db.Uuid
+  animalId             String          @unique @db.Uuid
+  farmId               String          @db.Uuid
+  deathAt              DateTime
+  causeCategory        CauseCategory
+  suspectedDisease     String?
+  postMortemDone       Boolean         @default(false)
+  postMortemFindings   String?
+  disposalMethod       DisposalMethod?
+  estimatedLossNpr     Decimal?        @db.Decimal(12, 2)
+  insuranceClaimFiled  Boolean         @default(false)
+  insuranceClaimStatus String?
+  reportedToVetOffice  Boolean         @default(false)
+  createdAt            DateTime        @default(now())
+
+  farm   Farm   @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal Animal @relation(fields: [animalId], references: [id], onDelete: Cascade)
+
+  @@index([farmId, deathAt])
 }
 
 /// Highest-consequence feature. Withheld milk in a cooperative tank
@@ -1811,11 +2065,12 @@ model MilkDelivery {
   centreSnf       Decimal? @db.Decimal(5, 2)
   lactometer      Decimal? @db.Decimal(6, 3)
   centreScc       Int?
-  receiptNumber   String?
-  receiptUrl      String?
-  expectedValue   Decimal? @db.Decimal(12, 2)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  receiptNumber     String?
+  receiptUrl        String?
+  receiptStorageKey String?
+  expectedValue     Decimal? @db.Decimal(12, 2)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   farm Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
   tank MilkTank @relation(fields: [tankId], references: [id], onDelete: Cascade)
@@ -1911,17 +2166,44 @@ model ProductionRevision {
 }
 
 model NotificationLog {
-  id        String   @id @default(uuid()) @db.Uuid
-  farmId    String   @db.Uuid
-  channel   String   @default("email")
-  subject   String
-  body      String
-  sent      Boolean  @default(false)
-  createdAt DateTime @default(now())
+  id             String    @id @default(uuid()) @db.Uuid
+  farmId         String    @db.Uuid
+  userId         String?   @db.Uuid
+  taskId         String?   @db.Uuid
+  channel        String    @default("PUSH")
+  subject        String    @default("")
+  body           String    @default("")
+  sent           Boolean   @default(false)
+  sentAt         DateTime  @default(now())
+  deliveredAt    DateTime?
+  acknowledgedAt DateTime?
+  escalatedTo    String?
+  costNpr        Decimal?  @db.Decimal(6, 2)
+  payload        Json?
+  createdAt      DateTime  @default(now())
 
-  farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  farm Farm  @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([farmId, createdAt])
+  @@index([userId, sentAt])
+  @@index([taskId])
+}
+
+model NotificationPreference {
+  id       String   @id @default(uuid()) @db.Uuid
+  userId   String   @db.Uuid
+  farmId   String   @db.Uuid
+  taskType TaskType
+  push     Boolean  @default(true)
+  sms      Boolean  @default(false)
+  voice    Boolean  @default(false)
+  muted    Boolean  @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, taskType])
 }
 
 // ---------------------------------------------------------------------------
@@ -1976,9 +2258,12 @@ enum TaskType {
   LOT_EXPIRING
   MISSING_PRODUCTION
   YIELD_DROP
+  STOCK_RECONCILE
+  TANK_VARIANCE
   APPLY_MARKER
   REMOVE_MARKER
   RETAG_REQUIRED
+  TREATMENT_FOLLOWUP
 }
 
 enum TaskPriority {

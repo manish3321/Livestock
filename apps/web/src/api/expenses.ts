@@ -37,14 +37,19 @@ export interface ExpenseDto {
 }
 
 export interface ExpenseBudgetDto {
-  id: string;
+  id: string | null;
   farmId: string;
   category: string;
   year: number;
   month: number;
   amount: number;
-  createdAt: string;
-  updatedAt: string;
+  actual?: number;
+  variance?: number;
+  variancePct?: number | null;
+  alert?: 'OVER' | 'OK' | 'NONE';
+  season?: 'MONSOON' | 'DRY';
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export interface RecurringExpenseDto {

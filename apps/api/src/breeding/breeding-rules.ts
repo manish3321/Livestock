@@ -178,3 +178,112 @@ export function colostrumSlotHours(hoursAfterBirth: number): 2 | 8 | 16 {
   if (hoursAfterBirth <= 12) return 8;
   return 16;
 }
+
+export function mean(values: number[]): number | null {
+  if (values.length === 0) return null;
+  return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+export function ratePct(numer: number, denom: number): number | null {
+  if (denom <= 0) return null;
+  return (numer / denom) * 100;
+}
+
+export function servicesPerConception(serviceCount: number, conceptions: number): number | null {
+  if (conceptions <= 0) return null;
+  return serviceCount / conceptions;
+}
+
+export function monthsBetween(from: Date, to: Date): number {
+  return Math.round((to.getTime() - from.getTime()) / ((365.25 / 12) * DAY_MS));
+}
+
+/** Section 5.4 — only the days past the species target cost money. */
+export function costOfOpenDaysNpr(
+  calvingIntervalDays: number,
+  targetCalvingIntervalDays: number,
+  avgDailyYield: number,
+  effectivePriceNpr: number,
+): number {
+  if (avgDailyYield <= 0 || effectivePriceNpr <= 0) return 0;
+  return Math.max(0, calvingIntervalDays - targetCalvingIntervalDays) * avgDailyYield * effectivePriceNpr;
+}
+
+export function heatDetectionRatePct(detectedHeats: number, expectedHeats: number): number | null {
+  return ratePct(detectedHeats, expectedHeats);
+}
+
+export function expectedHeats(openDays: number, estrusCycleDays: number): number {
+  if (estrusCycleDays <= 0 || openDays <= 0) return 0;
+  return openDays / estrusCycleDays;
+}
+
+export type ParentLink = { damId: string | null; sireId: string | null };
+
+/** Ancestors up to `generations` levels (parents, grandparents, great-grandparents at 3). */
+export function collectAncestorIds(
+  startId: string,
+  parentsOf: Record<string, ParentLink>,
+  generations = 3,
+): Set<string> {
+  const out = new Set<string>();
+  let frontier = [startId];
+  for (let g = 0; g < generations; g++) {
+    const next: string[] = [];
+    for (const id of frontier) {
+      const parents = parentsOf[id];
+      if (!parents) continue;
+      for (const parent of [parents.damId, parents.sireId]) {
+        if (parent && !out.has(parent)) {
+          out.add(parent);
+          next.push(parent);
+        }
+      }
+    }
+    frontier = next;
+  }
+  return out;
+}
+
+export function inbreedingSharedIds(
+  damId: string,
+  sireId: string,
+  parentsOf: Record<string, ParentLink>,
+  generations = 3,
+): string[] {
+  if (damId === sireId) return [sireId];
+  const damAnc = collectAncestorIds(damId, parentsOf, generations);
+  const sireAnc = collectAncestorIds(sireId, parentsOf, generations);
+  const shared = new Set<string>();
+  if (damAnc.has(sireId)) shared.add(sireId);
+  if (sireAnc.has(damId)) shared.add(damId);
+  for (const id of damAnc) {
+    if (sireAnc.has(id)) shared.add(id);
+  }
+  return [...shared];
+}
+
+export type PedigreeWalk = {
+  id: string;
+  tag: string;
+  herdNumber: string | null;
+  name: string | null;
+  damId: string | null;
+  sireId: string | null;
+  dam: PedigreeWalk | null;
+  sire: PedigreeWalk | null;
+};
+
+export function buildPedigreeTree(
+  id: string,
+  byId: Map<string, Omit<PedigreeWalk, 'dam' | 'sire'>>,
+  depth = 3,
+): PedigreeWalk | null {
+  const row = byId.get(id);
+  if (!row) return null;
+  return {
+    ...row,
+    dam: depth > 0 && row.damId ? buildPedigreeTree(row.damId, byId, depth - 1) : null,
+    sire: depth > 0 && row.sireId ? buildPedigreeTree(row.sireId, byId, depth - 1) : null,
+  };
+}

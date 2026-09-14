@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import {
   APPROVAL_STATUSES,
   EXPENSE_CATEGORIES,
+  EXPENSE_ESCALATION_THRESHOLDS,
   formatDate,
   formatNPR,
   type ApprovalStatus,
@@ -311,26 +312,29 @@ export function ExpensesPage() {
         <h2>{t('expenses.budget')}</h2>
         <p className="muted">
           {year}-{String(month).padStart(2, '0')}
+          {budgetsQ.data?.[0]?.season === 'MONSOON' ? ` · ${t('expenses.monsoonHint')}` : ''}
         </p>
-        {(budgetsQ.data ?? []).length === 0 && approvedByCategory.size === 0 ? (
+        {(budgetsQ.data ?? []).every((b) => !b.amount && !b.actual) && approvedByCategory.size === 0 ? (
           <p className="muted">{t('common.empty')}</p>
         ) : (
           <ul className="bar-list" style={{ marginTop: 12 }}>
             {EXPENSE_CATEGORIES.map((cat) => {
-              const budget = budgetsQ.data?.find((b) => b.category === cat)?.amount ?? 0;
-              const spent = approvedByCategory.get(cat) ?? 0;
+              const row = budgetsQ.data?.find((b) => b.category === cat);
+              const budget = row?.amount ?? 0;
+              const spent = row?.actual ?? approvedByCategory.get(cat) ?? 0;
               if (!budget && !spent) return null;
+              const over = row?.alert === 'OVER';
               return (
                 <li key={cat}>
                   <div className="bar-meta">
-                    <span>{cat}</span>
+                    <span>{cat}{over ? ` · ${t('expenses.overBudget')}` : ''}</span>
                     <span>
                       {formatNPR(spent)} / {formatNPR(budget)}
                     </span>
                   </div>
                   <div className="bar-track">
                     <div
-                      className="bar-fill"
+                      className={`bar-fill${over ? ' over' : ''}`}
                       style={{
                         width: `${Math.min(100, budget > 0 ? (spent / budget) * 100 : 0)}%`,
                       }}
@@ -531,6 +535,11 @@ export function ExpensesPage() {
                   }))
                 }
               />
+              {form.category &&
+                form.amount != null &&
+                form.amount > EXPENSE_ESCALATION_THRESHOLDS[form.category] && (
+                  <p className="escalate-hint">{t('expenses.escalateHint')}</p>
+                )}
             </div>
             <div className="field">
               <label htmlFor="exp-gst">{t('expenses.gst')}</label>

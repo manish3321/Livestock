@@ -39,6 +39,42 @@ export async function ensureTask(
     .catch(() => undefined);
 }
 
+export async function completeOpenTask(
+  db: {
+    task: {
+      findFirst: (args: {
+        where: Prisma.TaskWhereInput;
+      }) => Promise<{ id: string } | null>;
+      update: (args: {
+        where: { id: string };
+        data: Prisma.TaskUncheckedUpdateInput;
+      }) => Promise<unknown>;
+    };
+  },
+  where: {
+    farmId: string;
+    type: TaskType;
+    animalId?: string;
+    sourceRefId?: string;
+  },
+  userId: string,
+): Promise<void> {
+  const task = await db.task.findFirst({
+    where: {
+      farmId: where.farmId,
+      type: where.type,
+      status: { in: ['PENDING', 'SNOOZED'] },
+      ...(where.animalId ? { animalId: where.animalId } : {}),
+      ...(where.sourceRefId ? { sourceRefId: where.sourceRefId } : {}),
+    },
+  });
+  if (!task) return;
+  await db.task.update({
+    where: { id: task.id },
+    data: { status: 'DONE', completedAt: new Date(), completedById: userId },
+  });
+}
+
 export const PROTOCOL_TASK_IDS: Record<string, string> = {
   FMD: '00000000-0000-4000-8000-0000000000f1',
   HS: '00000000-0000-4000-8000-0000000000f2',

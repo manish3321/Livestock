@@ -24,10 +24,12 @@ import type { CalvingInput, ColostrumInput, PregnancyCheck } from '@farm/contrac
 import type {
   BreedingCreate,
   BreedingListQuery,
+  BreedingMetricsDto,
   BreedingUpdate,
   HeatCreate,
   HeatListQuery,
   PageResult,
+  PedigreeNodeDto,
 } from '@farm/contracts';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/types';
@@ -57,6 +59,23 @@ export class BreedingController {
     @Query(new ZodValidationPipe(heatListQuerySchema)) query: HeatListQuery,
   ) {
     return this.breeding.listHeat(user, query);
+  }
+
+  @Get('metrics')
+  @RequirePermissions('breeding:read')
+  @ApiOperation({ summary: 'Herd breeding metrics, open-day cost, observer heat detection' })
+  metrics(@CurrentUser() user: RequestUser): Promise<BreedingMetricsDto> {
+    return this.breeding.herdMetrics(user);
+  }
+
+  @Get('pedigree/:animalId')
+  @RequirePermissions('breeding:read')
+  @ApiOperation({ summary: 'Three-generation pedigree walk' })
+  pedigree(
+    @CurrentUser() user: RequestUser,
+    @Param('animalId', ParseUUIDPipe) animalId: string,
+  ): Promise<PedigreeNodeDto> {
+    return this.breeding.pedigree(user, animalId);
   }
 
   @Post('heat')

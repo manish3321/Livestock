@@ -88,6 +88,8 @@ type SpeciesConfigRow = {
   silentHeatCheckHour?: number | null;
   fatMinPercent: unknown;
   fatMaxPercent: unknown;
+  tempMinC?: unknown;
+  tempMaxC?: unknown;
 };
 
 function toDto(row: SpeciesConfigRow): SpeciesConfigDto {
@@ -107,5 +109,7 @@ function toDto(row: SpeciesConfigRow): SpeciesConfigDto {
     silentHeatCheckHour: row.silentHeatCheckHour ?? null,
     fatMinPercent: Number(row.fatMinPercent),
     fatMaxPercent: Number(row.fatMaxPercent),
+    tempMinC: Number(row.tempMinC ?? 37.5),
+    tempMaxC: Number(row.tempMaxC ?? 39.5),
   };
 }

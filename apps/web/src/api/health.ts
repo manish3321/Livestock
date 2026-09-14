@@ -62,3 +62,17 @@ export function batchVaccinate(body: import('@farm/contracts').BatchVaccinate) {
 export function listHealthCalendar(from?: Date, to?: Date): Promise<HealthRecordDto[]> {
   return api(`/v1/health-records/calendar${toQuery({ from, to })}`);
 }
+
+export function createUdderCheck(body: import('@farm/contracts').UdderCheckCreate) {
+  return api<import('@farm/contracts').UdderCheckDto>('/v1/udder-checks', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function recordMortality(body: import('@farm/contracts').MortalityRecordCreate) {
+  return api<import('@farm/contracts').MortalityRecordDto>('/v1/mortality', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}

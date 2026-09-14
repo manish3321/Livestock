@@ -135,14 +135,17 @@ describe('SyncService.push', () => {
     expect(prisma.animals.get(create.entityId)?.deletedAt).not.toBeNull();
   });
 
-  it('rejects duplicate tags within a farm as conflicts', async () => {
+  it('accepts a duplicate tag, renumbers the second animal, and raises a reprint task', async () => {
     const worker = user('WORKER');
-    await service.push(worker, { deviceId: 'd1', mutations: [createMutation()] });
+    await service.push(worker, { deviceId: 'device-0001', mutations: [createMutation()] });
+    const secondId = randomUUID();
     const dupTag = await service.push(worker, {
-      deviceId: 'd1',
-      mutations: [createMutation()],
+      deviceId: 'device-0001',
+      mutations: [createMutation({ entityId: secondId })],
     });
-    expect(dupTag.results[0]?.status).toBe('conflict');
+    expect(dupTag.results[0]?.status).toBe('applied');
+    expect(prisma.animals.get(secondId)?.tag).toBe('BUF011');
+    expect(prisma.tasks.some((t) => t.type === 'RETAG_REQUIRED')).toBe(true);
   });
 
   it('rejects invalid payloads without blocking the rest of the batch', async () => {

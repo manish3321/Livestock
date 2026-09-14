@@ -5,8 +5,8 @@ export function listTasks(): Promise<PageResult<TaskDto>> {
   return api('/v1/tasks?pageSize=80');
 }
 
-export function completeTask(id: string): Promise<TaskDto> {
-  return api(`/v1/tasks/${id}/complete`, { method: 'PATCH' });
+export function completeTask(id: string, body: { byScan?: boolean } = {}): Promise<TaskDto> {
+  return api(`/v1/tasks/${id}/complete`, { method: 'PATCH', body: JSON.stringify(body) });
 }
 
 export function snoozeTask(id: string, body: TaskSnooze): Promise<TaskDto> {
@@ -15,4 +15,11 @@ export function snoozeTask(id: string, body: TaskSnooze): Promise<TaskDto> {
 
 export function dismissTask(id: string, body: TaskDismiss): Promise<TaskDto> {
   return api(`/v1/tasks/${id}/dismiss`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export function muteTaskType(taskType: TaskDto['type']): Promise<unknown> {
+  return api('/v1/notifications/preferences', {
+    method: 'POST',
+    body: JSON.stringify({ taskType, muted: true }),
+  });
 }

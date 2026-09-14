@@ -33,6 +33,20 @@ export function getAnimal(id: string): Promise<AnimalDetailDto> {
   return api(`/v1/animals/${id}`);
 }
 
+export function listProfitability(query: { from?: string; to?: string; sort?: string } = {}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value) params.set(key, value);
+  }
+  const qs = params.toString();
+  return api<{
+    items: import('@farm/contracts').AnimalProfitDto[];
+    price: number;
+    priceSource: 'payments' | 'fallback';
+    headlineRate: number;
+  }>(`/v1/animals/profitability${qs ? `?${qs}` : ''}`);
+}
+
 export function getAnimalEconomics(id: string): Promise<AnimalEconomicsDto> {
   return api(`/v1/animals/${id}/economics`);
 }
@@ -102,6 +116,10 @@ export function replaceTag(id: string, body: import('@farm/contracts').TagReplac
 
 export function placeMarker(body: import('@farm/contracts').MarkerPlace) {
   return api('/v1/animals/markers', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function listCohort() {
+  return api<import('@farm/contracts').MarkerCohortDto>('/v1/markers/cohort');
 }
 
 export function addWeight(id: string, body: WeightCreate): Promise<WeightRecordDto> {

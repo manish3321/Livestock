@@ -14,6 +14,7 @@ import type {
   AnimalListQuery,
   AnimalSearchHitDto,
   AnimalUpdate,
+  MarkerCohortDto,
   MarkerPlace,
   PageResult,
   TagReplace,
@@ -29,7 +30,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { HerdNumberService } from '../herd-number/herd-number.service';
 import { SpeciesConfigService } from '../species-config/species-config.service';
 import { toSnapshot } from '../sync/animal.applier';
-import { ensureTask } from '../jobs/task-writer';
+import { completeOpenTask, ensureTask } from '../jobs/task-writer';
 import { digitsOf, rankAnimalMatch } from '../milk/milk-rules';
 
 const MONTH_MS = 30.44 * 24 * 60 * 60 * 1000;
@@ -809,6 +810,50 @@ export class AnimalsService {
     }));
   }
 
+  async cohort(user: RequestUser): Promise<MarkerCohortDto> {
+    const markers = await this.prisma.animalMarker.findMany({
+      where: { farmId: user.farmId, removedAt: null },
+      include: {
+        animal: {
+          select: {
+            id: true,
+            herdNumber: true,
+            tag: true,
+            name: true,
+            shed: true,
+            photoUrl: true,
+          },
+        },
+      },
+    });
+    const groups = new Map<string, MarkerCohortDto['groups'][number]>();
+    const sorted = [...markers].sort(
+      (a, b) =>
+        (a.animal.shed ?? '').localeCompare(b.animal.shed ?? '') ||
+        (a.animal.herdNumber ?? a.animal.tag).localeCompare(b.animal.herdNumber ?? b.animal.tag),
+    );
+    for (const marker of sorted) {
+      let group = groups.get(marker.meaning);
+      if (!group) {
+        group = { meaning: marker.meaning, color: marker.color, animals: [] };
+        groups.set(marker.meaning, group);
+      }
+      group.animals.push({
+        markerId: marker.id,
+        animalId: marker.animalId,
+        shortNo: marker.animal.herdNumber,
+        herdNumber: marker.animal.herdNumber,
+        name: marker.animal.name,
+        shed: marker.animal.shed,
+        photoUrl: marker.animal.photoUrl,
+        color: marker.color,
+        meaning: marker.meaning,
+        validUntil: marker.validUntil?.toISOString() ?? null,
+      });
+    }
+    return { groups: [...groups.values()] };
+  }
+
   async placeMarker(user: RequestUser, input: MarkerPlace, requestId?: string) {
     if (!input.byScan) {
       throw new BadRequestException({
@@ -823,23 +868,43 @@ export class AnimalsService {
       throw new NotFoundException({ code: 'ANIMAL_NOT_FOUND', message: 'Animal not found' });
     }
     const color = DEFAULT_MARKER_SCHEME[input.meaning];
-    const marker = await this.prisma.animalMarker.create({
-      data: {
-        farmId: user.farmId,
-        animalId: animal.id,
-        color,
-        meaning: input.meaning,
-        placedById: user.id,
-        placedByScan: true,
-      },
+    const validUntil = input.validUntil ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+    const existing = await this.prisma.animalMarker.findFirst({
+      where: { farmId: user.farmId, animalId: animal.id, meaning: input.meaning, removedAt: null },
     });
+    const marker = existing
+      ? await this.prisma.animalMarker.update({
+          where: { id: existing.id },
+          data: {
+            color,
+            placedById: user.id,
+            placedByScan: true,
+            validUntil,
+          },
+        })
+      : await this.prisma.animalMarker.create({
+          data: {
+            farmId: user.farmId,
+            animalId: animal.id,
+            color,
+            meaning: input.meaning,
+            placedById: user.id,
+            placedByScan: true,
+            validUntil,
+          },
+        });
+    await completeOpenTask(
+      this.prisma,
+      { farmId: user.farmId, type: 'APPLY_MARKER', animalId: animal.id },
+      user.id,
+    );
     await ensureTask(this.prisma, {
       farmId: user.farmId,
       animalId: animal.id,
       type: 'REMOVE_MARKER',
       titleEn: `Remove ${color} band from ${animal.herdNumber ?? animal.tag}`,
       titleNp: `${animal.herdNumber ?? animal.tag} बाट ${color} ब्यान्ड हटाउनुहोस्`,
-      dueAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+      dueAt: validUntil,
       priority: 'NORMAL',
       sourceRefType: 'animalMarker',
       sourceRefId: marker.id,
@@ -872,6 +937,11 @@ export class AnimalsService {
       where: { id: marker.id },
       data: { removedAt: new Date(), removedById: user.id, removedByScan: true },
     });
+    await completeOpenTask(
+      this.prisma,
+      { farmId: user.farmId, type: 'REMOVE_MARKER', sourceRefId: marker.id },
+      user.id,
+    );
     await this.audit.record({
       farmId: user.farmId,
       userId: user.id,

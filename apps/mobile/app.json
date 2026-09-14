@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "Farm Shed",
+    "slug": "farm-shed",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "platforms": ["android"],
+    "android": {
+      "package": "np.evoqed.farm.shed",
+      "permissions": ["CAMERA", "VIBRATE", "POST_NOTIFICATIONS", "RECEIVE_BOOT_COMPLETED"]
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "The camera reads ear-tag QR codes in the shed."
+        }
+      ],
+      "expo-sqlite",
+      "@notifee/react-native"
+    ]
+  }
+}

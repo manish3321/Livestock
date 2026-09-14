@@ -1,0 +1,13 @@
+{
+  "extends": "@farm/tsconfig/base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "lib": ["ES2022"]
+  },
+  "include": ["src/core", "src/native", "src/native-shim.d.ts", "test"]
+}

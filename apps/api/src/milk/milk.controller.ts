@@ -1,5 +1,21 @@
-import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Inject,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+  Res,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   deliveryCreateSchema,
   milkEntryCreateSchema,
@@ -21,15 +37,20 @@ import type {
   PaymentStatementCreate,
   TankUpdate,
 } from '@farm/contracts';
+import type { Response } from 'express';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/types';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import { STORAGE_PORT, type StoragePort } from '../storage/storage.port';
 import { MilkService } from './milk.service';
 
 @ApiTags('milk')
 @Controller('milk')
 export class MilkController {
-  constructor(private readonly milk: MilkService) {}
+  constructor(
+    private readonly milk: MilkService,
+    @Inject(STORAGE_PORT) private readonly storage: StoragePort,
+  ) {}
 
   @Post()
   @RequirePermissions('production:write')
@@ -149,6 +170,45 @@ export class MilkController {
     @Body(new ZodValidationPipe(deliveryCreateSchema)) body: DeliveryCreate,
   ) {
     return this.milk.addDelivery(user, id, body);
+  }
+
+  @Post('rounds/:id/delivery/receipt')
+  @RequirePermissions('revenue:write')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Upload the cooperative delivery receipt photo' })
+  uploadReceipt(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile()
+    file: { buffer: Buffer; originalname: string; mimetype: string } | undefined,
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    if (!file?.buffer) {
+      throw new BadRequestException({
+        code: 'FILE_REQUIRED',
+        message: 'Multipart file field "file" is required',
+      });
+    }
+    return this.milk.uploadDeliveryReceipt(user, id, file, this.storage, requestId);
+  }
+
+  @Get('deliveries/:id/receipt')
+  @RequirePermissions('revenue:read')
+  @ApiOperation({ summary: 'Download the cooperative delivery receipt' })
+  async getReceipt(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { buffer, contentType, filename } = await this.milk.getDeliveryReceiptBuffer(
+      user,
+      id,
+      this.storage,
+    );
+    res.setHeader('content-type', contentType);
+    res.setHeader('content-disposition', `inline; filename="${filename}"`);
+    res.send(buffer);
   }
 
   @Post('payments')

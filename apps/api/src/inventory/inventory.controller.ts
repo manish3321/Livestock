@@ -17,6 +17,7 @@ import {
   inventoryUpdateSchema,
   pageQuerySchema,
   restockCreateSchema,
+  stockLotCreateSchema,
   stockMovementCreateSchema,
 } from '@farm/contracts';
 import type {
@@ -41,6 +42,24 @@ import {
 @Controller('inventory')
 export class InventoryController {
   constructor(private readonly inventory: InventoryService) {}
+
+  @Post('lots')
+  @RequirePermissions('inventory:write')
+  @ApiOperation({ summary: 'Receive a stock lot' })
+  createLot(
+    @CurrentUser() user: RequestUser,
+    @Body(new ZodValidationPipe(stockLotCreateSchema)) body: import('@farm/contracts').StockLotCreate,
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    return this.inventory.createLot(user, body, requestId);
+  }
+
+  @Get('lots/expiring')
+  @RequirePermissions('inventory:read')
+  @ApiOperation({ summary: 'Lots expiring within 30 days' })
+  expiring(@CurrentUser() user: RequestUser) {
+    return this.inventory.expiringLots(user);
+  }
 
   @Get()
   @RequirePermissions('inventory:read')

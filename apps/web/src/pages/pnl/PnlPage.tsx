@@ -119,6 +119,22 @@ export function PnlPage() {
               </span>
             </div>
             <div className="stat-card">
+              <span className="stat-label">{t('pnl.labourPercent')}</span>
+              <span className="stat-value">
+                {query.data.labourPercentOfRevenue != null
+                  ? `${Math.round(query.data.labourPercentOfRevenue * 100)}%`
+                  : '—'}
+              </span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">{t('pnl.breakEven')}</span>
+              <span className="stat-value">
+                {query.data.breakEvenPriceNpr != null
+                  ? `${formatNPR(query.data.breakEvenPriceNpr)} / L`
+                  : '—'}
+              </span>
+            </div>
+            <div className="stat-card">
               <span className="stat-label">{t('pnl.profitPerAnimal')}</span>
               <span className="stat-value">
                 {query.data.profitPerAnimal != null
@@ -127,6 +143,22 @@ export function PnlPage() {
               </span>
             </div>
           </div>
+          {query.data.ratios && (
+            <p className="muted" style={{ marginBottom: 16 }}>
+              {t('pnl.healthyRange')}: {t('pnl.margin')} {query.data.ratios.targets.marginHealthyMinPct}–{query.data.ratios.targets.marginHealthyMaxPct}%
+              {' · '}
+              {t('pnl.feedPercent')} {query.data.ratios.targets.feedShareMinPct}–{query.data.ratios.targets.feedShareMaxPct}%
+              {' · '}
+              {t('pnl.labourPercent')} {query.data.ratios.targets.labourShareMinPct}–{query.data.ratios.targets.labourShareMaxPct}%
+              {' · '}
+              {t('pnl.healthPercent')} &lt; {query.data.ratios.targets.healthShareMaxPct}%
+            </p>
+          )}
+          {query.data.prior && (
+            <p className="muted" style={{ marginBottom: 16 }}>
+              {t('pnl.vsLastYear')}: {formatNPR(query.data.prior.profitDelta ?? 0)}
+            </p>
+          )}
           <DataTable
             columns={columns}
             rows={query.data.streams}

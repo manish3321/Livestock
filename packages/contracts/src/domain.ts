@@ -73,6 +73,9 @@ export const SPECIES_HERD_LETTER: Record<Species, string> = {
   GOAT: 'G',
 };
 
+/** Offline ID allocation. One block per device per species so two phones never print the same shortNo. */
+export const TAG_SEQUENCE_BLOCK_SIZE = 100;
+
 export const ANIMAL_SOURCES = ['PURCHASED', 'BORN', 'GIFTED', 'TRANSFERRED'] as const;
 export type AnimalSource = (typeof ANIMAL_SOURCES)[number];
 
@@ -406,6 +409,8 @@ export interface SpeciesConfigDto {
   silentHeatCheckHour: number | null;
   fatMinPercent: number;
   fatMaxPercent: number;
+  tempMinC: number;
+  tempMaxC: number;
 }
 
 export const speciesConfigUpdateSchema = z.object({
@@ -423,6 +428,8 @@ export const speciesConfigUpdateSchema = z.object({
   silentHeatCheckHour: z.number().int().min(0).max(23).nullable().optional(),
   fatMinPercent: z.number().min(0).max(15).optional(),
   fatMaxPercent: z.number().min(0).max(15).optional(),
+  tempMinC: z.number().min(30).max(45).optional(),
+  tempMaxC: z.number().min(30).max(45).optional(),
 });
 export type SpeciesConfigUpdate = z.infer<typeof speciesConfigUpdateSchema>;
 

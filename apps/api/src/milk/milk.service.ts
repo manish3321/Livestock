@@ -23,8 +23,12 @@ import type {
 import { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/types';
+import { ensureTask } from '../jobs/task-writer';
 import { PrismaService } from '../prisma/prisma.service';
+import { ProfitService } from '../profit/profit.service';
+import type { StoragePort } from '../storage/storage.port';
 import { mapMilkDisposal, NOT_MILKING_STATUSES, startOfUtcDay, toApiDisposal } from './milk-rules';
+import { shouldRaiseTankVariance, soldLitres, tankVariance } from './tank-rules';
 
 const EXIT = ['SOLD', 'DEAD', 'CULLED'] as const;
 const DAY = 24 * 60 * 60 * 1000;
@@ -34,6 +38,7 @@ export class MilkService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly profit?: ProfitService,
   ) {}
 
   async currentOrStart(user: RequestUser, input: MilkRoundStart): Promise<MilkRoundDto> {
@@ -72,7 +77,7 @@ export class MilkService {
     const round = await this.prisma.milkRound.findFirst({
       where: { id, farmId: user.farmId },
       include: {
-        tank: true,
+        tank: { include: { delivery: true } },
         skipped: true,
         entries: { include: { animal: true } },
       },
@@ -139,10 +144,7 @@ export class MilkService {
       .sort(byShedThenNumber);
     const recordedAnimals = herd.filter((a) => recordedByAnimal.has(a.id)).map(toRow).sort(byShedThenNumber);
 
-    const withheldIds = await animalIdsWithActiveMilk(this.prisma, user.farmId);
-    const expected = round.entries
-      .filter((e) => e.destination === 'SOLD' && (!e.animalId || !withheldIds.has(e.animalId)))
-      .reduce((s, e) => s + Number(e.quantity), 0);
+    const expected = soldLitres(round.entries);
 
     return {
       id: round.id,
@@ -168,6 +170,13 @@ export class MilkService {
             compositeFat: round.tank.compositeFat != null ? Number(round.tank.compositeFat) : null,
             compositeSnf: round.tank.compositeSnf != null ? Number(round.tank.compositeSnf) : null,
             cobResult: round.tank.cobResult,
+            delivery: round.tank.delivery
+              ? {
+                  id: round.tank.delivery.id,
+                  litresSent: Number(round.tank.delivery.litresSent),
+                  receiptUrl: round.tank.delivery.receiptUrl,
+                }
+              : null,
           }
         : null,
     };
@@ -336,13 +345,10 @@ export class MilkService {
 
   async finish(user: RequestUser, roundId: string): Promise<MilkRoundDto> {
     const round = await this.requireOpenRound(user.farmId, roundId);
-    const withheldIds = await animalIdsWithActiveMilk(this.prisma, user.farmId);
     const entries = await this.prisma.productionEntry.findMany({
       where: { milkRoundId: round.id, destination: 'SOLD' },
     });
-    const expected = entries
-      .filter((e) => !e.animalId || !withheldIds.has(e.animalId))
-      .reduce((s, e) => s + Number(e.quantity), 0);
+    const expected = soldLitres(entries);
     await this.prisma.$transaction([
       this.prisma.milkTank.upsert({
         where: { roundId: round.id },
@@ -364,14 +370,16 @@ export class MilkService {
   async updateTank(user: RequestUser, roundId: string, input: TankUpdate): Promise<MilkRoundDto> {
     const round = await this.prisma.milkRound.findFirst({
       where: { id: roundId, farmId: user.farmId },
-      include: { tank: true },
+      include: { tank: true, entries: true },
     });
     if (!round?.tank) {
       throw new NotFoundException({ code: 'TANK_NOT_FOUND', message: 'Finish the round first' });
     }
+    const expected = soldLitres(round.entries);
     await this.prisma.milkTank.update({
       where: { id: round.tank.id },
       data: {
+        expectedLitres: expected,
         actualLitres: input.actualLitres,
         temperatureC: input.temperatureC,
         compositeFat: input.compositeFat,
@@ -379,6 +387,20 @@ export class MilkService {
         cobResult: input.cobResult,
       },
     });
+    const { varianceLitres, variancePct } = tankVariance(input.actualLitres, expected);
+    if (shouldRaiseTankVariance(varianceLitres, variancePct)) {
+      const pctLabel = variancePct != null ? `${variancePct.toFixed(1)}%` : `${varianceLitres.toFixed(1)} L`;
+      await ensureTask(this.prisma, {
+        farmId: user.farmId,
+        type: 'TANK_VARIANCE',
+        titleEn: `Tank variance ${pctLabel}`,
+        titleNp: `ट्याङ्क फरक ${pctLabel}`,
+        dueAt: new Date(),
+        priority: 'HIGH',
+        sourceRefType: 'milkTank',
+        sourceRefId: round.tank.id,
+      });
+    }
     return this.getRound(user, round.id);
   }
 
@@ -397,7 +419,74 @@ export class MilkService {
     });
   }
 
+  async uploadDeliveryReceipt(
+    user: RequestUser,
+    roundId: string,
+    file: { buffer: Buffer; originalname: string; mimetype: string },
+    storage: StoragePort,
+    requestId?: string,
+  ) {
+    const round = await this.prisma.milkRound.findFirst({
+      where: { id: roundId, farmId: user.farmId },
+      include: { tank: { include: { delivery: true } } },
+    });
+    if (!round?.tank) {
+      throw new NotFoundException({ code: 'TANK_NOT_FOUND', message: 'Finish the round first' });
+    }
+    let delivery = round.tank.delivery;
+    if (!delivery) {
+      const litres = Number(round.tank.actualLitres ?? 0);
+      if (litres <= 0) {
+        throw new BadRequestException({
+          code: 'DELIVERY_REQUIRED',
+          message: 'Record litres sent before attaching a receipt',
+        });
+      }
+      delivery = await this.prisma.milkDelivery.create({
+        data: { farmId: user.farmId, tankId: round.tank.id, litresSent: litres },
+      });
+    }
+    const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const key = `deliveries/${user.farmId}/${delivery.id}-${safeName}`;
+    await storage.put(key, file.buffer, file.mimetype || 'application/octet-stream');
+    const receiptUrl = `/v1/milk/deliveries/${delivery.id}/receipt`;
+    const updated = await this.prisma.milkDelivery.update({
+      where: { id: delivery.id },
+      data: { receiptStorageKey: key, receiptUrl },
+    });
+    await this.audit.record({
+      farmId: user.farmId,
+      userId: user.id,
+      action: 'milk.delivery.receipt',
+      entityType: 'milkDelivery',
+      entityId: delivery.id,
+      metadata: { key },
+      requestId,
+    });
+    return updated;
+  }
+
+  async getDeliveryReceiptBuffer(
+    user: RequestUser,
+    deliveryId: string,
+    storage: StoragePort,
+  ): Promise<{ buffer: Buffer; contentType: string; filename: string }> {
+    const delivery = await this.prisma.milkDelivery.findFirst({
+      where: { id: deliveryId, farmId: user.farmId },
+    });
+    if (!delivery?.receiptStorageKey) {
+      throw new NotFoundException({
+        code: 'RECEIPT_NOT_FOUND',
+        message: 'No receipt uploaded for this delivery',
+      });
+    }
+    const buffer = await storage.get(delivery.receiptStorageKey);
+    const filename = delivery.receiptStorageKey.split('/').pop() ?? 'receipt';
+    return { buffer, contentType: guessFileType(filename), filename };
+  }
+
   async recordPayment(user: RequestUser, input: PaymentStatementCreate) {
+    if (this.profit) return this.profit.recordPayment(user, input);
     const net = input.netPaid;
     const effective = input.litres > 0 ? net / input.litres : 0;
     return this.prisma.paymentStatement.create({
@@ -410,6 +499,7 @@ export class MilkService {
   }
 
   async effectivePrice(user: RequestUser): Promise<EffectivePriceDto> {
+    if (this.profit) return this.profit.effectivePrice(user.farmId);
     const latest = await this.prisma.paymentStatement.findFirst({
       where: { farmId: user.farmId },
       orderBy: { periodEnd: 'desc' },
@@ -427,6 +517,10 @@ export class MilkService {
   }
 
   async profitRanking(user: RequestUser): Promise<AnimalProfitDto[]> {
+    if (this.profit) {
+      const result = await this.profit.profitability(user.farmId);
+      return result.items;
+    }
     const price = await this.effectivePrice(user);
     const rate = price.effectivePrice > 0 ? price.effectivePrice : 80;
     const from = new Date(Date.now() - 30 * DAY);
@@ -766,14 +860,6 @@ async function latestMilkWithhold(
   return row?.endDate ?? null;
 }
 
-async function animalIdsWithActiveMilk(prisma: PrismaService, farmId: string): Promise<Set<string>> {
-  const rows = await prisma.milkWithhold.findMany({
-    where: { farmId, clearedAt: null, endDate: { gte: new Date() } },
-    select: { animalId: true },
-  });
-  return new Set(rows.map((r) => r.animalId));
-}
-
 function startOfDay(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
@@ -783,4 +869,13 @@ function byShedThenNumber(
   b: { shed: string | null; herdNumber: string | null },
 ): number {
   return (a.shed ?? '').localeCompare(b.shed ?? '') || (a.herdNumber ?? '').localeCompare(b.herdNumber ?? '');
+}
+
+function guessFileType(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase();
+  if (ext === 'png') return 'image/png';
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'pdf') return 'application/pdf';
+  return 'application/octet-stream';
 }

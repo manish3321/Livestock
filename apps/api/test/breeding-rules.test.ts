@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
   colostrumTargetLitres,
+  costOfOpenDaysNpr,
   expectedCalvingFromPd,
+  heatDetectionRatePct,
   hoursAfterBirth,
+  inbreedingSharedIds,
   isFreemartinSuspect,
   inferCalvingOutcome,
   mapPdResult,
   pastVoluntaryWaiting,
+  ratePct,
+  servicesPerConception,
 } from '../src/breeding/breeding-rules';
 
 describe('breeding-rules', () => {
@@ -40,5 +45,29 @@ describe('breeding-rules', () => {
     const start = new Date('2026-01-01T00:00:00Z');
     expect(pastVoluntaryWaiting(start, 60, new Date('2026-04-06T00:00:00Z'))).toBe(true);
     expect(pastVoluntaryWaiting(start, 60, new Date('2026-02-01T00:00:00Z'))).toBe(false);
+  });
+
+  it('costs open days as (interval − target) × yield × effective price', () => {
+    expect(costOfOpenDaysNpr(450, 425, 8, 48.36)).toBeCloseTo(25 * 8 * 48.36);
+    expect(costOfOpenDaysNpr(400, 425, 8, 48.36)).toBe(0);
+  });
+
+  it('computes conception, first-service and services-per-conception rates', () => {
+    expect(ratePct(9, 20)).toBe(45);
+    expect(servicesPerConception(20, 9)).toBeCloseTo(20 / 9);
+    expect(heatDetectionRatePct(10, 20)).toBe(50);
+  });
+
+  it('warns when dam and sire share an ancestor within three generations', () => {
+    const grand = 'g';
+    const dam = 'd';
+    const sire = 's';
+    const parents = {
+      [dam]: { damId: grand, sireId: null },
+      [sire]: { damId: grand, sireId: null },
+      [grand]: { damId: null, sireId: null },
+    };
+    expect(inbreedingSharedIds(dam, sire, parents)).toEqual(['g']);
+    expect(inbreedingSharedIds(dam, 'unrelated', parents)).toEqual([]);
   });
 });

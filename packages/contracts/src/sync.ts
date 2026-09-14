@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SYNC_ENTITY_TYPES } from './domain';
+import { SPECIES, SYNC_ENTITY_TYPES } from './domain';
 
 /**
  * Offline sync protocol.
@@ -86,3 +86,22 @@ export interface SyncPullResponse {
 /** Client-side outbox states for sync-capable clients. */
 export const OUTBOX_STATES = ['pending', 'syncing', 'synced', 'failed', 'conflict'] as const;
 export type OutboxState = (typeof OUTBOX_STATES)[number];
+
+export const tagSequenceBlockClaimSchema = z.object({
+  deviceId: z.string().min(8).max(120),
+  species: z.enum(SPECIES),
+});
+export type TagSequenceBlockClaim = z.infer<typeof tagSequenceBlockClaimSchema>;
+
+export interface TagSequenceBlockDto {
+  id: string;
+  farmId: string;
+  species: string;
+  deviceId: string;
+  rangeStart: number;
+  rangeEnd: number;
+  nextValue: number;
+  letter: string;
+  issuedAt: string;
+  exhaustedAt: string | null;
+}

@@ -2,9 +2,12 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  Optional,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import type {
   PageResult,
+  TaskComplete,
   TaskDismiss,
   TaskDto,
   TaskListQuery,
@@ -15,7 +18,9 @@ import type {
 import type { Task } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/types';
+import { NotificationDispatchService } from '../notifications/notification-dispatch.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { offerMute } from '../notifications/notification-rules';
 
 const SNOOZE_MS: Record<TaskSnooze['preset'], number> = {
   '1h': 60 * 60 * 1000,
@@ -41,16 +46,22 @@ const ACTION_PATH: Record<TaskType, string> = {
   LOT_EXPIRING: '/inventory',
   MISSING_PRODUCTION: '/shed',
   YIELD_DROP: '/shed',
+  STOCK_RECONCILE: '/inventory',
+  TANK_VARIANCE: '/shed',
   APPLY_MARKER: '/shed?mode=MARKER_PLACEMENT',
   REMOVE_MARKER: '/shed?mode=MARKER_PLACEMENT',
   RETAG_REQUIRED: '/animals',
+  TREATMENT_FOLLOWUP: '/health?type=TREATMENT',
 };
+
+const SCAN_ONLY_TASKS = new Set<TaskType>(['APPLY_MARKER', 'REMOVE_MARKER']);
 
 @Injectable()
 export class TasksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    @Optional() private readonly notifications?: NotificationDispatchService,
   ) {}
 
   async list(user: RequestUser, query: TaskListQuery): Promise<PageResult<TaskDto>> {
@@ -81,8 +92,19 @@ export class TasksService {
     };
   }
 
-  async complete(user: RequestUser, id: string, requestId?: string): Promise<TaskDto> {
+  async complete(
+    user: RequestUser,
+    id: string,
+    input: TaskComplete = {},
+    requestId?: string,
+  ): Promise<TaskDto> {
     const task = await this.requirePending(user.farmId, id);
+    if (SCAN_ONLY_TASKS.has(task.type) && !input.byScan) {
+      throw new UnprocessableEntityException({
+        code: 'SCAN_REQUIRED',
+        message: 'This band task can only be completed by scanning the animal',
+      });
+    }
     const row = await this.prisma.task.update({
       where: { id: task.id },
       data: {
@@ -100,6 +122,7 @@ export class TasksService {
       entityId: id,
       requestId,
     });
+    await this.notifications?.acknowledge(user.farmId, id);
     return toDto(row);
   }
 
@@ -152,6 +175,8 @@ export class TasksService {
         status: 'DISMISSED',
         dismissReason: input.reason,
         dismissNote: input.note,
+        completedById: user.id,
+        completedAt: new Date(),
       },
       include: { animal: { select: { herdNumber: true, name: true } } },
     });
@@ -164,7 +189,16 @@ export class TasksService {
       metadata: { reason: input.reason },
       requestId,
     });
-    return toDto(row);
+    await this.notifications?.acknowledge(user.farmId, id);
+    const dismissals = await this.prisma.task.count({
+      where: {
+        farmId: user.farmId,
+        type: task.type,
+        status: 'DISMISSED',
+        completedById: user.id,
+      },
+    });
+    return toDto(row, { offerMute: offerMute(dismissals) });
   }
 
   async reassign(
@@ -209,6 +243,7 @@ export class TasksService {
 
 function toDto(
   r: Task & { animal?: { herdNumber: string | null; name: string | null } | null },
+  extra?: { offerMute?: boolean },
 ): TaskDto {
   return {
     id: r.id,
@@ -238,6 +273,7 @@ function toDto(
       r.sourceRefId,
       r.id,
     ),
+    ...(extra?.offerMute ? { offerMute: true } : {}),
   };
 }
 

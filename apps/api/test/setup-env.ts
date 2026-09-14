@@ -6,5 +6,6 @@ process.env.JWT_SECRET = 'test-secret-test-secret-test-secret-1234';
 process.env.ACCESS_TOKEN_TTL_SEC = '900';
 process.env.REFRESH_TOKEN_TTL_DAYS = '30';
 process.env.STORAGE_DRIVER = 'local';
+process.env.SMS_MONTHLY_CAP = '40';
 
 resetEnvCache();

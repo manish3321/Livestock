@@ -319,7 +319,7 @@ export class InventoryService {
       const { ensureTask } = await import('../jobs/task-writer');
       await ensureTask(this.prisma, {
         farmId: user.farmId,
-        type: 'STOCK_REORDER',
+        type: 'STOCK_RECONCILE',
         titleEn: `Negative stock: ${item.name} — record the purchase`,
         titleNp: `${item.name} स्टक ऋणात्मक — किनबेच रेकर्ड गर्नुहोस्`,
         dueAt: new Date(),
@@ -357,6 +357,71 @@ export class InventoryService {
     });
 
     return toMovementDto(movement);
+  }
+
+  async createLot(
+    user: RequestUser,
+    input: {
+      itemId: string;
+      lotNumber: string;
+      qtyReceived: number;
+      unitCostNpr?: number;
+      receivedOn?: Date;
+      expiryDate?: Date;
+    },
+    requestId?: string,
+  ) {
+    const item = await this.requireItem(user.farmId, input.itemId);
+    const receivedOn = input.receivedOn ?? new Date();
+    const lot = await this.prisma.stockLot.create({
+      data: {
+        farmId: user.farmId,
+        itemId: item.id,
+        lotNumber: input.lotNumber,
+        qtyReceived: input.qtyReceived,
+        qtyRemaining: input.qtyReceived,
+        unitCostNpr: input.unitCostNpr ?? Number(item.unitCost ?? 0),
+        receivedOn,
+        expiryDate: input.expiryDate,
+      },
+    });
+    await this.audit.record({
+      farmId: user.farmId,
+      userId: user.id,
+      action: 'inventory.lot.create',
+      entityType: 'stockLot',
+      entityId: lot.id,
+      requestId,
+    });
+    return {
+      id: lot.id,
+      itemId: lot.itemId,
+      lotNumber: lot.lotNumber,
+      qtyReceived: Number(lot.qtyReceived),
+      qtyRemaining: Number(lot.qtyRemaining),
+      expiryDate: lot.expiryDate?.toISOString() ?? null,
+      receivedOn: lot.receivedOn.toISOString(),
+    };
+  }
+
+  async expiringLots(user: RequestUser, withinDays = 30) {
+    const cutoff = new Date(Date.now() + withinDays * 24 * 60 * 60 * 1000);
+    const lots = await this.prisma.stockLot.findMany({
+      where: {
+        farmId: user.farmId,
+        expiryDate: { lte: cutoff, not: null },
+      },
+      include: { item: { select: { name: true } } },
+      orderBy: { expiryDate: 'asc' },
+    });
+    return lots.map((l) => ({
+      id: l.id,
+      itemId: l.itemId,
+      itemName: l.item.name,
+      lotNumber: l.lotNumber,
+      qtyRemaining: Number(l.qtyRemaining),
+      expiryDate: l.expiryDate?.toISOString() ?? null,
+    }));
   }
 
   private async requireItem(farmId: string, id: string): Promise<InventoryItem> {

@@ -42,6 +42,30 @@ export function getPeriodReport(
   return api(`/v1/reports/period${toQuery({ kind, date })}`);
 }
 
+export function getDailyReport(date?: string): Promise<ReportSummary> {
+  return api(`/v1/reports/daily${toQuery({ date })}`);
+}
+
+export function getMonthlyReport(year: number, month: number): Promise<ReportSummary> {
+  return api(`/v1/reports/monthly${toQuery({ year, month })}`);
+}
+
+export function getCooperativeReport(from?: string, to?: string): Promise<ReportSummary> {
+  return api(`/v1/reports/cooperative${toQuery({ from, to })}`);
+}
+
+export function getVaccinationProof(from?: string, to?: string, disease?: string): Promise<ReportSummary> {
+  return api(`/v1/reports/vaccination-proof${toQuery({ from, to, disease })}`);
+}
+
+export function getInsuranceClaim(animalId: string): Promise<ReportSummary> {
+  return api(`/v1/reports/insurance-claim${toQuery({ animalId })}`);
+}
+
+export function getVetHistory(animalId: string): Promise<ReportSummary> {
+  return api(`/v1/reports/vet-history/${animalId}`);
+}
+
 export async function downloadPeriodCsv(
   kind: 'daily' | 'weekly' | 'quarterly' | 'annual',
 ): Promise<void> {

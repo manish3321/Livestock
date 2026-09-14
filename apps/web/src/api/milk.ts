@@ -9,7 +9,7 @@ import type {
   MilkSkip,
   TankUpdate,
 } from '@farm/contracts';
-import { api } from './client';
+import { api, getAccessToken } from './client';
 
 export function startMilkRound(body: MilkRoundStart): Promise<MilkRoundDto> {
   return api('/v1/milk/rounds', { method: 'POST', body: JSON.stringify(body) });
@@ -79,6 +79,28 @@ export function recordDelivery(
     method: 'POST',
     body: JSON.stringify(body),
   });
+}
+
+export async function uploadDeliveryReceipt(roundId: string, file: File) {
+  const token = getAccessToken();
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`/v1/milk/rounds/${roundId}/delivery/receipt`, {
+    method: 'POST',
+    headers: token ? { authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  if (!res.ok) {
+    let message = res.statusText;
+    try {
+      const err = (await res.json()) as { message?: string };
+      if (err.message) message = err.message;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(message || 'Upload failed');
+  }
+  return res.json();
 }
 
 export function recordPayment(body: import('@farm/contracts').PaymentStatementCreate) {

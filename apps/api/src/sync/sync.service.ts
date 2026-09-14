@@ -79,7 +79,7 @@ export class SyncService {
           };
         }
 
-        const outcome = await this.animals.apply(tx, user, mutation);
+        const outcome = await this.animals.apply(tx, user, mutation, deviceId);
 
         if (outcome.status === 'applied') {
           await tx.changeLogEntry.create({

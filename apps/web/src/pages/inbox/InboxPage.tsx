@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { TaskDismissReason, TaskDto } from '@farm/contracts';
-import { completeTask, dismissTask, listTasks, snoozeTask } from '../../api/tasks';
+import { completeTask, dismissTask, listTasks, muteTaskType, snoozeTask } from '../../api/tasks';
 import { ErrorState, LoadingState } from '../../components/PageState';
 
 const DISMISS: TaskDismissReason[] = [
@@ -19,6 +19,7 @@ export function InboxPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [dismissId, setDismissId] = useState<string | null>(null);
+  const [muteOffer, setMuteOffer] = useState<TaskDto | null>(null);
 
   const query = useQuery({ queryKey: ['tasks'], queryFn: listTasks });
 
@@ -36,10 +37,16 @@ export function InboxPage() {
   const dismiss = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: TaskDismissReason }) =>
       dismissTask(id, { reason }),
-    onSuccess: () => {
+    onSuccess: (row) => {
       setDismissId(null);
+      if (row.offerMute) setMuteOffer(row);
       void qc.invalidateQueries({ queryKey: ['tasks'] });
     },
+  });
+
+  const mute = useMutation({
+    mutationFn: (taskType: TaskDto['type']) => muteTaskType(taskType),
+    onSuccess: () => setMuteOffer(null),
   });
 
   if (query.isLoading) return <LoadingState />;
@@ -55,6 +62,19 @@ export function InboxPage() {
     <div>
       <h1>{t('inbox.title')}</h1>
       <p className="muted">{t('inbox.subtitle')}</p>
+      {muteOffer && (
+        <div className="inbox-mute">
+          <p>{t('inbox.muteOffer')}</p>
+          <div className="inbox-mute-actions">
+            <button type="button" className="btn" onClick={() => mute.mutate(muteOffer.type)}>
+              {t('inbox.mute')}
+            </button>
+            <button type="button" onClick={() => setMuteOffer(null)}>
+              {t('inbox.keep')}
+            </button>
+          </div>
+        </div>
+      )}
       {items.length === 0 && <p className="muted">{t('inbox.empty')}</p>}
       <ul className="inbox-list">
         {items.map((task) => (
@@ -70,9 +90,13 @@ export function InboxPage() {
               <button type="button" className="btn" onClick={() => openForm(task)}>
                 {t('inbox.do')}
               </button>
-              <button type="button" onClick={() => complete.mutate(task.id)}>
-                {t('inbox.done')}
-              </button>
+              {task.type === 'APPLY_MARKER' || task.type === 'REMOVE_MARKER' ? (
+                <span className="muted">{t('inbox.scanRequired')}</span>
+              ) : (
+                <button type="button" onClick={() => complete.mutate(task.id)}>
+                  {t('inbox.done')}
+                </button>
+              )}
               <button type="button" onClick={() => snooze.mutate({ id: task.id, preset: '1h' })}>
                 +1h
               </button>

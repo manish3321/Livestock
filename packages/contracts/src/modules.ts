@@ -10,6 +10,12 @@ import {
   QUALITY_GRADES_MILK_EGGS,
   REVENUE_SOURCES,
 } from './domain';
+import {
+  ADMIN_ROUTES,
+  DIAGNOSED_BY,
+  SEVERITIES,
+  SYMPTOMS,
+} from './dairy';
 
 /** Approval thresholds (NPR) — above this, expense escalates to Admin. */
 export const EXPENSE_ESCALATION_THRESHOLDS: Record<
@@ -251,6 +257,14 @@ export const healthCreateSchema = z.object({
   doseIntervalHours: z.number().int().min(1).max(72).optional(),
   inventoryItemId: z.string().uuid().optional(),
   durationDays: z.number().int().min(0).max(60).optional(),
+  frequencyPerDay: z.number().int().min(1).max(6).optional(),
+  doseAmount: z.number().positive().max(500).optional(),
+  route: z.enum(ADMIN_ROUTES).optional(),
+  symptoms: z.array(z.enum(SYMPTOMS)).optional(),
+  temperatureC: z.number().min(30).max(45).optional(),
+  severity: z.enum(SEVERITIES).optional(),
+  provisionalDiagnosis: z.string().max(200).optional(),
+  diagnosedBy: z.enum(DIAGNOSED_BY).optional(),
   performedAt: z.coerce.date(),
   nextDueAt: z.coerce.date().optional(),
   notes: z.string().max(2000).optional(),
@@ -332,6 +346,61 @@ export const breedingListQuerySchema = pageQuerySchema.extend({
 });
 export type BreedingListQuery = z.infer<typeof breedingListQuerySchema>;
 
+/** Phase 9c herd display targets — not species biology. */
+export const BREEDING_HERD_TARGETS = {
+  conceptionRateMinPct: 45,
+  daysOpenMax: 120,
+} as const;
+
+/** Section 11.6 — healthy dairy ranges. Percent of income unless noted. */
+export const PNL_RATIO_TARGETS = {
+  marginHealthyMinPct: 20,
+  marginHealthyMaxPct: 30,
+  feedShareMinPct: 45,
+  feedShareMaxPct: 60,
+  labourShareMinPct: 12,
+  labourShareMaxPct: 18,
+  healthShareMaxPct: 10,
+} as const;
+
+export interface PedigreeNodeDto {
+  id: string;
+  tag: string;
+  herdNumber: string | null;
+  name: string | null;
+  damId: string | null;
+  sireId: string | null;
+  dam: PedigreeNodeDto | null;
+  sire: PedigreeNodeDto | null;
+}
+
+export interface BreedingObserverDto {
+  observerId: string;
+  observerName: string | null;
+  heatsObserved: number;
+  standingHeatCount: number;
+  heatDetectionRatePct: number | null;
+}
+
+export interface BreedingMetricsDto {
+  daysOpen: number | null;
+  calvingIntervalDays: number | null;
+  servicesPerConception: number | null;
+  conceptionRatePct: number | null;
+  firstServiceRatePct: number | null;
+  heatDetectionRatePct: number | null;
+  ageAtFirstCalvingMonths: number | null;
+  costOfOpenDaysNpr: number | null;
+  avgDailyYield: number | null;
+  effectivePriceNpr: number;
+  targets: {
+    conceptionRateMinPct: number;
+    daysOpenMax: number;
+    calvingIntervalMaxDays: number | null;
+  };
+  observers: BreedingObserverDto[];
+}
+
 // ---- Production ----
 export const PRODUCTION_TYPES = ['MILK', 'EGGS', 'FISH'] as const;
 export const QUALITY_GRADES = [
@@ -385,6 +454,7 @@ export type ReportQuery = z.infer<typeof reportQuerySchema>;
 export const pnlQuerySchema = z.object({
   period: z.enum(['monthly', 'quarterly', 'yearly']).default('monthly'),
   year: z.coerce.number().int().min(2000).max(2100).optional(),
+  month: z.coerce.number().int().min(1).max(12).optional(),
 });
 export type PnlQuery = z.infer<typeof pnlQuerySchema>;
 
@@ -581,6 +651,35 @@ export const periodReportQuerySchema = z.object({
   date: z.coerce.date().optional(),
 });
 export type PeriodReportQuery = z.infer<typeof periodReportQuerySchema>;
+
+export const dailyReportQuerySchema = z.object({
+  date: z.coerce.date().optional(),
+});
+export type DailyReportQuery = z.infer<typeof dailyReportQuerySchema>;
+
+export const monthlyReportQuerySchema = z.object({
+  year: z.coerce.number().int().min(2000).max(2100),
+  month: z.coerce.number().int().min(1).max(12),
+});
+export type MonthlyReportQuery = z.infer<typeof monthlyReportQuerySchema>;
+
+export const cooperativeReportQuerySchema = z.object({
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+});
+export type CooperativeReportQuery = z.infer<typeof cooperativeReportQuerySchema>;
+
+export const vaccinationProofQuerySchema = z.object({
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+  disease: z.string().max(80).optional(),
+});
+export type VaccinationProofQuery = z.infer<typeof vaccinationProofQuerySchema>;
+
+export const insuranceClaimQuerySchema = z.object({
+  animalId: z.string().uuid(),
+});
+export type InsuranceClaimQuery = z.infer<typeof insuranceClaimQuerySchema>;
 
 export const feedCreateSchema = z.object({
   animalId: z.string().uuid().optional(),

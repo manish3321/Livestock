@@ -27,6 +27,8 @@ const SPECIES_CONSTANTS: Record<string, Record<string, number | null>> = {
     silentHeatCheckHour: 4,
     fatMinPercent: 6.5,
     fatMaxPercent: 8,
+    tempMinC: 37.5,
+    tempMaxC: 39.5,
   },
   COW: {
     gestationDays: 283,
@@ -43,6 +45,8 @@ const SPECIES_CONSTANTS: Record<string, Record<string, number | null>> = {
     silentHeatCheckHour: null,
     fatMinPercent: 3.5,
     fatMaxPercent: 4.5,
+    tempMinC: 38.0,
+    tempMaxC: 39.3,
   },
   PIG: {
     gestationDays: 114,
@@ -59,6 +63,8 @@ const SPECIES_CONSTANTS: Record<string, Record<string, number | null>> = {
     silentHeatCheckHour: null,
     fatMinPercent: 5,
     fatMaxPercent: 8,
+    tempMinC: 38.7,
+    tempMaxC: 40.0,
   },
   GOAT: {
     gestationDays: 150,
@@ -75,6 +81,8 @@ const SPECIES_CONSTANTS: Record<string, Record<string, number | null>> = {
     silentHeatCheckHour: null,
     fatMinPercent: 5,
     fatMaxPercent: 8,
+    tempMinC: 38.5,
+    tempMaxC: 40.5,
   },
 };
 
@@ -183,8 +191,14 @@ export class FakePrisma {
       return null;
     },
     findFirst: async ({ where }: any) => {
-      const a = this.animals.get(where.id);
-      return a && a.farmId === where.farmId ? a : null;
+      for (const a of this.animals.values()) {
+        if (where.id && a.id !== where.id) continue;
+        if (where.farmId && a.farmId !== where.farmId) continue;
+        if (where.herdNumber && a.herdNumber !== where.herdNumber) continue;
+        if (where.deletedAt === null && a.deletedAt != null) continue;
+        return a;
+      }
+      return null;
     },
     create: async ({ data }: any) => {
       const row: AnimalRow = {
@@ -279,6 +293,75 @@ export class FakePrisma {
     create: async ({ data }: any) => {
       const row = { id: randomUUID(), createdAt: new Date(), clearedAt: null, ...data };
       this.milkWithholds.push(row);
+      return row;
+    },
+  };
+
+  sequences = new Map<string, { id: string; farmId: string; species: string; nextNumber: number; reservedThrough: number }>();
+  tagBlocks: Array<{
+    id: string;
+    farmId: string;
+    species: string;
+    deviceId: string;
+    rangeStart: number;
+    rangeEnd: number;
+    nextValue: number;
+    issuedAt: Date;
+    exhaustedAt: Date | null;
+  }> = [];
+  tasks: Array<Record<string, unknown>> = [];
+
+  herdNumberSequence = {
+    upsert: async ({ where, update, create }: any) => {
+      const key = `${where.farmId_species.farmId}:${where.farmId_species.species}`;
+      const existing = this.sequences.get(key);
+      if (!existing) {
+        const row = { id: randomUUID(), ...create };
+        this.sequences.set(key, row);
+        return row;
+      }
+      if (update.nextNumber?.increment) existing.nextNumber += update.nextNumber.increment;
+      if (update.reservedThrough?.increment) existing.reservedThrough += update.reservedThrough.increment;
+      return existing;
+    },
+  };
+
+  tagSequenceBlock = {
+    findFirst: async ({ where }: any) => {
+      const rows = this.tagBlocks.filter((b) => {
+        if (where.farmId && b.farmId !== where.farmId) return false;
+        if (where.species && b.species !== where.species) return false;
+        if (where.deviceId && b.deviceId !== where.deviceId) return false;
+        if (where.exhaustedAt === null && b.exhaustedAt != null) return false;
+        if (where.rangeStart?.lte != null && b.rangeStart > where.rangeStart.lte) return false;
+        if (where.rangeEnd?.gte != null && b.rangeEnd < where.rangeEnd.gte) return false;
+        return true;
+      });
+      return rows.sort((a, b) => b.issuedAt.getTime() - a.issuedAt.getTime())[0] ?? null;
+    },
+    findMany: async ({ where }: any) =>
+      this.tagBlocks.filter(
+        (b) =>
+          (!where?.farmId || b.farmId === where.farmId) &&
+          (!where?.deviceId || b.deviceId === where.deviceId),
+      ),
+    create: async ({ data }: any) => {
+      const row = { id: randomUUID(), issuedAt: new Date(), exhaustedAt: null, ...data };
+      this.tagBlocks.push(row);
+      return row;
+    },
+    update: async ({ where, data }: any) => {
+      const row = this.tagBlocks.find((b) => b.id === where.id);
+      if (!row) throw new Error('not found');
+      Object.assign(row, data);
+      return row;
+    },
+  };
+
+  task = {
+    create: async ({ data }: any) => {
+      const row = { id: randomUUID(), status: 'PENDING', ...data };
+      this.tasks.push(row);
       return row;
     },
   };

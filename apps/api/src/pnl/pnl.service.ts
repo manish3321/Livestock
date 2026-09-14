@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { PnlQuery } from '@farm/contracts';
 import type { RequestUser } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
+import { buildRatioSnapshot, yoyDelta, type RatioBand } from './pnl-rules';
 
 export interface PnlStream {
   key: string;
@@ -9,6 +10,16 @@ export interface PnlStream {
   expenses: number;
   margin: number;
   lossMaking: boolean;
+}
+
+export interface PnlTotals {
+  totalRevenue: number;
+  totalExpenses: number;
+  netProfit: number;
+  feed: number;
+  labour: number;
+  health: number;
+  soldLitres: number;
 }
 
 export interface PnlReport {
@@ -21,9 +32,41 @@ export interface PnlReport {
   netProfit: number;
   margin: number;
   feedPercentOfRevenue: number | null;
+  labourPercentOfRevenue: number | null;
   healthPercentOfRevenue: number | null;
   profitPerAnimal: number | null;
   animalCount: number;
+  soldLitres: number;
+  breakEvenPriceNpr: number | null;
+  ratios: {
+    targets: {
+      marginHealthyMinPct: number;
+      marginHealthyMaxPct: number;
+      feedShareMinPct: number;
+      feedShareMaxPct: number;
+      labourShareMinPct: number;
+      labourShareMaxPct: number;
+      healthShareMaxPct: number;
+    };
+    marginPct: number | null;
+    marginStatus: RatioBand;
+    feedSharePct: number | null;
+    feedStatus: RatioBand;
+    labourSharePct: number | null;
+    labourStatus: RatioBand;
+    healthSharePct: number | null;
+    healthStatus: RatioBand;
+    breakEvenPriceNpr: number | null;
+    soldLitres: number;
+  };
+  prior: {
+    totalRevenue: number;
+    totalExpenses: number;
+    netProfit: number;
+    revenueDelta: number | null;
+    expenseDelta: number | null;
+    profitDelta: number | null;
+  } | null;
   byRevenueSource: PnlStream[];
   byExpenseCategory: Array<{ key: string; amount: number }>;
   lossMakingStreams: string[];
@@ -43,7 +86,10 @@ export class PnlService {
 
   async get(user: RequestUser, query: PnlQuery): Promise<PnlReport> {
     const year = query.year ?? new Date().getUTCFullYear();
-    const { from, to } = periodRange(query.period, year);
+    const { from, to } = periodRange(query.period, year, query.month);
+    const current = await this.totals(user.farmId, from, to);
+    const priorRange = shiftYear(from, to, -1);
+    const priorTotals = await this.totals(user.farmId, priorRange.from, priorRange.to);
 
     const [revenues, expenses, animalCount] = await Promise.all([
       this.prisma.revenue.findMany({
@@ -73,11 +119,6 @@ export class PnlService {
       expByCategory[e.category] = (expByCategory[e.category] ?? 0) + Number(e.amount);
     }
 
-    const totalRevenue = Object.values(revBySource).reduce((a, b) => a + b, 0);
-    const totalExpenses = Object.values(expByCategory).reduce((a, b) => a + b, 0);
-    const netProfit = totalRevenue - totalExpenses;
-    const margin = totalRevenue > 0 ? netProfit / totalRevenue : 0;
-
     const streamKeys = new Set([
       ...Object.keys(revBySource),
       ...Object.keys(STREAM_EXPENSE_CATEGORIES),
@@ -86,7 +127,6 @@ export class PnlService {
     const byRevenueSource: PnlStream[] = [...streamKeys].map((key) => {
       const revenue = revBySource[key] ?? 0;
       const cats = STREAM_EXPENSE_CATEGORIES[key] ?? [];
-      // Split each shared category evenly across streams that claim it and have activity.
       let streamExpenses = 0;
       for (const cat of cats) {
         const catTotal = expByCategory[cat] ?? 0;
@@ -109,22 +149,43 @@ export class PnlService {
       };
     });
 
-    const feedCost = expByCategory.FEED ?? 0;
-    const healthCost = expByCategory.MEDICINE ?? 0;
+    const ratios = buildRatioSnapshot({
+      revenue: current.totalRevenue,
+      expenses: current.totalExpenses,
+      feed: current.feed,
+      labour: current.labour,
+      health: current.health,
+      soldLitres: current.soldLitres,
+    });
+    const priorHadActivity = priorTotals.totalRevenue > 0 || priorTotals.totalExpenses > 0;
 
     return {
       period: query.period,
       year,
       from: from.toISOString(),
       to: to.toISOString(),
-      totalRevenue,
-      totalExpenses,
-      netProfit,
-      margin,
-      feedPercentOfRevenue: totalRevenue > 0 ? feedCost / totalRevenue : null,
-      healthPercentOfRevenue: totalRevenue > 0 ? healthCost / totalRevenue : null,
-      profitPerAnimal: animalCount > 0 ? netProfit / animalCount : null,
+      totalRevenue: current.totalRevenue,
+      totalExpenses: current.totalExpenses,
+      netProfit: current.netProfit,
+      margin: current.totalRevenue > 0 ? current.netProfit / current.totalRevenue : 0,
+      feedPercentOfRevenue: ratios.feedSharePct != null ? ratios.feedSharePct / 100 : null,
+      labourPercentOfRevenue: ratios.labourSharePct != null ? ratios.labourSharePct / 100 : null,
+      healthPercentOfRevenue: ratios.healthSharePct != null ? ratios.healthSharePct / 100 : null,
+      profitPerAnimal: animalCount > 0 ? current.netProfit / animalCount : null,
       animalCount,
+      soldLitres: current.soldLitres,
+      breakEvenPriceNpr: ratios.breakEvenPriceNpr,
+      ratios,
+      prior: priorHadActivity
+        ? {
+            totalRevenue: priorTotals.totalRevenue,
+            totalExpenses: priorTotals.totalExpenses,
+            netProfit: priorTotals.netProfit,
+            revenueDelta: yoyDelta(current.totalRevenue, priorTotals.totalRevenue),
+            expenseDelta: yoyDelta(current.totalExpenses, priorTotals.totalExpenses),
+            profitDelta: yoyDelta(current.netProfit, priorTotals.netProfit),
+          }
+        : null,
       byRevenueSource,
       byExpenseCategory: Object.entries(expByCategory).map(([key, amount]) => ({
         key,
@@ -133,11 +194,56 @@ export class PnlService {
       lossMakingStreams: byRevenueSource.filter((s) => s.lossMaking).map((s) => s.key),
     };
   }
+
+  private async totals(farmId: string, from: Date, to: Date): Promise<PnlTotals> {
+    const [revenues, expenses, milk] = await Promise.all([
+      this.prisma.revenue.findMany({
+        where: { farmId, revenueDate: { gte: from, lt: to } },
+        select: { amount: true },
+      }),
+      this.prisma.expense.findMany({
+        where: { farmId, expenseDate: { gte: from, lt: to }, status: 'APPROVED' },
+        select: { category: true, amount: true },
+      }),
+      this.prisma.productionEntry.findMany({
+        where: {
+          farmId,
+          type: 'MILK',
+          destination: 'SOLD',
+          entryDate: { gte: from, lt: to },
+        },
+        select: { quantity: true },
+      }),
+    ]);
+    const totalRevenue = revenues.reduce((s, r) => s + Number(r.amount), 0);
+    let feed = 0;
+    let labour = 0;
+    let health = 0;
+    let totalExpenses = 0;
+    for (const e of expenses) {
+      const amount = Number(e.amount);
+      totalExpenses += amount;
+      if (e.category === 'FEED') feed += amount;
+      if (e.category === 'LABOR') labour += amount;
+      if (e.category === 'MEDICINE') health += amount;
+    }
+    const soldLitres = milk.reduce((s, m) => s + Number(m.quantity), 0);
+    return {
+      totalRevenue,
+      totalExpenses,
+      netProfit: totalRevenue - totalExpenses,
+      feed,
+      labour,
+      health,
+      soldLitres,
+    };
+  }
 }
 
 function periodRange(
   period: 'monthly' | 'quarterly' | 'yearly',
   year: number,
+  month?: number,
 ): { from: Date; to: Date } {
   const now = new Date();
   if (period === 'yearly') {
@@ -147,15 +253,32 @@ function periodRange(
     };
   }
   if (period === 'quarterly') {
-    const q = year === now.getUTCFullYear() ? Math.floor(now.getUTCMonth() / 3) : 0;
+    const q =
+      month != null
+        ? Math.floor((month - 1) / 3)
+        : year === now.getUTCFullYear()
+          ? Math.floor(now.getUTCMonth() / 3)
+          : 0;
     return {
       from: new Date(Date.UTC(year, q * 3, 1)),
       to: new Date(Date.UTC(year, q * 3 + 3, 1)),
     };
   }
-  const month = year === now.getUTCFullYear() ? now.getUTCMonth() : 0;
+  const m =
+    month != null
+      ? month - 1
+      : year === now.getUTCFullYear()
+        ? now.getUTCMonth()
+        : 0;
   return {
-    from: new Date(Date.UTC(year, month, 1)),
-    to: new Date(Date.UTC(year, month + 1, 1)),
+    from: new Date(Date.UTC(year, m, 1)),
+    to: new Date(Date.UTC(year, m + 1, 1)),
+  };
+}
+
+function shiftYear(from: Date, to: Date, years: number): { from: Date; to: Date } {
+  return {
+    from: new Date(Date.UTC(from.getUTCFullYear() + years, from.getUTCMonth(), from.getUTCDate())),
+    to: new Date(Date.UTC(to.getUTCFullYear() + years, to.getUTCMonth(), to.getUTCDate())),
   };
 }

@@ -1,8 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { animalCreateSchema, animalUpdateSchema } from '@farm/contracts';
+import { animalCreateSchema, animalUpdateSchema, type Species, type SyncMutation } from '@farm/contracts';
 import type { Prisma, Animal } from '@prisma/client';
 import type { RequestUser } from '../common/types';
-import type { SyncMutation } from '@farm/contracts';
+import { HerdNumberService } from '../herd-number/herd-number.service';
+import { ensureTask } from '../jobs/task-writer';
+import { nextPrintableTag } from '../animals/tag-rules';
 
 export type ApplyOutcome =
   | { status: 'applied'; serverVersion: number; snapshot: Record<string, unknown> | null }
@@ -12,14 +14,17 @@ export type ApplyOutcome =
 /** Applies animal create/update/delete mutations inside a sync transaction. */
 @Injectable()
 export class AnimalApplier {
+  constructor(private readonly herdNumbers = new HerdNumberService()) {}
+
   async apply(
     tx: Prisma.TransactionClient,
     user: RequestUser,
     mutation: SyncMutation,
+    deviceId?: string,
   ): Promise<ApplyOutcome> {
     switch (mutation.op) {
       case 'create':
-        return this.create(tx, user, mutation);
+        return this.create(tx, user, mutation, deviceId);
       case 'update':
         return this.update(tx, user, mutation);
       case 'delete':
@@ -31,6 +36,7 @@ export class AnimalApplier {
     tx: Prisma.TransactionClient,
     user: RequestUser,
     mutation: SyncMutation,
+    deviceId?: string,
   ): Promise<ApplyOutcome> {
     if (!user.permissions.includes('animals:write')) {
       return { status: 'failed', error: 'PERMISSION_DENIED: animals:write' };
@@ -42,22 +48,24 @@ export class AnimalApplier {
 
     const existing = await tx.animal.findUnique({ where: { id: mutation.entityId } });
     if (existing) {
-      // Same entity created by a different mutation: surface as conflict.
       return { status: 'conflict', current: toSnapshot(existing) };
     }
 
-    const tagTaken = await tx.animal.findUnique({
-      where: { farmId_tag: { farmId: user.farmId, tag: parsed.data.tag } },
-    });
-    if (tagTaken) {
-      return { status: 'conflict', current: toSnapshot(tagTaken) };
-    }
+    const tag = await this.uniqueTag(tx, user.farmId, parsed.data.tag, mutation.entityId);
+    const herdNumber = await this.assignHerdNumber(
+      tx,
+      user.farmId,
+      parsed.data.species,
+      deviceId,
+      mutation.payload,
+    );
 
     const created = await tx.animal.create({
       data: {
         id: mutation.entityId,
         farmId: user.farmId,
-        tag: parsed.data.tag,
+        tag: tag.value,
+        herdNumber,
         name: parsed.data.name,
         species: parsed.data.species,
         breed: parsed.data.breed,
@@ -84,7 +92,65 @@ export class AnimalApplier {
         },
       });
     }
+    if (tag.renamed) {
+      await ensureTask(tx, {
+        farmId: user.farmId,
+        type: 'RETAG_REQUIRED',
+        titleEn: `Reprint tag for ${created.herdNumber ?? created.tag}`,
+        titleNp: `${created.herdNumber ?? created.tag} को ट्याग फेरि छाप्नुहोस्`,
+        dueAt: new Date(),
+        priority: 'HIGH',
+        animalId: created.id,
+        sourceRefType: 'sync',
+        sourceRefId: mutation.clientMutationId,
+      });
+    }
     return { status: 'applied', serverVersion: 1, snapshot: toSnapshot(created) };
+  }
+
+  /**
+   * Guardrail 2.5: a tag collision never drops the farmer's record.
+   * Keep both animals; renumber the second and raise a reprint task.
+   */
+  private async uniqueTag(
+    tx: Prisma.TransactionClient,
+    farmId: string,
+    requested: string,
+    entityId: string,
+  ): Promise<{ value: string; renamed: boolean }> {
+    let candidate = requested;
+    let renamed = false;
+    for (let i = 0; i < 50; i += 1) {
+      const taken = await tx.animal.findUnique({
+        where: { farmId_tag: { farmId, tag: candidate } },
+      });
+      if (!taken || taken.id === entityId || taken.deletedAt) {
+        return { value: candidate, renamed };
+      }
+      const next = nextPrintableTag(candidate);
+      if (!next) break;
+      candidate = next;
+      renamed = true;
+    }
+    return { value: candidate, renamed };
+  }
+
+  private async assignHerdNumber(
+    tx: Prisma.TransactionClient,
+    farmId: string,
+    species: Species,
+    deviceId: string | undefined,
+    payload: Record<string, unknown> | undefined,
+  ): Promise<string> {
+    const requested = typeof payload?.herdNumber === 'string' ? payload.herdNumber : undefined;
+    if (requested && deviceId) {
+      const owned = await this.herdNumbers.consumeIfOwned(tx, farmId, species, deviceId, requested);
+      const clash = await tx.animal.findFirst({
+        where: { farmId, herdNumber: requested, deletedAt: null },
+      });
+      if (owned && !clash) return requested;
+    }
+    return this.herdNumbers.issue(tx, farmId, species);
   }
 
   private async update(

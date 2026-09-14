@@ -6,7 +6,7 @@ export interface StoredFile {
 
 /**
  * File storage port used by uploads and CSV/PDF exports.
- * Drivers: local disk (development) and MongoDB GridFS (production).
+ * Drivers: local disk (development), MongoDB GridFS, and Cloudflare R2.
  */
 export interface StoragePort {
   put(key: string, contents: Buffer, contentType: string): Promise<StoredFile>;

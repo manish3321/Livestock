@@ -1119,6 +1119,8 @@ button {
   background: var(--color-brand);
   border-radius: var(--radius-pill);
 }
+.bar-fill.over { background: #9b2226; }
+.escalate-hint { color: #9b2226; margin: 6px 0 0; font-size: 0.9rem; }
 
 .alert-stack {
   display: flex;
@@ -1463,7 +1465,47 @@ button {
 }
 .tag-number-back { font-size: 28px; opacity: 0.85; margin: 4px 0 8px; }
 @media print {
-  .sidebar, .topbar, .back-link, .page-header .btn, .page-actions { display: none !important; }
+  .sidebar, .topbar, .back-link, .page-header .btn, .page-actions, .no-print { display: none !important; }
+}
+.cohort-page { font-size: 16px; }
+.cohort-group { margin: 20px 0; }
+.cohort-list { list-style: none; padding: 0; margin: 0; }
+.cohort-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+}
+.cohort-thumb {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 8px;
+  flex-shrink: 0;
+  background: #efe6d9;
+}
+.cohort-thumb-empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+.cohort-who { display: flex; flex-direction: column; gap: 2px; }
+.cohort-short { font-size: 2rem; line-height: 1.1; font-weight: 800; }
+.daily-sheet { font-size: 12px; }
+.daily-sheet h1 { font-size: 18px; margin-bottom: 4px; }
+.daily-sheet h2 { font-size: 13px; margin: 10px 0 4px; }
+.daily-sheet-date { font-weight: 700; margin: 0 0 8px; }
+.daily-sheet-table { width: 100%; border-collapse: collapse; }
+.daily-sheet-table td { padding: 2px 6px 2px 0; vertical-align: top; }
+.daily-sheet-no { font-weight: 800; font-size: 14px; width: 64px; }
+@page { size: A4; margin: 10mm; }
+@media print {
+  .daily-sheet { width: 190mm; }
+  .daily-sheet section { break-inside: avoid; }
 }
 .shed-flash-ok { box-shadow: inset 0 0 0 6px #2d6a4f; }
 .shed-flash-bad { box-shadow: inset 0 0 0 6px #9b2226; }
@@ -1526,6 +1568,14 @@ button {
   padding: 8px 10px;
   background: #efe8dc;
 }
+.inbox-mute {
+  background: #fff4e5;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 12px 0 16px;
+}
+.inbox-mute p { margin: 0 0 8px; }
+.inbox-mute-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .profit-price { font-size: 1.2rem; margin: 12px 0 20px; }
 .profit-low td { background: #fce8e6; }
 .workflow-tabs {
@@ -1563,3 +1613,8 @@ button {
 .row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .inner-note { margin: 12px 0; padding: 12px; }
 .breeding-kpis .stat-card .muted { font-size: 0.85rem; }
+.stat-card-miss .stat-value { color: #9b2226; }
+.pedigree-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+.pedigree-tree, .pedigree-tree ul { list-style: none; margin: 0; padding-left: 12px; }
+.pedigree-tree { padding-left: 0; }
+.pedigree-tree li { margin: 4px 0; }

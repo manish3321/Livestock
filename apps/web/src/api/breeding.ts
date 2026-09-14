@@ -1,8 +1,10 @@
 import type {
   BreedingCreate,
   BreedingListQuery,
+  BreedingMetricsDto,
   BreedingUpdate,
   PageResult,
+  PedigreeNodeDto,
 } from '@farm/contracts';
 import { api } from './client';
 import { toQuery } from './query';
@@ -29,6 +31,8 @@ export interface BreedingDto {
   daysOpen?: number | null;
   calvingIntervalDays?: number | null;
   repeatBreeder?: boolean;
+  inbreedingWarning?: boolean;
+  sharedAncestorIds?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -89,4 +93,12 @@ export function listHeat(animalId?: string): Promise<PageResult<HeatLogDto>> {
 
 export function createHeat(body: import('@farm/contracts').HeatCreate): Promise<HeatLogDto> {
   return api('/v1/breeding/heat', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function breedingMetrics(): Promise<BreedingMetricsDto> {
+  return api('/v1/breeding/metrics');
+}
+
+export function animalPedigree(animalId: string): Promise<PedigreeNodeDto> {
+  return api(`/v1/breeding/pedigree/${animalId}`);
 }

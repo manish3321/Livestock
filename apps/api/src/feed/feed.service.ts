@@ -1,9 +1,12 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import type { FeedCreate, FeedListQuery, PageResult } from '@farm/contracts';
 import type { FeedLog } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/types';
+import { ensureTask } from '../jobs/task-writer';
 import { PrismaService } from '../prisma/prisma.service';
+import { remainingFromMovements } from '../profit/profit-rules';
+import { pickFefoLot } from '../vaccinations/vaccination-rules';
 
 export interface FeedLogDto {
   id: string;
@@ -87,16 +90,11 @@ export class FeedService {
   }
 
   async create(user: RequestUser, input: FeedCreate, requestId?: string): Promise<FeedLogDto> {
-    if (!input.animalId && !input.herdBatchId) {
-      throw new BadRequestException({
-        code: 'FEED_TARGET_REQUIRED',
-        message: 'Choose an animal or a herd batch',
-      });
-    }
     const totalCost =
       input.costPerKg !== undefined ? input.costPerKg * input.quantityKg : undefined;
 
     const row = await this.prisma.$transaction(async (tx) => {
+      let lotId: string | undefined;
       if (input.inventoryItemId) {
         const item = await tx.inventoryItem.findFirst({
           where: { id: input.inventoryItemId, farmId: user.farmId, deletedAt: null },
@@ -107,28 +105,86 @@ export class FeedService {
             message: 'Inventory item not found',
           });
         }
-        const stock = Number(item.currentStock);
-        if (input.quantityKg > stock) {
-          throw new BadRequestException({
-            code: 'INSUFFICIENT_STOCK',
-            message: 'Feed quantity exceeds current inventory stock',
-          });
-        }
+        const lots = await tx.stockLot.findMany({ where: { farmId: user.farmId, itemId: item.id } });
+        const picked = pickFefoLot(
+          lots.map((l) => ({
+            id: l.id,
+            lotNumber: l.lotNumber,
+            qtyRemaining: Number(l.qtyRemaining),
+            expiryDate: l.expiryDate,
+            receivedOn: l.receivedOn,
+          })),
+        );
+        const lot = picked ? lots.find((l) => l.id === picked.id) : undefined;
+        lotId = lot?.id;
+        const nextStock = Number(item.currentStock) - input.quantityKg;
         await tx.inventoryItem.update({
           where: { id: item.id },
-          data: { currentStock: stock - input.quantityKg },
+          data: { currentStock: nextStock },
         });
         await tx.stockMovement.create({
           data: {
             farmId: user.farmId,
             itemId: item.id,
+            lotId,
             type: 'OUT',
             quantity: input.quantityKg,
-            reason: 'Feed log',
+            reason: input.animalId ? 'Feed animal' : 'Feed herd',
             userId: user.id,
           },
         });
+        if (lot) {
+          const movements = await tx.stockMovement.findMany({ where: { lotId: lot.id } });
+          const remaining = remainingFromMovements(
+            Number(lot.qtyReceived),
+            movements.map((m) => ({ type: m.type, quantity: Number(m.quantity) })),
+          );
+          await tx.stockLot.update({
+            where: { id: lot.id },
+            data: { qtyRemaining: remaining },
+          });
+          if (remaining < 0) {
+            await ensureTask(tx, {
+              farmId: user.farmId,
+              type: 'STOCK_RECONCILE',
+              titleEn: `${item.name} lot ${lot.lotNumber} went negative — record the purchase`,
+              titleNp: `${item.name} ${lot.lotNumber} ऋणात्मक — किनबेच रेकर्ड गर्नुहोस्`,
+              dueAt: new Date(),
+              priority: 'HIGH',
+              sourceRefType: 'stockLot',
+              sourceRefId: lot.id,
+            });
+          }
+        } else if (nextStock < 0) {
+          await ensureTask(tx, {
+            farmId: user.farmId,
+            type: 'STOCK_RECONCILE',
+            titleEn: `${item.name} went negative — record the purchase`,
+            titleNp: `${item.name} ऋणात्मक — किनबेच रेकर्ड गर्नुहोस्`,
+            dueAt: new Date(),
+            priority: 'HIGH',
+            sourceRefType: 'inventoryItem',
+            sourceRefId: item.id,
+          });
+        }
       }
+
+      const date = new Date(
+        Date.UTC(input.occurredAt.getUTCFullYear(), input.occurredAt.getUTCMonth(), input.occurredAt.getUTCDate()),
+      );
+      await tx.feedRecord.create({
+        data: {
+          farmId: user.farmId,
+          date,
+          animalId: input.animalId,
+          itemId: input.inventoryItemId,
+          lotId,
+          qty: input.quantityKg,
+          unit: 'KG',
+          costPerUnit: input.costPerKg ?? 0,
+          recordedById: user.id,
+        },
+      });
 
       return tx.feedLog.create({
         data: {

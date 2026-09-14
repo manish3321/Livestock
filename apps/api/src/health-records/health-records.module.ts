@@ -1,12 +1,15 @@
 import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
+import { ProfitModule } from '../profit/profit.module';
 import { WithholdsModule } from '../withholds/withholds.module';
 import { HealthRecordsController } from './health-records.controller';
 import { HealthRecordsService } from './health-records.service';
+import { MortalityController } from './mortality.controller';
+import { UdderController } from './udder.controller';
 
 @Module({
-  imports: [AuditModule, WithholdsModule],
-  controllers: [HealthRecordsController],
+  imports: [AuditModule, WithholdsModule, ProfitModule],
+  controllers: [HealthRecordsController, UdderController, MortalityController],
   providers: [HealthRecordsService],
   exports: [HealthRecordsService],
 })

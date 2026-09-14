@@ -28,6 +28,8 @@ import { ReportsPage } from './pages/reports/ReportsPage';
 import { AnimalScanPage, BatchScanPage } from './pages/scan/ScanPages';
 import { ScanHubPage } from './pages/scan/ScanHubPage';
 import { ShedPage } from './pages/shed/ShedPage';
+import { CohortPage } from './pages/shed/CohortPage';
+import { DailySheetPage } from './pages/shed/DailySheetPage';
 import { InboxPage } from './pages/inbox/InboxPage';
 import { ProfitPage } from './pages/money/ProfitPage';
 
@@ -81,6 +83,8 @@ export function App() {
 
             <Route element={<RequireModule module="shed" />}>
               <Route path="/shed" element={<ShedPage />} />
+              <Route path="/shed/cohort" element={<CohortPage />} />
+              <Route path="/shed/sheet" element={<DailySheetPage />} />
             </Route>
 
             <Route element={<RequireModule module="inbox" />}>

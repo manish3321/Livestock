@@ -2,9 +2,11 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { formatDate, formatNPR, type SpeciesConfigDto } from '@farm/contracts';
+import { formatDate, formatNPR, type PedigreeNodeDto, type SpeciesConfigDto } from '@farm/contracts';
 import { listAnimals } from '../../api/animals';
 import {
+  animalPedigree,
+  breedingMetrics,
   createBreeding,
   createHeat,
   listBreeding,
@@ -18,7 +20,6 @@ import {
   type HeatLogDto,
 } from '../../api/breeding';
 import { listSpeciesConfig } from '../../api/config';
-import { effectivePrice } from '../../api/milk';
 import { useAuth } from '../../auth/auth-context';
 import { ErrorState, LoadingState } from '../../components/PageState';
 import { StatusChip } from '../../components/StatusChip';
@@ -74,24 +75,23 @@ export function BreedingPage() {
     queryKey: ['animals', 'females'],
     queryFn: () => listAnimals({ gender: 'FEMALE', pageSize: 200 }),
   });
+  const malesQ = useQuery({
+    queryKey: ['animals', 'males'],
+    queryFn: () => listAnimals({ gender: 'MALE', pageSize: 200 }),
+  });
   const configQ = useQuery({ queryKey: ['species-config'], queryFn: listSpeciesConfig });
-  const priceQ = useQuery({ queryKey: ['effective-price'], queryFn: effectivePrice });
+  const metricsQ = useQuery({ queryKey: ['breeding', 'metrics'], queryFn: breedingMetrics });
 
   const females = animalsQ.data?.items ?? [];
+  const males = malesQ.data?.items ?? [];
   const records = breedingQ.data?.items ?? [];
   const heats = heatQ.data?.items ?? [];
+  const metrics = metricsQ.data;
   const configBySpecies = useMemo(() => {
     const map = new Map<string, SpeciesConfigDto>();
     for (const row of configQ.data ?? []) map.set(row.species, row);
     return map;
   }, [configQ.data]);
-
-  const kpis = useMemo(() => computeKpis(records, females, configBySpecies, priceQ.data?.effectivePrice), [
-    records,
-    females,
-    configBySpecies,
-    priceQ.data?.effectivePrice,
-  ]);
 
   if (breedingQ.isLoading) return <LoadingState />;
   if (breedingQ.isError) return <ErrorState onRetry={() => void breedingQ.refetch()} />;
@@ -106,16 +106,77 @@ export function BreedingPage() {
       </div>
 
       <div className="stats-grid breeding-kpis">
-        <Kpi label={t('breeding.kpi.conception')} value={kpis.conception == null ? '—' : `${kpis.conception}%`} hint={t('breeding.kpi.conceptionHint')} />
-        <Kpi label={t('breeding.kpi.daysOpen')} value={kpis.avgDaysOpen ?? '—'} hint={t('breeding.kpi.daysOpenHint')} />
-        <Kpi label={t('breeding.kpi.interval')} value={kpis.avgInterval ?? '—'} hint={t('breeding.kpi.intervalHint')} />
-        <Kpi label={t('breeding.kpi.services')} value={kpis.servicesPerConception ?? '—'} hint={t('breeding.kpi.servicesHint')} />
+        <Kpi
+          label={t('breeding.kpi.conception')}
+          value={fmtPct(metrics?.conceptionRatePct)}
+          hint={t('breeding.kpi.conceptionHint')}
+          miss={isBelow(metrics?.conceptionRatePct, metrics?.targets.conceptionRateMinPct)}
+        />
+        <Kpi
+          label={t('breeding.kpi.firstService')}
+          value={fmtPct(metrics?.firstServiceRatePct)}
+          hint={t('breeding.kpi.firstServiceHint')}
+        />
+        <Kpi
+          label={t('breeding.kpi.daysOpen')}
+          value={fmtNum(metrics?.daysOpen)}
+          hint={t('breeding.kpi.daysOpenHint')}
+          miss={isAbove(metrics?.daysOpen, metrics?.targets.daysOpenMax)}
+        />
+        <Kpi
+          label={t('breeding.kpi.interval')}
+          value={fmtNum(metrics?.calvingIntervalDays)}
+          hint={t('breeding.kpi.intervalHint')}
+          miss={isAbove(metrics?.calvingIntervalDays, metrics?.targets.calvingIntervalMaxDays)}
+        />
+        <Kpi
+          label={t('breeding.kpi.services')}
+          value={metrics?.servicesPerConception == null ? '—' : metrics.servicesPerConception.toFixed(1)}
+          hint={t('breeding.kpi.servicesHint')}
+        />
+        <Kpi
+          label={t('breeding.kpi.heatDetection')}
+          value={fmtPct(metrics?.heatDetectionRatePct)}
+          hint={t('breeding.kpi.heatDetectionHint')}
+        />
+        <Kpi
+          label={t('breeding.kpi.firstCalving')}
+          value={metrics?.ageAtFirstCalvingMonths == null ? '—' : t('breeding.kpi.months', { n: metrics.ageAtFirstCalvingMonths })}
+          hint={t('breeding.kpi.firstCalvingHint')}
+        />
         <Kpi
           label={t('breeding.kpi.openCost')}
-          value={kpis.openCost == null ? '—' : formatNPR(kpis.openCost)}
+          value={metrics?.costOfOpenDaysNpr == null ? '—' : formatNPR(metrics.costOfOpenDaysNpr)}
           hint={t('breeding.kpi.openCostHint')}
         />
       </div>
+
+      {metrics && metrics.observers.length > 0 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <h2>{t('breeding.observersTitle')}</h2>
+          <p className="muted">{t('breeding.observersHelp')}</p>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>{t('breeding.observer')}</th>
+                <th>{t('breeding.heatsSeen')}</th>
+                <th>{t('breeding.standingHeat')}</th>
+                <th>{t('breeding.kpi.heatDetection')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {metrics.observers.map((o) => (
+                <tr key={o.observerId}>
+                  <td>{o.observerName ?? o.observerId.slice(0, 8)}</td>
+                  <td>{o.heatsObserved}</td>
+                  <td>{o.standingHeatCount}</td>
+                  <td>{fmtPct(o.heatDetectionRatePct)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="workflow-tabs" role="tablist">
         {TABS.map((id) => (
@@ -145,11 +206,14 @@ export function BreedingPage() {
       {tab === 'service' && (
         <ServiceForm
           females={females}
+          males={males}
           records={records}
           animalId={animalId}
           configBySpecies={configBySpecies}
           canWrite={can('breeding:write')}
-          onSaved={() => void qc.invalidateQueries({ queryKey: ['breeding'] })}
+          onSaved={() => {
+            void qc.invalidateQueries({ queryKey: ['breeding'] });
+          }}
         />
       )}
       {tab === 'pd' && (
@@ -189,9 +253,19 @@ export function BreedingPage() {
   );
 }
 
-function Kpi({ label, value, hint }: { label: string; value: string | number; hint: string }) {
+function Kpi({
+  label,
+  value,
+  hint,
+  miss,
+}: {
+  label: string;
+  value: string | number;
+  hint: string;
+  miss?: boolean;
+}) {
   return (
-    <div className="stat-card">
+    <div className={`stat-card ${miss ? 'stat-card-miss' : ''}`}>
       <span className="stat-label">{label}</span>
       <span className="stat-value">{value}</span>
       <span className="muted">{hint}</span>
@@ -360,6 +434,7 @@ function HeatForm({
 
 function ServiceForm({
   females,
+  males,
   records,
   animalId,
   configBySpecies,
@@ -367,6 +442,7 @@ function ServiceForm({
   onSaved,
 }: {
   females: Female[];
+  males: Female[];
   records: BreedingDto[];
   animalId: string;
   configBySpecies: Map<string, SpeciesConfigDto>;
@@ -377,11 +453,13 @@ function ServiceForm({
   const [motherId, setMotherId] = useState(animalId);
   const [matingType, setMatingType] = useState<'NATURAL' | 'AI'>('AI');
   const [fatherTagOrAi, setFather] = useState('');
+  const [sireId, setSireId] = useState('');
   const [matingDate, setMatingDate] = useState(toDateInput(new Date()));
   const [tech, setTech] = useState('');
   const [phone, setPhone] = useState('');
   const [cost, setCost] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [inbreeding, setInbreeding] = useState(false);
 
   useEffect(() => {
     if (animalId) setMotherId(animalId);
@@ -403,20 +481,33 @@ function ServiceForm({
       ? formatDate(addDays(new Date(matingDate), cfg.gestationDays).toISOString())
       : null;
 
+  const damTreeQ = useQuery({
+    queryKey: ['pedigree', motherId],
+    queryFn: () => animalPedigree(motherId),
+    enabled: Boolean(motherId),
+  });
+  const sireTreeQ = useQuery({
+    queryKey: ['pedigree', sireId],
+    queryFn: () => animalPedigree(sireId),
+    enabled: Boolean(sireId),
+  });
+
   const save = useMutation({
     mutationFn: () =>
       createBreeding({
         motherId,
         matingType,
         fatherTagOrAi: fatherTagOrAi || undefined,
+        sireId: sireId || undefined,
         matingDate: new Date(matingDate),
         pregnancyStatus: 'PREGNANT',
-        notes: [tech && `Tech: ${tech}`, phone && `Phone: ${phone}`, cost && `Cost: ${cost}`]
-          .filter(Boolean)
-          .join(' · ') || undefined,
+        technicianName: tech || undefined,
+        technicianPhone: phone || undefined,
+        costNpr: cost ? Number(cost) : undefined,
       }),
-    onSuccess: () => {
+    onSuccess: (row) => {
       setError(null);
+      setInbreeding(Boolean(row.inbreedingWarning));
       onSaved();
     },
     onError: (err: Error) => setError(err.message),
@@ -439,6 +530,9 @@ function ServiceForm({
       {animal?.isPregnant && <div className="hold-banner hold-banner-red">{t('breeding.alreadyPregnant')}</div>}
       {tooSoon != null && <p className="warn-text">{t('breeding.tooSoon', { n: tooSoon })}</p>}
       {serviceNo >= 3 && <p className="warn-text">{t('breeding.repeatWarn', { n: serviceNo })}</p>}
+      {(inbreeding || relatedPedigree(damTreeQ.data, sireTreeQ.data)) && (
+        <p className="warn-text">{t('breeding.inbreedingWarn')}</p>
+      )}
 
       <div className="form-grid">
         <AnimalField females={females} value={motherId} onChange={setMotherId} />
@@ -447,6 +541,18 @@ function ServiceForm({
           <select id="svc-type" value={matingType} onChange={(e) => setMatingType(e.target.value as 'NATURAL' | 'AI')}>
             <option value="AI">{t('breeding.ai')}</option>
             <option value="NATURAL">{t('breeding.natural')}</option>
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="svc-sire-animal">{t('breeding.sire')}</label>
+          <select id="svc-sire-animal" value={sireId} onChange={(e) => setSireId(e.target.value)}>
+            <option value="">{t('breeding.noSire')}</option>
+            {males.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.herdNumber ?? m.tag}
+                {m.name ? ` · ${m.name}` : ''}
+              </option>
+            ))}
           </select>
         </div>
         <div className="field">
@@ -474,6 +580,22 @@ function ServiceForm({
           <input id="svc-cost" type="number" min="0" value={cost} onChange={(e) => setCost(e.target.value)} />
         </div>
       </div>
+      {(damTreeQ.data || sireTreeQ.data) && (
+        <div className="pedigree-row">
+          {damTreeQ.data && (
+            <div>
+              <h3>{t('breeding.damPedigree')}</h3>
+              <PedigreeTree node={damTreeQ.data} />
+            </div>
+          )}
+          {sireTreeQ.data && (
+            <div>
+              <h3>{t('breeding.sirePedigree')}</h3>
+              <PedigreeTree node={sireTreeQ.data} />
+            </div>
+          )}
+        </div>
+      )}
       {duePreview && (
         <p>
           {t('breeding.provisionalDue')}: <strong>{duePreview}</strong>
@@ -1050,32 +1172,62 @@ function RecordField({
   );
 }
 
-function computeKpis(
-  records: BreedingDto[],
-  females: Female[],
-  configBySpecies: Map<string, SpeciesConfigDto>,
-  price: number | undefined,
-) {
-  const delivered = records.filter((r) => r.pregnancyStatus === 'DELIVERED');
-  const failed = records.filter((r) => r.pregnancyStatus === 'FAILED');
-  const denom = delivered.length + failed.length;
-  const conception = denom > 0 ? Math.round((delivered.length / denom) * 100) : null;
-  const openVals = records.map((r) => r.daysOpen).filter((n): n is number => n != null);
-  const avgDaysOpen = openVals.length ? Math.round(openVals.reduce((a, b) => a + b, 0) / openVals.length) : null;
-  const intervals = delivered.map((r) => r.calvingIntervalDays).filter((n): n is number => n != null);
-  const avgInterval = intervals.length ? Math.round(intervals.reduce((a, b) => a + b, 0) / intervals.length) : null;
-  const servicesPerConception =
-    delivered.length > 0 ? Number((records.length / delivered.length).toFixed(1)) : null;
-  let openCost: number | null = null;
-  if (avgInterval != null && price) {
-    const target =
-      configBySpecies.get(females[0]?.species ?? 'BUFFALO')?.targetCalvingIntervalDays ??
-      configBySpecies.get('BUFFALO')?.targetCalvingIntervalDays;
-    if (target && avgInterval > target) {
-      openCost = Math.round((avgInterval - target) * 8 * price);
-    }
-  }
-  return { conception, avgDaysOpen, avgInterval, servicesPerConception, openCost };
+function PedigreeTree({ node }: { node: PedigreeNodeDto }) {
+  return (
+    <ul className="pedigree-tree">
+      <li>
+        <strong>{node.herdNumber ?? node.tag}</strong>
+        {node.name ? ` · ${node.name}` : ''}
+        {(node.dam || node.sire) && (
+          <ul>
+            {node.dam && (
+              <li>
+                ♀ <PedigreeTree node={node.dam} />
+              </li>
+            )}
+            {node.sire && (
+              <li>
+                ♂ <PedigreeTree node={node.sire} />
+              </li>
+            )}
+          </ul>
+        )}
+      </li>
+    </ul>
+  );
+}
+
+function pedigreeIds(node: PedigreeNodeDto | null | undefined, into = new Set<string>()): Set<string> {
+  if (!node) return into;
+  into.add(node.id);
+  pedigreeIds(node.dam, into);
+  pedigreeIds(node.sire, into);
+  return into;
+}
+
+function relatedPedigree(dam: PedigreeNodeDto | undefined, sire: PedigreeNodeDto | undefined): boolean {
+  if (!dam || !sire) return false;
+  const a = pedigreeIds(dam.dam);
+  pedigreeIds(dam.sire, a);
+  const b = pedigreeIds(sire);
+  for (const id of a) if (b.has(id)) return true;
+  return false;
+}
+
+function fmtPct(n: number | null | undefined): string {
+  return n == null ? '—' : `${Math.round(n)}%`;
+}
+
+function fmtNum(n: number | null | undefined): string {
+  return n == null ? '—' : String(n);
+}
+
+function isBelow(actual: number | null | undefined, min: number | null | undefined): boolean {
+  return actual != null && min != null && actual < min;
+}
+
+function isAbove(actual: number | null | undefined, max: number | null | undefined): boolean {
+  return actual != null && max != null && actual > max;
 }
 
 function daysUntilReady(lactationStart: string | null | undefined, waitingDays: number): number | null {

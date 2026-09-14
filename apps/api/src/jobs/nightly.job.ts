@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { SpeciesConfigService } from '../species-config/species-config.service';
+import { ProfitService } from '../profit/profit.service';
 import { VaccinationsService } from '../vaccinations/vaccinations.service';
 import { nepalSixAmOn } from '../withholds/withhold-rules';
 import { ensureTask } from './task-writer';
@@ -21,6 +22,7 @@ export class NightlyJob {
     private readonly prisma: PrismaService,
     private readonly species: SpeciesConfigService,
     private readonly vaccinations?: VaccinationsService,
+    private readonly profit?: ProfitService,
   ) {}
 
   @Cron('0 1 * * *', { timeZone: 'Asia/Kathmandu' })
@@ -48,6 +50,9 @@ export class NightlyJob {
     await this.withholdEndTasks(farmId, now);
     await this.stockTasks(farmId, now);
     await this.missingMilkTasks(farmId, now);
+    if (this.profit) {
+      await this.profit.generateDailyMetrics(farmId, now);
+    }
   }
 
   private async expireOldTasks(farmId: string, now: Date): Promise<void> {
@@ -262,6 +267,38 @@ export class NightlyJob {
             sourceRefId: item.id,
           });
         }
+      }
+    }
+    const lots = await this.prisma.stockLot.findMany({
+      where: { farmId },
+      include: { item: { select: { name: true } } },
+    });
+    for (const lot of lots) {
+      if (!lot.expiryDate) continue;
+      const days = (lot.expiryDate.getTime() - now.getTime()) / DAY;
+      if (days <= 30) {
+        await ensureTask(this.prisma, {
+          farmId,
+          type: 'LOT_EXPIRING',
+          titleEn: `${lot.item.name} lot ${lot.lotNumber} expires ${lot.expiryDate.toISOString().slice(0, 10)}`,
+          titleNp: `${lot.item.name} ${lot.lotNumber} म्याद ${lot.expiryDate.toISOString().slice(0, 10)}`,
+          dueAt: lot.expiryDate,
+          priority: days <= 7 ? 'HIGH' : 'NORMAL',
+          sourceRefType: 'stockLot',
+          sourceRefId: lot.id,
+        });
+      }
+      if (Number(lot.qtyRemaining) < 0) {
+        await ensureTask(this.prisma, {
+          farmId,
+          type: 'STOCK_RECONCILE',
+          titleEn: `${lot.item.name} lot ${lot.lotNumber} is negative — record the purchase`,
+          titleNp: `${lot.item.name} ${lot.lotNumber} ऋणात्मक — किनबेच रेकर्ड गर्नुहोस्`,
+          dueAt: now,
+          priority: 'HIGH',
+          sourceRefType: 'stockLot',
+          sourceRefId: lot.id,
+        });
       }
     }
   }

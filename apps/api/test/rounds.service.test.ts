@@ -232,6 +232,11 @@ class RecordingFake {
       this.tanks.set(row.roundId, row);
       return row;
     },
+    update: async ({ where, data }: any) => {
+      const row = [...this.tanks.values()].find((t) => t.id === where.id);
+      if (row) Object.assign(row, data);
+      return row;
+    },
   };
 
   task = {

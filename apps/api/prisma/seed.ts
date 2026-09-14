@@ -74,6 +74,8 @@ async function main(): Promise<void> {
     update: {
       mode: 'COMMERCIAL',
       livestockTrackingMode: 'INDIVIDUAL',
+      milkPriceNpr: 62,
+      labourMonthlyNpr: 45000,
     },
     create: {
       id: FARM_ID,
@@ -85,6 +87,8 @@ async function main(): Promise<void> {
       // should land on the individual-first surface rather than batch counts.
       mode: 'COMMERCIAL',
       livestockTrackingMode: 'INDIVIDUAL',
+      milkPriceNpr: 62,
+      labourMonthlyNpr: 45000,
     },
   });
 
@@ -104,6 +108,37 @@ async function main(): Promise<void> {
     });
     if (u.role === Role.WORKER) workerId = user.id;
   }
+
+  const periodStart = new Date(Date.UTC(2026, 7, 1));
+  const periodEnd = new Date(Date.UTC(2026, 7, 15));
+  await prisma.cooperativePayment.upsert({
+    where: {
+      farmId_cooperativeId_periodStart: {
+        farmId: farm.id,
+        cooperativeId: farm.id,
+        periodStart,
+      },
+    },
+    update: {},
+    create: {
+      farmId: farm.id,
+      cooperativeId: farm.id,
+      periodStart,
+      periodEnd,
+      litresSupplied: 1000,
+      basePriceNpr: 62000,
+      coolingDeductionNpr: 4000,
+      transportDeductionNpr: 3000,
+      membershipDeductionNpr: 1640,
+      loanRepaymentNpr: 5000,
+      netPayableNpr: 48360,
+      effectivePriceNpr: 48.36,
+    },
+  });
+  await prisma.farm.update({
+    where: { id: farm.id },
+    data: { effectivePriceNpr: 48.36 },
+  });
 
   for (const a of ANIMALS) {
     const animal = await prisma.animal.upsert({
@@ -341,6 +376,8 @@ async function main(): Promise<void> {
       silentHeatCheckHour: 4,
       fatMinPercent: 6.5,
       fatMaxPercent: 8.0,
+      tempMinC: 37.5,
+      tempMaxC: 39.5,
     },
     {
       species: Species.COW,
@@ -358,6 +395,8 @@ async function main(): Promise<void> {
       silentHeatCheckHour: null,
       fatMinPercent: 3.5,
       fatMaxPercent: 4.5,
+      tempMinC: 38.0,
+      tempMaxC: 39.3,
     },
     {
       species: Species.PIG,
@@ -375,6 +414,8 @@ async function main(): Promise<void> {
       silentHeatCheckHour: null,
       fatMinPercent: 5.0,
       fatMaxPercent: 8.0,
+      tempMinC: 38.7,
+      tempMaxC: 40.0,
     },
     {
       species: Species.GOAT,
@@ -392,6 +433,8 @@ async function main(): Promise<void> {
       silentHeatCheckHour: null,
       fatMinPercent: 5.0,
       fatMaxPercent: 8.0,
+      tempMinC: 38.5,
+      tempMaxC: 40.5,
     },
   ];
   for (const config of speciesConfigs) {

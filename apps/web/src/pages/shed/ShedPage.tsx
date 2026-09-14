@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -9,7 +9,7 @@ import { batchVaccinate } from '../../api/health';
 import { listInventory } from '../../api/inventory';
 import { ApiRequestError } from '../../api/client';
 import { api } from '../../api/client';
-import { getMilkRound, updateTank } from '../../api/milk';
+import { getMilkRound, recordDelivery, updateTank, uploadDeliveryReceipt } from '../../api/milk';
 import {
   finishRound,
   getActiveRound,
@@ -92,6 +92,9 @@ export function ShedPage() {
     entryId: string | null;
   } | null>(null);
   const [actual, setActual] = useState('');
+  const [litresSent, setLitresSent] = useState('');
+  const [receiptNumber, setReceiptNumber] = useState('');
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [showPhotos, setShowPhotos] = useState(false);
   const [vaxItemId, setVaxItemId] = useState('');
   const [vaxDisease, setVaxDisease] = useState('FMD');
@@ -365,6 +368,21 @@ export function ShedPage() {
     onSuccess: () => void tankQ.refetch(),
   });
 
+  const delivery = useMutation({
+    mutationFn: async () => {
+      const id = remainingQ.data!.round.milkRoundId!;
+      await recordDelivery(id, {
+        litresSent: Number(litresSent),
+        receiptNumber: receiptNumber || undefined,
+      });
+      if (receiptFile) await uploadDeliveryReceipt(id, receiptFile);
+    },
+    onSuccess: () => {
+      setReceiptFile(null);
+      void tankQ.refetch();
+    },
+  });
+
   const press = (ch: string) => {
     if (ch === 'C') {
       setDigits('');
@@ -444,6 +462,11 @@ export function ShedPage() {
         <div className="card shed-start">
           <h1>{t('shed.title')}</h1>
           <p className="muted">{t('shed.subtitle')}</p>
+          <p className="shed-extra-links">
+            <Link to="/shed/cohort">{t('nav.cohort')}</Link>
+            {' · '}
+            <Link to="/shed/sheet">{t('nav.dailySheet')}</Link>
+          </p>
           <div className="shed-modes">
             {RECORDING_MODES.map((m) => (
               <button
@@ -725,6 +748,41 @@ export function ShedPage() {
             </button>
           </form>
           <p className="muted">{t('shed.varianceHint')}</p>
+          <h3>{t('shed.delivery')}</h3>
+          {tankQ.data.tank?.delivery?.receiptUrl && <p>{t('shed.receiptReady')}</p>}
+          <form
+            className="form-grid"
+            onSubmit={(e) => {
+              e.preventDefault();
+              delivery.mutate();
+            }}
+          >
+            <label>
+              {t('shed.litresSent')}
+              <input
+                type="number"
+                step="0.1"
+                value={litresSent}
+                onChange={(e) => setLitresSent(e.target.value)}
+                required
+              />
+            </label>
+            <label>
+              {t('shed.receiptNumber')}
+              <input value={receiptNumber} onChange={(e) => setReceiptNumber(e.target.value)} />
+            </label>
+            <label>
+              {t('shed.receiptPhoto')}
+              <input
+                type="file"
+                accept="image/*,.pdf"
+                onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            <button type="submit" className="btn" disabled={delivery.isPending}>
+              {t('shed.saveDelivery')}
+            </button>
+          </form>
         </div>
       )}
     </div>

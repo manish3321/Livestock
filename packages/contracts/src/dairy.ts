@@ -78,9 +78,12 @@ export const TASK_TYPES = [
   'LOT_EXPIRING',
   'MISSING_PRODUCTION',
   'YIELD_DROP',
+  'STOCK_RECONCILE',
+  'TANK_VARIANCE',
   'APPLY_MARKER',
   'REMOVE_MARKER',
   'RETAG_REQUIRED',
+  'TREATMENT_FOLLOWUP',
 ] as const;
 export type TaskType = (typeof TASK_TYPES)[number];
 
@@ -128,6 +131,22 @@ export const taskReassignSchema = z.object({
   assignedToId: z.string().uuid(),
 });
 export type TaskReassign = z.infer<typeof taskReassignSchema>;
+
+export const deviceRegisterSchema = z.object({
+  id: z.string().min(1).max(120),
+  platform: z.enum(['android', 'ios', 'web']).default('android'),
+  fcmToken: z.string().min(1).max(4096).optional(),
+});
+export type DeviceRegister = z.infer<typeof deviceRegisterSchema>;
+
+export const notificationPreferenceSchema = z.object({
+  taskType: z.enum(TASK_TYPES),
+  muted: z.boolean().optional(),
+  push: z.boolean().optional(),
+  sms: z.boolean().optional(),
+  voice: z.boolean().optional(),
+});
+export type NotificationPreferenceUpdate = z.infer<typeof notificationPreferenceSchema>;
 
 export const milkRoundStartSchema = z.object({
   session: z.enum(MILK_SESSIONS),
@@ -242,8 +261,139 @@ export const markerPlaceSchema = z.object({
   animalId: z.string().uuid(),
   meaning: z.enum(MARKER_MEANINGS),
   byScan: z.boolean().default(true),
+  validUntil: z.coerce.date().optional(),
 });
 export type MarkerPlace = z.infer<typeof markerPlaceSchema>;
+
+export const taskCompleteSchema = z.preprocess(
+  (value) => value ?? {},
+  z.object({
+    byScan: z.boolean().optional(),
+  }),
+);
+export type TaskComplete = z.infer<typeof taskCompleteSchema>;
+
+export const SYMPTOMS = [
+  'FEVER',
+  'OFF_FEED',
+  'DIARRHOEA',
+  'LAMENESS',
+  'NASAL_DISCHARGE',
+  'COUGHING',
+  'SWOLLEN_UDDER',
+  'ABNORMAL_MILK',
+  'WEIGHT_LOSS',
+  'LETHARGY',
+  'BLOAT',
+  'DIFFICULTY_BREATHING',
+  'VULVAR_DISCHARGE',
+  'SKIN_LESIONS',
+] as const;
+export type Symptom = (typeof SYMPTOMS)[number];
+
+export const SEVERITIES = ['MILD', 'MODERATE', 'SEVERE'] as const;
+export type Severity = (typeof SEVERITIES)[number];
+
+export const DIAGNOSED_BY = ['FARMER', 'PARAVET', 'VET', 'VETERINARIAN', 'LAB'] as const;
+export type DiagnosedBy = (typeof DIAGNOSED_BY)[number];
+
+export const UDDER_METHODS = ['VISUAL', 'STRIP_CUP', 'CMT', 'LAB_SCC'] as const;
+export const MILK_APPEARANCES = ['NORMAL', 'WATERY', 'CLOTS', 'BLOOD', 'PUS', 'DISCOLORED'] as const;
+export const UDDER_SIGNS = ['HEAT', 'SWELLING', 'PAIN', 'HARDNESS', 'ASYMMETRY', 'NONE'] as const;
+export const QUARTERS = ['LF', 'RF', 'LR', 'RR'] as const;
+export const CAUSE_CATEGORIES = [
+  'DISEASE',
+  'INJURY',
+  'CALVING_COMPLICATION',
+  'PREDATION',
+  'POISONING',
+  'UNKNOWN',
+] as const;
+export const DISPOSAL_METHODS = ['BURIED', 'BURNED', 'RENDERED', 'SOLD_FOR_MEAT'] as const;
+
+export const quarterScoresSchema = z.object({
+  LF: z.number().int().min(0).max(3),
+  RF: z.number().int().min(0).max(3),
+  LR: z.number().int().min(0).max(3),
+  RR: z.number().int().min(0).max(3),
+});
+export type QuarterScores = z.infer<typeof quarterScoresSchema>;
+
+export const udderCheckCreateSchema = z.object({
+  animalId: z.string().uuid(),
+  checkDate: z.coerce.date().optional(),
+  method: z.enum(UDDER_METHODS).default('CMT'),
+  quarterScores: quarterScoresSchema,
+  sccThousand: z.number().int().min(0).max(10000).optional(),
+  appearance: z.enum(MILK_APPEARANCES).default('NORMAL'),
+  signs: z.array(z.enum(UDDER_SIGNS)).default([]),
+});
+export type UdderCheckCreate = z.infer<typeof udderCheckCreateSchema>;
+
+export interface UdderCheckDto {
+  id: string;
+  animalId: string;
+  checkDate: string;
+  method: string;
+  quarterScores: QuarterScores;
+  sccThousand: number | null;
+  appearance: string;
+  signs: string[];
+  classification: 'HEALTHY' | 'SUBCLINICAL' | 'CLINICAL';
+  affectedQuarters: string[];
+  discardMilk: boolean;
+  chronicFlag: boolean;
+}
+
+export const mortalityRecordCreateSchema = z.object({
+  animalId: z.string().uuid(),
+  deathAt: z.coerce.date(),
+  causeCategory: z.enum(CAUSE_CATEGORIES),
+  suspectedDisease: z.string().max(120).optional(),
+  postMortemDone: z.boolean().optional(),
+  postMortemFindings: z.string().max(2000).optional(),
+  disposalMethod: z.enum(DISPOSAL_METHODS).optional(),
+  insuranceClaimFiled: z.boolean().optional(),
+  insuranceClaimStatus: z.string().max(80).optional(),
+  reportedToVetOffice: z.boolean().optional(),
+});
+export type MortalityRecordCreate = z.infer<typeof mortalityRecordCreateSchema>;
+
+export interface MortalityRecordDto {
+  id: string;
+  animalId: string;
+  deathAt: string;
+  causeCategory: string;
+  suspectedDisease: string | null;
+  estimatedLossNpr: number | null;
+  remainingLactationValue: number;
+  baseValue: number;
+  postMortemDone: boolean;
+  disposalMethod: string | null;
+}
+
+export interface MarkerCohortAnimalDto {
+  markerId: string;
+  animalId: string;
+  shortNo: string | null;
+  herdNumber: string | null;
+  name: string | null;
+  shed: string | null;
+  photoUrl: string | null;
+  color: MarkerColor;
+  meaning: MarkerMeaning;
+  validUntil: string | null;
+}
+
+export interface MarkerCohortGroupDto {
+  meaning: MarkerMeaning;
+  color: MarkerColor;
+  animals: MarkerCohortAnimalDto[];
+}
+
+export interface MarkerCohortDto {
+  groups: MarkerCohortGroupDto[];
+}
 
 export interface TaskDto {
   id: string;
@@ -268,6 +418,8 @@ export interface TaskDto {
   dismissReason: TaskDismissReason | null;
   /** Completing opens this path with the form prefilled — never a bare tick. */
   actionPath: string;
+  /** Set on dismiss when this type has been dismissed three times. */
+  offerMute?: boolean;
 }
 
 export interface MilkRoundAnimalDto {
@@ -308,22 +460,34 @@ export interface MilkRoundDto {
     compositeFat: number | null;
     compositeSnf: number | null;
     cobResult: CobResult;
+    delivery: {
+      id: string;
+      litresSent: number;
+      receiptUrl: string | null;
+    } | null;
   } | null;
 }
 
 export interface AnimalProfitDto {
   animalId: string;
+  shortNo?: string | null;
   herdNumber: string | null;
   tag: string;
   name: string | null;
+  photo?: string | null;
   species: string;
+  litres?: number;
   litres30d: number;
   revenue: number;
   feedCost: number;
   healthCost: number;
   labourCost: number;
+  otherCost?: number;
   profit: number;
   feedCostPerLitre: number | null;
+  costPerLitre?: number | null;
+  rank?: number;
+  trend?: 'up' | 'down' | 'flat';
   bottomDecile: boolean;
 }
 
@@ -331,9 +495,21 @@ export interface EffectivePriceDto {
   litres: number;
   netPaid: number;
   effectivePrice: number;
+  effectivePriceNpr?: number;
   headlineRate: number | null;
   periodEnd: string | null;
+  source?: 'payments' | 'fallback';
 }
+
+export const stockLotCreateSchema = z.object({
+  itemId: z.string().uuid(),
+  lotNumber: z.string().min(1).max(60),
+  qtyReceived: z.number().positive(),
+  unitCostNpr: z.number().nonnegative().optional(),
+  receivedOn: z.coerce.date().optional(),
+  expiryDate: z.coerce.date().optional(),
+});
+export type StockLotCreate = z.infer<typeof stockLotCreateSchema>;
 
 export const TAG_REPLACE_REASONS = ['LOST', 'DAMAGED', 'ILLEGIBLE', 'REPLACED'] as const;
 export type TagReplaceReason = (typeof TAG_REPLACE_REASONS)[number];
@@ -380,6 +556,7 @@ export const ADMIN_ROUTES = [
   'INTRAMAMMARY',
   'INTRANASAL',
 ] as const;
+export type AdminRoute = (typeof ADMIN_ROUTES)[number];
 
 export const batchVaccinateSchema = z.object({
   animalIds: z.array(z.string().uuid()).min(1).max(200),

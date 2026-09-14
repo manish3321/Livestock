@@ -113,7 +113,7 @@ export class WithholdsService {
         where: { id: input.healthEventId },
         data: { milkWithholdUntil: stacked },
       });
-      await this.ensureRedMarker(user, input.animalId);
+      await this.ensureRedMarker(user, input.animalId, stacked);
       await this.upsertEndTask(user.farmId, input.animalId, created.id, stacked, drugName);
       await this.audit.record({
         farmId: user.farmId,
@@ -153,20 +153,57 @@ export class WithholdsService {
     return candidate;
   }
 
-  private async ensureRedMarker(user: RequestUser, animalId: string): Promise<void> {
+  private async ensureRedMarker(user: RequestUser, animalId: string, validUntil: Date): Promise<void> {
     const existing = await this.prisma.animalMarker.findFirst({
       where: { farmId: user.farmId, animalId, meaning: 'MILK_WITHHOLD', removedAt: null },
     });
-    if (existing) return;
-    await this.prisma.animalMarker.create({
-      data: {
+    const marker = existing
+      ? await this.prisma.animalMarker.update({
+          where: { id: existing.id },
+          data: {
+            validUntil:
+              !existing.validUntil || existing.validUntil < validUntil ? validUntil : existing.validUntil,
+          },
+        })
+      : await this.prisma.animalMarker.create({
+          data: {
+            farmId: user.farmId,
+            animalId,
+            color: 'RED',
+            meaning: 'MILK_WITHHOLD',
+            placedById: user.id,
+            placedByScan: false,
+            validUntil,
+          },
+        });
+    const animal = await this.prisma.animal.findFirst({
+      where: { id: animalId },
+      select: { herdNumber: true, tag: true },
+    });
+    const label = animal?.herdNumber ?? animal?.tag ?? 'animal';
+    if (!marker.placedByScan) {
+      await ensureTask(this.prisma, {
         farmId: user.farmId,
         animalId,
-        color: 'RED',
-        meaning: 'MILK_WITHHOLD',
-        placedById: user.id,
-        placedByScan: false,
-      },
+        type: 'APPLY_MARKER',
+        titleEn: `Put a red band on ${label}`,
+        titleNp: `${label} मा रातो ब्यान्ड लगाउनुहोस्`,
+        dueAt: new Date(),
+        priority: 'HIGH',
+        sourceRefType: 'animalMarker',
+        sourceRefId: marker.id,
+      });
+    }
+    await ensureTask(this.prisma, {
+      farmId: user.farmId,
+      animalId,
+      type: 'REMOVE_MARKER',
+      titleEn: `Remove red band from ${label}`,
+      titleNp: `${label} बाट रातो ब्यान्ड हटाउनुहोस्`,
+      dueAt: marker.validUntil ?? validUntil,
+      priority: 'NORMAL',
+      sourceRefType: 'animalMarker',
+      sourceRefId: marker.id,
     });
   }
 

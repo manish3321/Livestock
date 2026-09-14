@@ -120,6 +120,12 @@ export function AppLayout() {
                   {t(`nav.${m}`)}
                 </NavLink>
               ))}
+              {group.labelKey === 'nav.group.home' && allowed.has('shed') && (
+                <>
+                  <NavLink to="/shed/cohort">{t('nav.cohort')}</NavLink>
+                  <NavLink to="/shed/sheet">{t('nav.dailySheet')}</NavLink>
+                </>
+              )}
               {group.labelKey === 'nav.group.money' && can('finance:read') && !household && (
                 <NavLink to="/profit">{t('nav.profit')}</NavLink>
               )}

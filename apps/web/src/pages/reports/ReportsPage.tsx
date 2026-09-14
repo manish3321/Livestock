@@ -8,13 +8,20 @@ import {
   getHerdMonthly,
   type HerdMonthlyReport,
 } from '../../api/batches';
+import { listAnimals } from '../../api/animals';
 import {
   downloadAnimalInventoryCsv,
   downloadPeriodCsv,
   getAnimalInventoryReport,
+  getCooperativeReport,
+  getDailyReport,
   getFarmOverview,
   getHealthSummary,
+  getInsuranceClaim,
+  getMonthlyReport,
   getPeriodReport,
+  getVaccinationProof,
+  getVetHistory,
   type ReportSummary,
 } from '../../api/reports';
 import { ErrorState, LoadingState } from '../../components/PageState';
@@ -35,6 +42,12 @@ export function ReportsPage() {
   const [showMonthly, setShowMonthly] = useState(false);
   const [periodKind, setPeriodKind] = useState<'daily' | 'weekly' | 'quarterly' | 'annual'>('weekly');
   const [showPeriod, setShowPeriod] = useState(false);
+  const [dairyKind, setDairyKind] = useState<
+    'daily' | 'monthly' | 'cooperative' | 'vaccination' | 'insurance' | 'vet' | null
+  >(null);
+  const [dairyDate, setDairyDate] = useState(now.toISOString().slice(0, 10));
+  const [disease, setDisease] = useState('');
+  const [reportAnimalId, setReportAnimalId] = useState('');
 
   const queryParams = {
     from: from ? new Date(from) : undefined,
@@ -67,6 +80,29 @@ export function ReportsPage() {
     queryKey: ['reports', 'period', periodKind],
     queryFn: () => getPeriodReport(periodKind),
     enabled: showPeriod,
+  });
+
+  const animalsQ = useQuery({
+    queryKey: ['animals', 'reports-select'],
+    queryFn: () => listAnimals({ pageSize: 200 }),
+  });
+
+  const dairy = useQuery({
+    queryKey: ['reports', 'dairy', dairyKind, dairyDate, year, month, from, to, disease, reportAnimalId],
+    queryFn: () => {
+      if (dairyKind === 'daily') return getDailyReport(dairyDate);
+      if (dairyKind === 'monthly') return getMonthlyReport(year, month);
+      if (dairyKind === 'cooperative') return getCooperativeReport(from || undefined, to || undefined);
+      if (dairyKind === 'vaccination') return getVaccinationProof(from || undefined, to || undefined, disease || undefined);
+      if (dairyKind === 'insurance') return getInsuranceClaim(reportAnimalId);
+      return getVetHistory(reportAnimalId);
+    },
+    enabled:
+      dairyKind === 'daily' ||
+      dairyKind === 'monthly' ||
+      dairyKind === 'cooperative' ||
+      dairyKind === 'vaccination' ||
+      ((dairyKind === 'insurance' || dairyKind === 'vet') && Boolean(reportAnimalId)),
   });
 
   const cards: { kind: ReportKind; title: string; body: string }[] = [
@@ -109,6 +145,64 @@ export function ReportsPage() {
               {t('reports.downloadCsv')}
             </button>
           </div>
+        )}
+      </div>
+
+      <div className="card" style={{ marginBottom: 24 }}>
+        <h2>{t('reports.dairyPacks')}</h2>
+        <p className="muted">{t('reports.dairyPacksBody')}</p>
+        <div className="chip-row" style={{ marginTop: 12 }}>
+          {(['daily', 'monthly', 'cooperative', 'vaccination', 'insurance', 'vet'] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              className={`filter-chip ${dairyKind === value ? 'active' : ''}`}
+              onClick={() => setDairyKind(value)}
+            >
+              {t(`reports.dairy.${value}`)}
+            </button>
+          ))}
+        </div>
+        {dairyKind === 'daily' && (
+          <div className="field" style={{ marginTop: 12 }}>
+            <label htmlFor="dairy-date">{t('reports.from')}</label>
+            <input id="dairy-date" type="date" value={dairyDate} onChange={(e) => setDairyDate(e.target.value)} />
+          </div>
+        )}
+        {(dairyKind === 'insurance' || dairyKind === 'vet') && (
+          <div className="field" style={{ marginTop: 12 }}>
+            <label htmlFor="dairy-animal">{t('reports.animal')}</label>
+            <select
+              id="dairy-animal"
+              value={reportAnimalId}
+              onChange={(e) => setReportAnimalId(e.target.value)}
+            >
+              <option value="">{t('reports.selectAnimal')}</option>
+              {(animalsQ.data?.items ?? []).map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.herdNumber ?? a.tag} {a.name ? `· ${a.name}` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        {dairyKind === 'vaccination' && (
+          <div className="field" style={{ marginTop: 12 }}>
+            <label htmlFor="dairy-disease">{t('reports.disease')}</label>
+            <input
+              id="dairy-disease"
+              value={disease}
+              onChange={(e) => setDisease(e.target.value)}
+              placeholder="FMD"
+            />
+          </div>
+        )}
+        {dairy.isLoading && <LoadingState />}
+        {dairy.isError && <ErrorState onRetry={() => void dairy.refetch()} />}
+        {dairy.data && (
+          <pre className="notes" style={{ marginTop: 12 }}>
+            {JSON.stringify(dairy.data, null, 2)}
+          </pre>
         )}
       </div>
 

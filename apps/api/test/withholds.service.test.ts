@@ -99,10 +99,44 @@ class WithholdFake {
           !m.removedAt,
       ) ?? null,
     create: async ({ data }: any) => {
-      const row = { id: randomUUID(), ...data };
+      const row = { id: randomUUID(), placedByScan: false, validUntil: null, ...data };
       this.markers.push(row);
       return row;
     },
+    update: async ({ where, data }: any) => {
+      const row = this.markers.find((m) => m.id === where.id);
+      Object.assign(row, data);
+      return row;
+    },
+  };
+
+  healthEvent = {
+    create: async ({ data }: any) => ({ id: randomUUID(), ...data }),
+  };
+
+  medicationAdministration = {
+    create: async ({ data }: any) => ({ id: randomUUID(), ...data }),
+  };
+
+  udderCheck = {
+    findMany: async () => [],
+    create: async ({ data }: any) => ({ id: randomUUID(), ...data }),
+  };
+
+  dailyMetric = {
+    findFirst: async () => null,
+    aggregate: async () => ({
+      _sum: { feedCostNpr: 0, healthCostNpr: 0, allocatedLabourNpr: 0, otherCostNpr: 0 },
+    }),
+  };
+
+  mortalityRecord = {
+    findUnique: async () => null,
+    create: async ({ data }: any) => ({ id: randomUUID(), ...data }),
+  };
+
+  animalStatusHistory = {
+    create: async ({ data }: any) => ({ id: randomUUID(), ...data }),
   };
 
   task = {
@@ -229,8 +263,10 @@ describe('Phase 3 milk withdrawal', () => {
     expect(db.milkWithholds).toHaveLength(1);
     expect(db.milkWithholds[0].endDate.toISOString().slice(0, 10)).toBe('2026-03-09');
     expect(db.markers[0]).toMatchObject({ color: 'RED', meaning: 'MILK_WITHHOLD' });
-    expect(db.tasks[0].type).toBe('MILK_WITHHOLD_END');
-    expect(db.tasks[0].dueAt.toISOString()).toBe('2026-03-09T00:15:00.000Z');
+    const endTask = db.tasks.find((t) => t.type === 'MILK_WITHHOLD_END');
+    expect(endTask?.dueAt.toISOString()).toBe('2026-03-09T00:15:00.000Z');
+    expect(db.tasks.some((t) => t.type === 'APPLY_MARKER')).toBe(true);
+    expect(db.tasks.some((t) => t.type === 'REMOVE_MARKER')).toBe(true);
   });
 
   it('stacks a second overlapping treatment — later endDate wins, first row stays', async () => {
