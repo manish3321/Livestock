@@ -51,12 +51,20 @@ export function recordCalving(id: string, body: import('@farm/contracts').Calvin
   return api<BreedingDto>(`/v1/breeding/${id}/calving`, { method: 'POST', body: JSON.stringify(body) });
 }
 
+export function recordFarmCalving(body: import('@farm/contracts').CalvingInput) {
+  return api(`/v1/breeding/calving`, { method: 'POST', body: JSON.stringify(body) });
+}
+
 export function pregnancyCheck(id: string, body: import('@farm/contracts').PregnancyCheck) {
   return api<BreedingDto>(`/v1/breeding/${id}/pd`, { method: 'POST', body: JSON.stringify(body) });
 }
 
 export function recordColostrum(id: string, body: import('@farm/contracts').ColostrumInput) {
   return api<BreedingDto>(`/v1/breeding/${id}/colostrum`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function recordFarmColostrum(body: import('@farm/contracts').ColostrumInput) {
+  return api(`/v1/breeding/colostrum`, { method: 'POST', body: JSON.stringify(body) });
 }
 
 export interface HeatLogDto {

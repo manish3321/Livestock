@@ -30,7 +30,7 @@ export function parseQrPayload(raw: string): QrTarget | null {
   const text = raw.trim();
   if (!text) return null;
 
-  const animalMatch = text.match(new RegExp(`(?:/scan/a/|farm://a/)(${UUID_RE})`, 'i'));
+  const animalMatch = text.match(new RegExp(`(?:/scan/a/|/a/|farm://a/)(${UUID_RE})`, 'i'));
   if (animalMatch?.[1]) return { kind: 'animal', id: animalMatch[1].toLowerCase() };
 
   const batchMatch = text.match(new RegExp(`(?:/scan/b/|farm://b/)(${UUID_RE})`, 'i'));

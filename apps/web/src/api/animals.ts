@@ -12,6 +12,12 @@ import type {
 } from '@farm/contracts';
 import { api, getAccessToken } from '../api/client';
 
+export function searchAnimals(q: string) {
+  return api<import('@farm/contracts').AnimalSearchHitDto[]>(
+    `/v1/animals/search?q=${encodeURIComponent(q)}`,
+  );
+}
+
 export function listAnimals(
   query: Partial<AnimalListQuery> = {},
 ): Promise<PageResult<AnimalDto>> {

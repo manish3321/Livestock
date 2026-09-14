@@ -199,6 +199,8 @@ export const inventoryCreateSchema = z.object({
   supplier: z.string().max(120).optional(),
   batchLotNumber: z.string().max(80).optional(),
   notes: z.string().max(2000).optional(),
+  withdrawalDaysMilk: z.number().int().min(0).max(90).optional(),
+  withdrawalDaysMeat: z.number().int().min(0).max(90).optional(),
 });
 export type InventoryCreate = z.infer<typeof inventoryCreateSchema>;
 export const inventoryUpdateSchema = inventoryCreateSchema.partial();
@@ -247,6 +249,8 @@ export const healthCreateSchema = z.object({
   batchNumber: z.string().max(80).optional(),
   doseCount: z.number().int().min(1).max(60).optional(),
   doseIntervalHours: z.number().int().min(1).max(72).optional(),
+  inventoryItemId: z.string().uuid().optional(),
+  durationDays: z.number().int().min(0).max(60).optional(),
   performedAt: z.coerce.date(),
   nextDueAt: z.coerce.date().optional(),
   notes: z.string().max(2000).optional(),
@@ -287,14 +291,26 @@ export const PREGNANCY_STATUSES = [
   'FAILED',
 ] as const;
 
+export const SERVICE_METHODS = ['NATURAL', 'AI', 'EMBRYO_TRANSFER'] as const;
+
 export const breedingCreateSchema = z.object({
-  motherId: z.string().uuid(),
-  matingType: z.enum(MATING_TYPES),
+  motherId: z.string().uuid().optional(),
+  animalId: z.string().uuid().optional(),
+  matingType: z.enum(MATING_TYPES).optional(),
+  method: z.enum(SERVICE_METHODS).optional(),
   fatherTagOrAi: z.string().max(80).optional(),
-  matingDate: z.coerce.date(),
+  matingDate: z.coerce.date().optional(),
+  serviceDate: z.coerce.date().optional(),
+  heatEventId: z.string().uuid().optional(),
+  sireId: z.string().uuid().optional(),
+  strawId: z.string().uuid().optional(),
+  technicianName: z.string().max(120).optional(),
+  technicianPhone: z.string().max(40).optional(),
+  costNpr: z.number().nonnegative().optional(),
   pregnancyStatus: z.enum(PREGNANCY_STATUSES).default('PREGNANT'),
   notes: z.string().max(2000).optional(),
-});
+}).refine((v) => Boolean(v.motherId || v.animalId), { message: 'motherId is required' })
+  .refine((v) => Boolean(v.matingDate || v.serviceDate), { message: 'serviceDate is required' });
 export type BreedingCreate = z.infer<typeof breedingCreateSchema>;
 
 export const breedingUpdateSchema = z.object({
@@ -588,13 +604,27 @@ export const feedListQuerySchema = pageQuerySchema.extend({
 });
 export type FeedListQuery = z.infer<typeof feedListQuerySchema>;
 
+export const HEAT_SIGNS = [
+  'STANDING_HEAT',
+  'MOUNTING_OTHERS',
+  'MUCUS_DISCHARGE',
+  'VULVA_SWELLING',
+  'BELLOWING',
+  'RESTLESSNESS',
+  'REDUCED_MILK',
+  'TAIL_RAISED',
+  'OFF_FEED',
+] as const;
+
 export const heatCreateSchema = z.object({
   animalId: z.string().uuid(),
   observedAt: z.coerce.date().default(() => new Date()),
-  intensity: z.enum(['WEAK', 'MEDIUM', 'STRONG']),
+  intensity: z.enum(['WEAK', 'MEDIUM', 'STRONG', 'SILENT_SUSPECTED']),
   observerName: z.string().max(80).optional(),
   signs: z.string().max(500).optional(),
+  signList: z.array(z.enum(HEAT_SIGNS)).optional(),
   notes: z.string().max(1000).optional(),
+  deviceId: z.string().max(80).optional(),
 });
 export type HeatCreate = z.infer<typeof heatCreateSchema>;
 

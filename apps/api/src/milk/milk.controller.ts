@@ -2,6 +2,8 @@ import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Patch, Post, Quer
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   deliveryCreateSchema,
+  milkEntryCreateSchema,
+  milkEntryPatchSchema,
   milkRecordSchema,
   milkRoundStartSchema,
   milkSkipSchema,
@@ -10,8 +12,11 @@ import {
 } from '@farm/contracts';
 import type {
   DeliveryCreate,
+  MilkEntryCreate,
+  MilkEntryPatch,
   MilkRecord,
   MilkRoundStart,
+  MilkSession,
   MilkSkip,
   PaymentStatementCreate,
   TankUpdate,
@@ -25,6 +30,34 @@ import { MilkService } from './milk.service';
 @Controller('milk')
 export class MilkController {
   constructor(private readonly milk: MilkService) {}
+
+  @Post()
+  @RequirePermissions('production:write')
+  @ApiOperation({ summary: 'Record one animal for a session. Duplicates are 409.' })
+  createEntry(
+    @CurrentUser() user: RequestUser,
+    @Body(new ZodValidationPipe(milkEntryCreateSchema)) body: MilkEntryCreate,
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    return this.milk.createEntry(user, body, requestId);
+  }
+
+  @Get('today')
+  @RequirePermissions('production:read')
+  today(@CurrentUser() user: RequestUser, @Query('session') session?: MilkSession) {
+    return this.milk.today(user, session);
+  }
+
+  @Patch(':id')
+  @RequirePermissions('production:write')
+  @ApiOperation({ summary: 'Correct litres. Writes a revision; never silent overwrite.' })
+  patchEntry(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(milkEntryPatchSchema)) body: MilkEntryPatch,
+  ) {
+    return this.milk.patchEntry(user, id, body);
+  }
 
   @Get('daily-sheet')
   @RequirePermissions('production:read')

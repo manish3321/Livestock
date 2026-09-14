@@ -83,6 +83,9 @@ type SpeciesConfigRow = {
   targetCalvingIntervalDays: number;
   dryOffDaysBeforeCalving: number;
   minWeightFirstServiceKg: number;
+  serviceWindowStartHours?: number;
+  serviceWindowEndHours?: number;
+  silentHeatCheckHour?: number | null;
   fatMinPercent: unknown;
   fatMaxPercent: unknown;
 };
@@ -99,6 +102,9 @@ function toDto(row: SpeciesConfigRow): SpeciesConfigDto {
     targetCalvingIntervalDays: row.targetCalvingIntervalDays,
     dryOffDaysBeforeCalving: row.dryOffDaysBeforeCalving,
     minWeightFirstServiceKg: row.minWeightFirstServiceKg,
+    serviceWindowStartHours: row.serviceWindowStartHours ?? 12,
+    serviceWindowEndHours: row.serviceWindowEndHours ?? 18,
+    silentHeatCheckHour: row.silentHeatCheckHour ?? null,
     fatMinPercent: Number(row.fatMinPercent),
     fatMaxPercent: Number(row.fatMaxPercent),
   };

@@ -12,7 +12,10 @@ import {
 import { listAnimals } from '../../api/animals';
 import { listBatches } from '../../api/batches';
 import { NEPAL_VACCINE_PROTOCOLS } from '@farm/contracts';
+import { listInventory } from '../../api/inventory';
 import { createHealthRecord, groupVaccinate, listHealthCalendar, listHealthRecords, type HealthRecordDto } from '../../api/health';
+import { listActiveWithholds } from '../../api/withholds';
+import { WithholdBanner } from '../../components/WithholdBanner';
 import { useAuth } from '../../auth/auth-context';
 import { DataTable, type Column } from '../../components/DataTable';
 import { ErrorState, LoadingState } from '../../components/PageState';
@@ -128,6 +131,8 @@ export function HealthPage() {
         milkWithholdUntil: form.milkWithholdUntil,
         meatWithholdUntil: form.meatWithholdUntil,
         batchNumber: form.batchNumber,
+        inventoryItemId: form.inventoryItemId,
+        durationDays: form.durationDays,
         doseCount: form.doseCount,
         doseIntervalHours: form.doseIntervalHours,
         performedAt: form.performedAt ?? new Date(),
@@ -205,23 +210,7 @@ export function HealthPage() {
         )}
       </div>
 
-      {(() => {
-        const now = Date.now();
-        const holds = (query.data?.items ?? []).filter(
-          (r) => r.milkWithholdUntil && new Date(r.milkWithholdUntil).getTime() >= now,
-        );
-        if (holds.length === 0) return null;
-        return (
-          <div className="hold-banner hold-banner-red">
-            {t('health.withholdBanner', { n: holds.length })}
-            {': '}
-            {holds
-              .slice(0, 6)
-              .map((r) => `${r.animalTag ?? r.animalId} → ${formatDate(r.milkWithholdUntil!)}`)
-              .join(' · ')}
-          </div>
-        );
-      })()}
+      <ActiveWithholdBrief />
 
       <div className="card" style={{ marginBottom: 16 }}>
         <h2>{t('health.protocols')}</h2>
@@ -513,6 +502,7 @@ export function HealthPage() {
                 }
               />
             </div>
+            <InventoryWithholdFields form={form} setForm={setForm} />
             <div className="field">
               <label htmlFor="health-method">{t('health.method')}</label>
               <input
@@ -677,6 +667,86 @@ export function HealthPage() {
         </>
       )}
     </div>
+  );
+}
+
+function ActiveWithholdBrief() {
+  const { t } = useTranslation();
+  const q = useQuery({ queryKey: ['withholds-active'], queryFn: listActiveWithholds });
+  const holds = q.data ?? [];
+  if (holds.length === 0) return null;
+  return (
+    <>
+      {holds.slice(0, 4).map((h) => (
+        <WithholdBanner key={h.id} messageNp={`${h.messageNp} · ${h.shortNo ?? h.name ?? ''}`} endDate={h.endDate} />
+      ))}
+      {holds.length > 4 && (
+        <p className="muted">{t('health.withholdBanner', { n: holds.length })}</p>
+      )}
+    </>
+  );
+}
+
+function InventoryWithholdFields({
+  form,
+  setForm,
+}: {
+  form: Partial<HealthCreate>;
+  setForm: (fn: (prev: Partial<HealthCreate>) => Partial<HealthCreate>) => void;
+}) {
+  const { t } = useTranslation();
+  const invQ = useQuery({
+    queryKey: ['inventory'],
+    queryFn: () => listInventory({ pageSize: 100 }),
+  });
+  const items = (invQ.data?.items ?? []).filter(
+    (i) => i.category === 'MEDICINE' || i.category === 'VACCINE',
+  );
+  const selected = items.find((i) => i.id === form.inventoryItemId);
+  return (
+    <>
+      <div className="field">
+        <label htmlFor="health-item">{t('health.inventoryItem')}</label>
+        <select
+          id="health-item"
+          value={form.inventoryItemId ?? ''}
+          onChange={(e) =>
+            setForm((prev) => ({ ...prev, inventoryItemId: e.target.value || undefined }))
+          }
+        >
+          <option value="">{t('health.noInventoryItem')}</option>
+          {items.map((i) => (
+            <option key={i.id} value={i.id}>
+              {i.name}
+              {i.withdrawalDaysMilk ? ` · ${i.withdrawalDaysMilk}d milk` : ''}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field">
+        <label htmlFor="health-duration">{t('health.durationDays')}</label>
+        <input
+          id="health-duration"
+          type="number"
+          min={0}
+          max={60}
+          value={form.durationDays ?? ''}
+          onChange={(e) =>
+            setForm((prev) => ({
+              ...prev,
+              durationDays: e.target.value === '' ? undefined : Number(e.target.value),
+            }))
+          }
+        />
+        {selected && (selected.withdrawalDaysMilk ?? 0) > 0 && (
+          <p className="muted">
+            {t('health.computedWithhold', {
+              n: (form.durationDays ?? 0) + (selected.withdrawalDaysMilk ?? 0),
+            })}
+          </p>
+        )}
+      </div>
+    </>
   );
 }
 

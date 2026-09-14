@@ -55,6 +55,8 @@ describe('RBAC permission map', () => {
     expect(hasPermission('WORKER', 'tasks:read')).toBe(true);
     expect(hasPermission('WORKER', 'tasks:manage')).toBe(false);
     expect(hasPermission('MANAGER', 'tasks:manage')).toBe(true);
+    expect(hasPermission('WORKER', 'rounds:read')).toBe(true);
+    expect(hasPermission('WORKER', 'rounds:write')).toBe(true);
     expect(modulesForRole('WORKER')).toContain('shed');
     expect(modulesForRole('WORKER')).toContain('inbox');
   });

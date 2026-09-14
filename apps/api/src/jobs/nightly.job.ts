@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { NEPAL_VACCINE_PROTOCOLS } from '@farm/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 import { SpeciesConfigService } from '../species-config/species-config.service';
+import { nepalSixAmOn } from '../withholds/withhold-rules';
 import { PROTOCOL_TASK_IDS, ensureTask } from './task-writer';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -42,6 +43,7 @@ export class NightlyJob {
     await this.expireOldTasks(farmId, now);
     await this.vaccinationTasks(farmId, now);
     await this.breedingTasks(farmId, now);
+    await this.silentHeatTasks(farmId, now);
     await this.withholdEndTasks(farmId, now);
     await this.stockTasks(farmId, now);
     await this.missingMilkTasks(farmId, now);
@@ -175,32 +177,15 @@ export class NightlyJob {
         }
       }
 
-      if (rec.mother.species === 'BUFFALO' && rec.pregnancyStatus === 'OPEN') {
-        const expectedHeat = new Date(rec.matingDate.getTime() + cfg.estrusCycleDays * DAY);
-        const silentAt = new Date(expectedHeat.getTime() + 30 * DAY);
-        silentAt.setHours(4, 30, 0, 0);
-        if (silentAt <= new Date(now.getTime() + 60 * DAY)) {
-          await ensureTask(this.prisma, {
-            farmId,
-            animalId: rec.motherId,
-            type: 'SILENT_HEAT_CHECK',
-            titleEn: `Look at ${label} before dawn — buffalo silent heat`,
-            titleNp: `${label} बिहान ४:३० मा हेर्नुहोस् — मौन रजस्वला`,
-            dueAt: silentAt,
-            priority: 'NORMAL',
-            sourceRefType: 'breedingRecord',
-            sourceRefId: rec.id,
-          });
-        }
-      }
     }
 
-    const heats = await this.prisma.heatLog.findMany({
+    const heats = await this.prisma.heatEvent.findMany({
       where: { farmId, observedAt: { gte: new Date(now.getTime() - 4 * DAY) } },
       include: { animal: true },
     });
     for (const heat of heats) {
-      const watch = new Date(heat.observedAt.getTime() + 19 * DAY);
+      const cfg = await this.species.forSpecies(heat.animal.species);
+      const watch = new Date(heat.observedAt.getTime() + (cfg.estrusCycleDays - 2) * DAY);
       watch.setHours(5, 0, 0, 0);
       const label = heat.animal.herdNumber ?? heat.animal.tag;
       await ensureTask(this.prisma, {
@@ -211,36 +196,77 @@ export class NightlyJob {
         titleNp: `${label} रजस्वला हेर्ने`,
         dueAt: watch,
         priority: 'HIGH',
-        sourceRefType: 'heatLog',
+        sourceRefType: 'heatEvent',
         sourceRefId: heat.id,
       });
-      const windowOpen = new Date(heat.observedAt.getTime() + 12 * 60 * 60 * 1000);
+      const windowOpen = new Date(
+        heat.observedAt.getTime() + cfg.serviceWindowStartHours * 60 * 60 * 1000,
+      );
       await ensureTask(this.prisma, {
         farmId,
         animalId: heat.animalId,
         type: 'SERVICE_WINDOW',
-        titleEn: `Breed ${label} within 18 hours of standing heat`,
-        titleNp: `${label} लाई १८ घण्टाभित्र सेवा दिनुहोस्`,
+        titleEn: `Breed ${label} within ${cfg.serviceWindowEndHours} hours of standing heat`,
+        titleNp: `${label} लाई ${cfg.serviceWindowEndHours} घण्टाभित्र सेवा दिनुहोस्`,
         dueAt: windowOpen,
         priority: 'HIGH',
-        sourceRefType: 'heatLog',
+        sourceRefType: 'heatEvent',
         sourceRefId: heat.id,
       });
     }
   }
 
-  private async withholdEndTasks(farmId: string, now: Date): Promise<void> {
-    const holds = await this.prisma.healthRecord.findMany({
+  private async silentHeatTasks(farmId: string, now: Date): Promise<void> {
+    const cfg = await this.species.forSpecies('BUFFALO');
+    if (cfg.silentHeatCheckHour == null) return;
+
+    const herd = await this.prisma.animal.findMany({
       where: {
         farmId,
-        milkWithholdUntil: { gte: now, lte: new Date(now.getTime() + 7 * DAY) },
+        deletedAt: null,
+        species: 'BUFFALO',
+        gender: 'FEMALE',
+        isPregnant: false,
+        status: { notIn: [...EXIT] },
+      },
+    });
+    const since = new Date(now.getTime() - 30 * DAY);
+    for (const animal of herd) {
+      if (!animal.lactationStartDate) continue;
+      const dim = (now.getTime() - animal.lactationStartDate.getTime()) / DAY;
+      if (dim < cfg.voluntaryWaitingDays) continue;
+      const recent = await this.prisma.heatEvent.findFirst({
+        where: { farmId, animalId: animal.id, observedAt: { gte: since } },
+      });
+      if (recent) continue;
+      const due = new Date(now);
+      due.setHours(cfg.silentHeatCheckHour, 0, 0, 0);
+      const label = animal.herdNumber ?? animal.tag;
+      await ensureTask(this.prisma, {
+        farmId,
+        animalId: animal.id,
+        type: 'SILENT_HEAT_CHECK',
+        titleEn: `Check ${label} between 4 and 7am — buffalo silent heat`,
+        titleNp: `${label} बिहान ४ देखि ७ बजेसम्म हेर्नुहोस् — मौन रजस्वला`,
+        dueAt: due,
+        priority: 'NORMAL',
+        sourceRefType: 'silentHeat',
+        sourceRefId: animal.id,
+      });
+    }
+  }
+
+  private async withholdEndTasks(farmId: string, now: Date): Promise<void> {
+    const holds = await this.prisma.milkWithhold.findMany({
+      where: {
+        farmId,
+        clearedAt: null,
+        endDate: { gte: now, lte: new Date(now.getTime() + 7 * DAY) },
       },
       include: { animal: true },
     });
     for (const h of holds) {
-      if (!h.animal || !h.milkWithholdUntil) continue;
-      const due = new Date(h.milkWithholdUntil);
-      due.setHours(6, 0, 0, 0);
+      const due = nepalSixAmOn(h.endDate);
       const label = h.animal.herdNumber ?? h.animal.tag;
       await ensureTask(this.prisma, {
         farmId,
@@ -250,7 +276,7 @@ export class NightlyJob {
         titleNp: `${label} को दूध रोक अब सकिन्छ`,
         dueAt: due,
         priority: 'NORMAL',
-        sourceRefType: 'healthRecord',
+        sourceRefType: 'milkWithhold',
         sourceRefId: h.id,
       });
     }

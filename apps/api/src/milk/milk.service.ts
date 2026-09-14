@@ -3,21 +3,28 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import type {
   AnimalProfitDto,
   DeliveryCreate,
   EffectivePriceDto,
+  MilkEntryCreate,
+  MilkEntryDto,
+  MilkEntryPatch,
   MilkRecord,
   MilkRoundDto,
   MilkRoundStart,
+  MilkSession,
   MilkSkip,
   PaymentStatementCreate,
   TankUpdate,
 } from '@farm/contracts';
+import { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
+import { mapMilkDisposal, NOT_MILKING_STATUSES, startOfUtcDay, toApiDisposal } from './milk-rules';
 
 const EXIT = ['SOLD', 'DEAD', 'CULLED'] as const;
 const DAY = 24 * 60 * 60 * 1000;
@@ -132,8 +139,9 @@ export class MilkService {
       .sort(byShedThenNumber);
     const recordedAnimals = herd.filter((a) => recordedByAnimal.has(a.id)).map(toRow).sort(byShedThenNumber);
 
+    const withheldIds = await animalIdsWithActiveMilk(this.prisma, user.farmId);
     const expected = round.entries
-      .filter((e) => e.destination === 'SOLD')
+      .filter((e) => e.destination === 'SOLD' && (!e.animalId || !withheldIds.has(e.animalId)))
       .reduce((s, e) => s + Number(e.quantity), 0);
 
     return {
@@ -196,12 +204,13 @@ export class MilkService {
       });
     }
 
-    const withhold = animal.health[0]?.milkWithholdUntil;
+    const withhold =
+      (await latestMilkWithhold(this.prisma, user.farmId, animal.id)) ?? animal.health[0]?.milkWithholdUntil;
     if (withhold && input.destination === 'SOLD') {
-      throw new BadRequestException({
-        code: 'MILK_WITHHOLD',
-        message: `Milk must not be sold until ${withhold.toISOString().slice(0, 10)}. Discard, feed a calf, or keep for the house.`,
-        withholdUntil: withhold.toISOString(),
+      throw new UnprocessableEntityException({
+        code: 'MILK_WITHHOLD_ACTIVE',
+        message: `Milk must not be sold until ${withhold.toISOString().slice(0, 10)}`,
+        details: { withholdUntil: withhold.toISOString() },
       });
     }
 
@@ -327,10 +336,13 @@ export class MilkService {
 
   async finish(user: RequestUser, roundId: string): Promise<MilkRoundDto> {
     const round = await this.requireOpenRound(user.farmId, roundId);
+    const withheldIds = await animalIdsWithActiveMilk(this.prisma, user.farmId);
     const entries = await this.prisma.productionEntry.findMany({
       where: { milkRoundId: round.id, destination: 'SOLD' },
     });
-    const expected = entries.reduce((s, e) => s + Number(e.quantity), 0);
+    const expected = entries
+      .filter((e) => !e.animalId || !withheldIds.has(e.animalId))
+      .reduce((s, e) => s + Number(e.quantity), 0);
     await this.prisma.$transaction([
       this.prisma.milkTank.upsert({
         where: { roundId: round.id },
@@ -494,6 +506,191 @@ export class MilkService {
     }));
   }
 
+  async createEntry(user: RequestUser, input: MilkEntryCreate, requestId?: string): Promise<MilkEntryDto> {
+    const date = startOfUtcDay(input.date ?? new Date());
+    const animal = await this.prisma.animal.findFirst({
+      where: { id: input.animalId, farmId: user.farmId, deletedAt: null },
+      include: {
+        health: {
+          where: { milkWithholdUntil: { gte: new Date() } },
+          orderBy: { milkWithholdUntil: 'desc' },
+          take: 1,
+        },
+        production: {
+          where: { type: 'MILK', entryDate: { gte: new Date(Date.now() - 7 * DAY) } },
+        },
+      },
+    });
+    if (!animal) {
+      throw new NotFoundException({ code: 'ANIMAL_NOT_FOUND', message: 'Animal not found' });
+    }
+    if ((NOT_MILKING_STATUSES as readonly string[]).includes(animal.status)) {
+      throw new UnprocessableEntityException({
+        code: 'ANIMAL_NOT_MILKING',
+        message: animal.status === 'DRY' ? 'She is marked dry' : 'This animal has left the herd',
+      });
+    }
+
+    const withhold =
+      (await latestMilkWithhold(this.prisma, user.farmId, animal.id)) ?? animal.health[0]?.milkWithholdUntil;
+    if (withhold && input.disposal === 'SOLD') {
+      throw new UnprocessableEntityException({
+        code: 'MILK_WITHHOLD_ACTIVE',
+        message: `Milk must not be sold until ${withhold.toISOString().slice(0, 10)}`,
+        details: { withholdUntil: withhold.toISOString() },
+      });
+    }
+
+    const existing = await this.prisma.productionEntry.findFirst({
+      where: {
+        farmId: user.farmId,
+        animalId: animal.id,
+        type: 'MILK',
+        session: input.session,
+        entryDate: date,
+      },
+    });
+    if (existing) {
+      throw new ConflictException({
+        code: 'DUPLICATE_MILK_RECORD',
+        message: 'This animal already has a figure for that session',
+        details: {
+          id: existing.id,
+          litres: Number(existing.quantity),
+          disposal: toApiDisposal(existing.destination),
+        },
+      });
+    }
+
+    const destination = mapMilkDisposal(input.disposal);
+    let milkRoundId = input.roundId
+      ? (
+          await this.prisma.recordingRound.findFirst({
+            where: { id: input.roundId, farmId: user.farmId },
+            select: { milkRoundId: true },
+          })
+        )?.milkRoundId ?? undefined
+      : undefined;
+    if (!milkRoundId) {
+      const milkRound = await this.currentOrStart(user, { session: input.session, roundDate: date });
+      milkRoundId = milkRound.id;
+    }
+
+    let created;
+    try {
+      created = await this.prisma.productionEntry.create({
+        data: {
+          farmId: user.farmId,
+          type: 'MILK',
+          entryDate: date,
+          quantity: input.litres,
+          unit: 'L',
+          animalId: animal.id,
+          milkRoundId,
+          session: input.session,
+          destination,
+          milkerName: user.email,
+        },
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new ConflictException({
+          code: 'DUPLICATE_MILK_RECORD',
+          message: 'This animal already has a figure for that session',
+        });
+      }
+      throw err;
+    }
+
+    if (input.roundId) {
+      await this.prisma.recordingRound
+        .update({
+          where: { id: input.roundId },
+          data: { recordedCount: { increment: 1 } },
+        })
+        .catch(() => undefined);
+    }
+
+    const usual =
+      animal.production.length > 0
+        ? animal.production.reduce((s, p) => s + Number(p.quantity), 0) / animal.production.length
+        : null;
+    if (usual && input.litres < usual * 0.8) {
+      await this.prisma.task.create({
+        data: {
+          farmId: user.farmId,
+          animalId: animal.id,
+          type: 'YIELD_DROP',
+          titleEn: `${animal.herdNumber ?? animal.tag} dropped below 80% of her own average`,
+          titleNp: `${animal.herdNumber ?? animal.tag} आफ्नो औसतको ८०% भन्दा घट्यो`,
+          dueAt: new Date(),
+          priority: 'HIGH',
+          source: 'AUTO',
+          sourceRefType: 'productionEntry',
+          sourceRefId: created.id,
+        },
+      }).catch(() => undefined);
+    }
+
+    await this.audit.record({
+      farmId: user.farmId,
+      userId: user.id,
+      action: 'milk.record',
+      entityType: 'productionEntry',
+      entityId: created.id,
+      metadata: { litres: input.litres, disposal: input.disposal },
+      requestId,
+    });
+
+    return toMilkEntryDto(created, input.roundId ?? null);
+  }
+
+  async patchEntry(user: RequestUser, id: string, input: MilkEntryPatch): Promise<MilkEntryDto> {
+    const entry = await this.prisma.productionEntry.findFirst({
+      where: { id, farmId: user.farmId, type: 'MILK' },
+    });
+    if (!entry) {
+      throw new NotFoundException({ code: 'MILK_NOT_FOUND', message: 'Milk record not found' });
+    }
+    await this.prisma.productionRevision.create({
+      data: {
+        farmId: user.farmId,
+        entryId: entry.id,
+        previousQuantity: entry.quantity,
+        newQuantity: input.litres,
+        reason: input.reason,
+        changedById: user.id,
+      },
+    });
+    const updated = await this.prisma.productionEntry.update({
+      where: { id: entry.id },
+      data: { quantity: input.litres },
+    });
+    await this.audit.record({
+      farmId: user.farmId,
+      userId: user.id,
+      action: 'milk.record.correct',
+      entityType: 'productionEntry',
+      entityId: entry.id,
+      metadata: { litres: input.litres, reason: input.reason },
+    });
+    return toMilkEntryDto(updated, null);
+  }
+
+  async today(user: RequestUser, session?: MilkSession): Promise<MilkEntryDto[]> {
+    const date = startOfUtcDay(new Date());
+    const rows = await this.prisma.productionEntry.findMany({
+      where: {
+        farmId: user.farmId,
+        type: 'MILK',
+        entryDate: date,
+        ...(session ? { session } : {}),
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map((r) => toMilkEntryDto(r, null));
+  }
+
   async lookup(user: RequestUser, q: string) {
     const needle = q.trim().toUpperCase().replace(/^0+/, '');
     if (!needle) return [];
@@ -533,6 +730,48 @@ export class MilkService {
     }
     return round;
   }
+}
+
+function toMilkEntryDto(
+  row: {
+    id: string;
+    animalId: string | null;
+    entryDate: Date;
+    session: MilkSession | null;
+    quantity: Prisma.Decimal | number;
+    destination?: string | null;
+  },
+  roundId: string | null,
+): MilkEntryDto {
+  return {
+    id: row.id,
+    animalId: row.animalId ?? '',
+    date: row.entryDate.toISOString(),
+    session: (row.session ?? 'MORNING') as MilkSession,
+    litres: Number(row.quantity),
+    disposal: toApiDisposal(row.destination) ?? 'SOLD',
+    roundId,
+  };
+}
+
+async function latestMilkWithhold(
+  prisma: PrismaService,
+  farmId: string,
+  animalId: string,
+): Promise<Date | null> {
+  const row = await prisma.milkWithhold.findFirst({
+    where: { farmId, animalId, clearedAt: null, endDate: { gte: new Date() } },
+    orderBy: { endDate: 'desc' },
+  });
+  return row?.endDate ?? null;
+}
+
+async function animalIdsWithActiveMilk(prisma: PrismaService, farmId: string): Promise<Set<string>> {
+  const rows = await prisma.milkWithhold.findMany({
+    where: { farmId, clearedAt: null, endDate: { gte: new Date() } },
+    select: { animalId: true },
+  });
+  return new Set(rows.map((r) => r.animalId));
 }
 
 function startOfDay(d: Date): Date {

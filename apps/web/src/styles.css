@@ -1394,6 +1394,10 @@ button {
 .shed-mode[data-session='MIDDAY'] { background: #2a3d4d; }
 .shed-mode[data-mode='VACCINATION'] { background: #1d3557; }
 .shed-mode[data-mode='TREATMENT'] { background: #4a1942; }
+.shed-mode[data-mode='WEIGHING'] { background: #3d3a1f; }
+.shed-mode[data-mode='HEALTH_CHECK'] { background: #1f3d4d; }
+.shed-mode[data-mode='MARKER_PLACEMENT'] { background: #6b2d12; }
+.shed-mode[data-mode='BROWSE'] { background: #333; }
 .shed-mode[data-mode='BAND'] { background: #6b2d12; }
 .shed-modes {
   display: flex;
@@ -1403,6 +1407,33 @@ button {
 }
 .shed-modes .btn { padding: 8px 10px; font-size: 0.85rem; }
 .shed-camera { min-height: 180px; margin: 8px 0; }
+.shed-camera-docked { min-height: 96px; max-height: 120px; overflow: hidden; }
+.shed-thumb {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: #efe8dc;
+}
+.shed-thumb-empty { display: inline-block; }
+.shed-photos {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 12px 0;
+}
+.shed-photo {
+  border: 0;
+  background: #fff;
+  border-radius: 12px;
+  padding: 6px;
+  min-height: 96px;
+}
+.shed-photo img { width: 100%; height: 72px; object-fit: cover; border-radius: 8px; }
+.shed-placeholder { color: #b7a99a; font-weight: 600; }
+.shed-finish-sheet { margin-top: 12px; }
+.shed-finish-row { margin-bottom: 16px; }
+.shed-row { grid-template-columns: 48px 72px 1fr auto; }
 .hold-banner {
   font-weight: 700;
   padding: 12px 16px;

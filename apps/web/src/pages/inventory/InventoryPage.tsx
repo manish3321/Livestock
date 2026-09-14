@@ -73,6 +73,8 @@ export function InventoryPage() {
         supplier: form.supplier,
         batchLotNumber: form.batchLotNumber,
         notes: form.notes,
+        withdrawalDaysMilk: form.withdrawalDaysMilk,
+        withdrawalDaysMeat: form.withdrawalDaysMeat,
       };
       if (editingId) return updateInventory(editingId, payload);
       return createInventory(payload);
@@ -124,6 +126,8 @@ export function InventoryPage() {
       supplier: row.supplier ?? undefined,
       batchLotNumber: row.batchLotNumber ?? undefined,
       notes: row.notes ?? undefined,
+      withdrawalDaysMilk: row.withdrawalDaysMilk,
+      withdrawalDaysMeat: row.withdrawalDaysMeat,
     });
   };
 
@@ -354,6 +358,38 @@ export function InventoryPage() {
                   setForm((prev) => ({
                     ...prev,
                     unitCost: e.target.value ? Number(e.target.value) : undefined,
+                  }))
+                }
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="inv-wd-milk">{t('inventory.withdrawalDaysMilk')}</label>
+              <input
+                id="inv-wd-milk"
+                type="number"
+                min="0"
+                max="90"
+                value={form.withdrawalDaysMilk ?? 0}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    withdrawalDaysMilk: e.target.value ? Number(e.target.value) : 0,
+                  }))
+                }
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="inv-wd-meat">{t('inventory.withdrawalDaysMeat')}</label>
+              <input
+                id="inv-wd-meat"
+                type="number"
+                min="0"
+                max="90"
+                value={form.withdrawalDaysMeat ?? 0}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    withdrawalDaysMeat: e.target.value ? Number(e.target.value) : 0,
                   }))
                 }
               />

@@ -72,6 +72,8 @@ export const PERMISSIONS = [
   'sync:use',
   'tasks:read',
   'tasks:manage',
+  'rounds:read',
+  'rounds:write',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -96,6 +98,8 @@ const WORKER_PERMISSIONS: Permission[] = [
   'expenses:submit',
   'sync:use',
   'tasks:read',
+  'rounds:read',
+  'rounds:write',
 ];
 
 const MANAGER_PERMISSIONS: Permission[] = [
@@ -127,6 +131,8 @@ const VET_PERMISSIONS: Permission[] = [
   'breeding:write',
   'production:read',
   'tasks:read',
+  'rounds:read',
+  'rounds:write',
   'sync:use',
 ];
 

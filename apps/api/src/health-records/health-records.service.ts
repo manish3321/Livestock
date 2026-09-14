@@ -12,6 +12,7 @@ import type { HealthRecord, Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
+import { WithholdsService } from '../withholds/withholds.service';
 
 export interface HealthRecordDto {
   id: string;
@@ -52,6 +53,7 @@ export class HealthRecordsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly withholds: WithholdsService,
   ) {}
 
   async list(
@@ -151,18 +153,6 @@ export class HealthRecordsService {
       }
     }
 
-    if (input.animalId && input.milkWithholdUntil) {
-      const existing = await this.prisma.healthRecord.findMany({
-        where: { farmId: user.farmId, animalId: input.animalId, milkWithholdUntil: { not: null } },
-        select: { milkWithholdUntil: true },
-      });
-      const stacked = existing.reduce(
-        (max, r) => (r.milkWithholdUntil && r.milkWithholdUntil > max ? r.milkWithholdUntil : max),
-        input.milkWithholdUntil,
-      );
-      input = { ...input, milkWithholdUntil: stacked };
-    }
-
     const row = await this.prisma.healthRecord.create({
       data: {
         farmId: user.farmId,
@@ -182,6 +172,8 @@ export class HealthRecordsService {
         milkWithholdUntil: input.milkWithholdUntil,
         meatWithholdUntil: input.meatWithholdUntil,
         batchNumber: input.batchNumber,
+        inventoryItemId: input.inventoryItemId,
+        durationDays: input.durationDays,
         performedAt: input.performedAt,
         nextDueAt,
         notes: input.notes,
@@ -201,6 +193,19 @@ export class HealthRecordsService {
       requestId,
     });
 
+    if (input.animalId) {
+      await this.withholds.applyFromTreatment(user, {
+        animalId: input.animalId,
+        healthEventId: row.id,
+        inventoryItemId: input.inventoryItemId,
+        medicine: input.medicine ?? input.title,
+        firstDoseAt: input.performedAt,
+        durationDays: input.durationDays ?? 0,
+        explicitMilkUntil: input.milkWithholdUntil,
+        explicitMeatUntil: input.meatWithholdUntil,
+      });
+    }
+
     if (input.animalId && input.doseCount && input.doseCount > 1) {
       const hours = input.doseIntervalHours ?? 12;
       for (let i = 1; i < input.doseCount; i++) {
@@ -218,7 +223,7 @@ export class HealthRecordsService {
       }
     }
 
-    return toDto(row);
+    return this.get(user, row.id);
   }
 
   async groupVaccinate(user: RequestUser, input: GroupVaccinate, requestId?: string) {

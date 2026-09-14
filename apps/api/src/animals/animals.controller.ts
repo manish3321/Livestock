@@ -56,6 +56,13 @@ export class AnimalsController {
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
   ) {}
 
+  @Get('search')
+  @RequirePermissions('animals:read')
+  @ApiOperation({ summary: 'Numeric shed search: 42 finds B42 and C42' })
+  search(@CurrentUser() user: RequestUser, @Query('q') q: string) {
+    return this.animals.search(user, q ?? '');
+  }
+
   @Get()
   @RequirePermissions('animals:read')
   @ApiOperation({ summary: 'List animals with search and filters' })

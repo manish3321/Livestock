@@ -62,6 +62,8 @@ function defaultCode(status: number): string {
       return 'NOT_FOUND';
     case 409:
       return 'CONFLICT';
+    case 422:
+      return 'UNPROCESSABLE_ENTITY';
     case 429:
       return 'RATE_LIMITED';
     default:

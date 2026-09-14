@@ -30,11 +30,13 @@ import { RevenueModule } from './revenue/revenue.module';
 import { StorageModule } from './storage/storage.module';
 import { SyncModule } from './sync/sync.module';
 import { MilkModule } from './milk/milk.module';
+import { RoundsModule } from './rounds/rounds.module';
 import { TasksModule } from './tasks/tasks.module';
+import { WithholdsModule } from './withholds/withholds.module';
 
 /** Cron does not run on Vercel serverless; skip the ESM schedule package there. */
 function cronSupport(): { imports: DynamicModule[]; providers: Provider[] } {
-  if (process.env.VERCEL) return { imports: [], providers: [] };
+  if (process.env.VERCEL || process.env.VITEST) return { imports: [], providers: [] };
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { ScheduleModule } = require('@nestjs/schedule') as typeof import('@nestjs/schedule');
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -72,7 +74,9 @@ const cron = cronSupport();
     PnlModule,
     ReportsModule,
     MilkModule,
+    RoundsModule,
     TasksModule,
+    WithholdsModule,
   ],
   providers: [
     ...cron.providers,

@@ -11,7 +11,7 @@ export const fakeAudit = {
  * Reproductive constants for tests. Buffalo and cow values match the seed, so a
  * test asserting a due date is checking the real gestation length.
  */
-const SPECIES_CONSTANTS: Record<string, Record<string, number>> = {
+const SPECIES_CONSTANTS: Record<string, Record<string, number | null>> = {
   BUFFALO: {
     gestationDays: 310,
     lactationDays: 242,
@@ -22,6 +22,9 @@ const SPECIES_CONSTANTS: Record<string, Record<string, number>> = {
     targetCalvingIntervalDays: 425,
     dryOffDaysBeforeCalving: 60,
     minWeightFirstServiceKg: 300,
+    serviceWindowStartHours: 12,
+    serviceWindowEndHours: 18,
+    silentHeatCheckHour: 4,
     fatMinPercent: 6.5,
     fatMaxPercent: 8,
   },
@@ -35,6 +38,9 @@ const SPECIES_CONSTANTS: Record<string, Record<string, number>> = {
     targetCalvingIntervalDays: 380,
     dryOffDaysBeforeCalving: 60,
     minWeightFirstServiceKg: 250,
+    serviceWindowStartHours: 12,
+    serviceWindowEndHours: 18,
+    silentHeatCheckHour: null,
     fatMinPercent: 3.5,
     fatMaxPercent: 4.5,
   },
@@ -48,6 +54,9 @@ const SPECIES_CONSTANTS: Record<string, Record<string, number>> = {
     targetCalvingIntervalDays: 180,
     dryOffDaysBeforeCalving: 0,
     minWeightFirstServiceKg: 120,
+    serviceWindowStartHours: 12,
+    serviceWindowEndHours: 18,
+    silentHeatCheckHour: null,
     fatMinPercent: 5,
     fatMaxPercent: 8,
   },
@@ -61,6 +70,9 @@ const SPECIES_CONSTANTS: Record<string, Record<string, number>> = {
     targetCalvingIntervalDays: 240,
     dryOffDaysBeforeCalving: 30,
     minWeightFirstServiceKg: 25,
+    serviceWindowStartHours: 12,
+    serviceWindowEndHours: 18,
+    silentHeatCheckHour: null,
     fatMinPercent: 5,
     fatMaxPercent: 8,
   },
@@ -249,4 +261,25 @@ export class FakePrisma {
   };
 
   statusHistory: Array<Record<string, unknown>> = [];
+  milkWithholds: Array<Record<string, unknown>> = [];
+
+  milkWithhold = {
+    findFirst: async ({ where }: any) =>
+      this.milkWithholds.find(
+        (h: any) =>
+          (!where?.farmId || h.farmId === where.farmId) &&
+          (!where?.animalId || h.animalId === where.animalId) &&
+          (!where?.clearedAt || h.clearedAt === where.clearedAt) &&
+          (!where?.endDate?.gte || h.endDate >= where.endDate.gte),
+      ) ?? null,
+    findMany: async ({ where }: any) =>
+      this.milkWithholds.filter(
+        (h: any) => !where?.farmId || h.farmId === where.farmId,
+      ),
+    create: async ({ data }: any) => {
+      const row = { id: randomUUID(), createdAt: new Date(), clearedAt: null, ...data };
+      this.milkWithholds.push(row);
+      return row;
+    },
+  };
 }

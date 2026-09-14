@@ -334,6 +334,9 @@ async function main(): Promise<void> {
       targetCalvingIntervalDays: 425,
       dryOffDaysBeforeCalving: 60,
       minWeightFirstServiceKg: 300,
+      serviceWindowStartHours: 12,
+      serviceWindowEndHours: 18,
+      silentHeatCheckHour: 4,
       fatMinPercent: 6.5,
       fatMaxPercent: 8.0,
     },
@@ -348,6 +351,9 @@ async function main(): Promise<void> {
       targetCalvingIntervalDays: 380,
       dryOffDaysBeforeCalving: 60,
       minWeightFirstServiceKg: 250,
+      serviceWindowStartHours: 12,
+      serviceWindowEndHours: 18,
+      silentHeatCheckHour: null,
       fatMinPercent: 3.5,
       fatMaxPercent: 4.5,
     },
@@ -362,6 +368,9 @@ async function main(): Promise<void> {
       targetCalvingIntervalDays: 180,
       dryOffDaysBeforeCalving: 0,
       minWeightFirstServiceKg: 120,
+      serviceWindowStartHours: 12,
+      serviceWindowEndHours: 18,
+      silentHeatCheckHour: null,
       fatMinPercent: 5.0,
       fatMaxPercent: 8.0,
     },
@@ -376,6 +385,9 @@ async function main(): Promise<void> {
       targetCalvingIntervalDays: 240,
       dryOffDaysBeforeCalving: 30,
       minWeightFirstServiceKg: 25,
+      serviceWindowStartHours: 12,
+      serviceWindowEndHours: 18,
+      silentHeatCheckHour: null,
       fatMinPercent: 5.0,
       fatMaxPercent: 8.0,
     },
@@ -501,6 +513,33 @@ async function main(): Promise<void> {
         },
       ],
     });
+  }
+
+  const withdrawalSeed = [
+    { name: 'Oxytetracycline', category: InventoryCategory.MEDICINE, unit: 'ml', withdrawalDaysMilk: 4, withdrawalDaysMeat: 0 },
+    { name: 'Penicillin-Strep', category: InventoryCategory.MEDICINE, unit: 'ml', withdrawalDaysMilk: 3, withdrawalDaysMeat: 0 },
+    { name: 'Albendazole', category: InventoryCategory.MEDICINE, unit: 'ml', withdrawalDaysMilk: 0, withdrawalDaysMeat: 0 },
+    { name: 'FMD vaccine', category: InventoryCategory.VACCINE, unit: 'dose', withdrawalDaysMilk: 0, withdrawalDaysMeat: 0 },
+  ];
+  for (const item of withdrawalSeed) {
+    const existing = await prisma.inventoryItem.findFirst({
+      where: { farmId: farm.id, name: item.name, deletedAt: null },
+    });
+    if (existing) {
+      await prisma.inventoryItem.update({
+        where: { id: existing.id },
+        data: { withdrawalDaysMilk: item.withdrawalDaysMilk, withdrawalDaysMeat: item.withdrawalDaysMeat },
+      });
+    } else {
+      await prisma.inventoryItem.create({
+        data: {
+          farmId: farm.id,
+          ...item,
+          currentStock: 50,
+          minimumStock: 10,
+        },
+      });
+    }
   }
 
   const now = new Date();

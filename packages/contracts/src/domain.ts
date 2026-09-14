@@ -224,6 +224,10 @@ export interface AnimalDto {
   lactationNumber: number;
   lactationStartDate: string | null;
   expectedLactationDays: number | null;
+  expectedDryOff: string | null;
+  highRiskFPT: boolean;
+  birthWeightKg: number | null;
+  isFreemartinSuspect: boolean;
   breedComposition: BreedComposition | null;
   breedingStock: boolean;
   shed: string | null;
@@ -252,9 +256,19 @@ export interface AnimalStatusHistoryDto {
   changedBy: string | null;
 }
 
+export interface ActiveWithholdDto {
+  id: string;
+  kind: 'MILK' | 'MEAT';
+  drugName: string;
+  startDate: string;
+  endDate: string;
+  messageNp: string;
+}
+
 export interface AnimalDetailDto extends AnimalDto {
   weights: WeightRecordDto[];
   statusHistory: AnimalStatusHistoryDto[];
+  activeWithhold: ActiveWithholdDto | null;
 }
 
 /** Status changes carry a reason so the trail is worth reading later. */
@@ -387,6 +401,9 @@ export interface SpeciesConfigDto {
   targetCalvingIntervalDays: number;
   dryOffDaysBeforeCalving: number;
   minWeightFirstServiceKg: number;
+  serviceWindowStartHours: number;
+  serviceWindowEndHours: number;
+  silentHeatCheckHour: number | null;
   fatMinPercent: number;
   fatMaxPercent: number;
 }
@@ -401,6 +418,9 @@ export const speciesConfigUpdateSchema = z.object({
   targetCalvingIntervalDays: z.number().int().min(1).max(900).optional(),
   dryOffDaysBeforeCalving: z.number().int().min(0).max(200).optional(),
   minWeightFirstServiceKg: z.number().int().min(1).max(1500).optional(),
+  serviceWindowStartHours: z.number().int().min(0).max(48).optional(),
+  serviceWindowEndHours: z.number().int().min(0).max(72).optional(),
+  silentHeatCheckHour: z.number().int().min(0).max(23).nullable().optional(),
   fatMinPercent: z.number().min(0).max(15).optional(),
   fatMaxPercent: z.number().min(0).max(15).optional(),
 });

@@ -34,13 +34,15 @@ const ACTION_PATH: Record<TaskType, string> = {
   PREGNANCY_CHECK: '/breeding?form=pd',
   DRY_OFF: '/animals',
   POSTPARTUM_CHECK: '/health?type=CHECKUP',
+  REPEAT_BREEDER: '/breeding?form=service',
+  VET_URGENT: '/health?type=TREATMENT',
   MILK_WITHHOLD_END: '/shed',
   STOCK_REORDER: '/inventory',
   LOT_EXPIRING: '/inventory',
   MISSING_PRODUCTION: '/shed',
   YIELD_DROP: '/shed',
-  APPLY_MARKER: '/shed?mode=BAND',
-  REMOVE_MARKER: '/shed?mode=BAND',
+  APPLY_MARKER: '/shed?mode=MARKER_PLACEMENT',
+  REMOVE_MARKER: '/shed?mode=MARKER_PLACEMENT',
   RETAG_REQUIRED: '/animals',
 };
 
@@ -234,6 +236,7 @@ function toDto(
       r.animalId,
       r.sourceRefType,
       r.sourceRefId,
+      r.id,
     ),
   };
 }
@@ -243,10 +246,12 @@ function buildActionPath(
   animalId: string | null,
   sourceRefType: string | null,
   sourceRefId: string | null,
+  taskId?: string,
 ): string {
   const base = ACTION_PATH[type] ?? '/inbox';
   const params = new URLSearchParams();
   if (animalId) params.set('animalId', animalId);
+  if (taskId && type === 'COLOSTRUM_FEED') params.set('taskId', taskId);
   if (sourceRefType === 'breedingRecord' && sourceRefId) {
     params.set('breedingId', sourceRefId);
   }

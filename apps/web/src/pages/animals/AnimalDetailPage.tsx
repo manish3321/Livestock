@@ -34,8 +34,8 @@ import {
   uploadAnimalPhoto,
 } from '../../api/animals';
 import { listBreeding } from '../../api/breeding';
-import { listHealthRecords } from '../../api/health';
 import { QrPrintCard } from '../../components/QrPrintCard';
+import { WithholdBanner } from '../../components/WithholdBanner';
 import { animalScanUrl } from '../../lib/qr';
 
 export function AnimalDetailPage() {
@@ -113,10 +113,13 @@ export function AnimalDetailPage() {
 
   return (
     <div>
+      {animal.activeWithhold && (
+        <WithholdBanner messageNp={animal.activeWithhold.messageNp} endDate={animal.activeWithhold.endDate} />
+      )}
       <Link to="/animals" className="back-link">
         ← {t('batches.breedingStock')}
       </Link>
-      <AnimalBanners animalId={animal.id} isPregnant={animal.isPregnant} />
+      <AnimalBanners isPregnant={animal.isPregnant} />
       <div className="animal-hero" data-species={animal.species}>
         <div style={{ width: '100%' }}>
           <div className="page-header" style={{ marginBottom: 0, alignItems: 'flex-end' }}>
@@ -390,6 +393,11 @@ export function AnimalDetailPage() {
               {can('breeding:write') && animal.gender === 'FEMALE' && (
                 <Link className="btn secondary" to={`/breeding?animalId=${animal.id}`}>
                   {t('breeding.add')}
+                </Link>
+              )}
+              {can('breeding:write') && animal.source === 'BORN' && (
+                <Link className="btn" to={`/breeding?form=colostrum&animalId=${animal.id}`}>
+                  {t('breeding.recordColostrumNow')}
                 </Link>
               )}
             </div>
@@ -921,26 +929,10 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
   );
 }
 
-function AnimalBanners({ animalId, isPregnant }: { animalId: string; isPregnant: boolean }) {
+function AnimalBanners({ isPregnant }: { isPregnant: boolean }) {
   const { t } = useTranslation();
-  const healthQ = useQuery({
-    queryKey: ['health-records', 'animal', animalId],
-    queryFn: () => listHealthRecords({ animalId, pageSize: 50 }),
-  });
-  const now = Date.now();
-  const withhold = (healthQ.data?.items ?? []).find(
-    (r) => r.milkWithholdUntil && new Date(r.milkWithholdUntil).getTime() >= now,
-  );
-  return (
-    <>
-      {withhold?.milkWithholdUntil && (
-        <div className="hold-banner hold-banner-red">
-          {t('health.animalWithhold', { date: formatDate(withhold.milkWithholdUntil) })}
-        </div>
-      )}
-      {isPregnant && <div className="hold-banner hold-banner-blue">{t('animals.pregnantBanner')}</div>}
-    </>
-  );
+  if (!isPregnant) return null;
+  return <div className="hold-banner hold-banner-blue">{t('animals.pregnantBanner')}</div>;
 }
 
 function toDateInput(value: Date | string | undefined): string {

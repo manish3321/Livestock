@@ -12,6 +12,7 @@ import type {
   AnimalImportCommit,
   AnimalImportPreviewRow,
   AnimalListQuery,
+  AnimalSearchHitDto,
   AnimalUpdate,
   MarkerPlace,
   PageResult,
@@ -29,6 +30,7 @@ import { HerdNumberService } from '../herd-number/herd-number.service';
 import { SpeciesConfigService } from '../species-config/species-config.service';
 import { toSnapshot } from '../sync/animal.applier';
 import { ensureTask } from '../jobs/task-writer';
+import { digitsOf, rankAnimalMatch } from '../milk/milk-rules';
 
 const MONTH_MS = 30.44 * 24 * 60 * 60 * 1000;
 
@@ -87,6 +89,49 @@ export class AnimalsService {
     };
   }
 
+  /**
+   * Shed keypad search. `42` must return both B42 and C42, with species,
+   * photo and pen so a two-digit clash is one tap to resolve.
+   */
+  async search(user: RequestUser, q: string): Promise<AnimalSearchHitDto[]> {
+    const raw = q.trim();
+    if (!raw) return [];
+    const digits = digitsOf(raw);
+    const candidates = await this.prisma.animal.findMany({
+      where: {
+        farmId: user.farmId,
+        deletedAt: null,
+        OR: [
+          { herdNumber: { equals: raw, mode: 'insensitive' } },
+          ...(digits
+            ? [
+                { herdNumber: { endsWith: digits, mode: 'insensitive' as const } },
+                { tag: { contains: digits, mode: 'insensitive' as const } },
+              ]
+            : []),
+          { tag: { contains: raw, mode: 'insensitive' } },
+          { name: { contains: raw, mode: 'insensitive' } },
+        ],
+      },
+      take: 40,
+    });
+    return candidates
+      .map((a) => ({ animal: a, rank: rankAnimalMatch(raw, a) }))
+      .filter((row): row is { animal: (typeof candidates)[number]; rank: number } => row.rank != null)
+      .sort((a, b) => a.rank - b.rank || (a.animal.herdNumber ?? '').localeCompare(b.animal.herdNumber ?? ''))
+      .slice(0, 12)
+      .map(({ animal }) => ({
+        id: animal.id,
+        shortNo: animal.herdNumber,
+        tag: animal.tag,
+        name: animal.name,
+        species: animal.species,
+        penName: animal.shed,
+        photoUrl: animal.photoUrl,
+        status: animal.status,
+      }));
+  }
+
   async get(user: RequestUser, id: string): Promise<AnimalDetailDto> {
     const animal = await this.prisma.animal.findFirst({
       where: { id, farmId: user.farmId, deletedAt: null },
@@ -100,10 +145,24 @@ export class AnimalsService {
     if (!animal) {
       throw new NotFoundException({ code: 'ANIMAL_NOT_FOUND', message: 'Animal not found' });
     }
+    const hold = await this.prisma.milkWithhold.findFirst({
+      where: { farmId: user.farmId, animalId: id, clearedAt: null, endDate: { gte: new Date() } },
+      orderBy: { endDate: 'desc' },
+    });
     return {
       ...toDto(animal, animal.weights[0] ?? null),
       weights: animal.weights.map(toWeightDto),
       statusHistory: animal.statusHistory.map(toStatusHistoryDto),
+      activeWithhold: hold
+        ? {
+            id: hold.id,
+            kind: 'MILK',
+            drugName: hold.drugName,
+            startDate: hold.startDate.toISOString(),
+            endDate: hold.endDate.toISOString(),
+            messageNp: 'दूध बेच्नु हुँदैन',
+          }
+        : null,
     };
   }
 
@@ -880,6 +939,10 @@ function toDto(
     lactationNumber: animal.lactationNumber,
     lactationStartDate: animal.lactationStartDate?.toISOString() ?? null,
     expectedLactationDays: animal.expectedLactationDays,
+    expectedDryOff: animal.expectedDryOff?.toISOString() ?? null,
+    highRiskFPT: animal.highRiskFPT,
+    birthWeightKg: animal.birthWeightKg != null ? Number(animal.birthWeightKg) : null,
+    isFreemartinSuspect: animal.isFreemartinSuspect,
     breedComposition: (animal.breedComposition as BreedComposition | null) ?? null,
     breedingStock: animal.breedingStock,
     shed: animal.shed,

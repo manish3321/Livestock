@@ -24,6 +24,8 @@ export interface InventoryDto {
   supplier: string | null;
   batchLotNumber: string | null;
   notes: string | null;
+  withdrawalDaysMilk?: number;
+  withdrawalDaysMeat?: number;
   createdAt: string;
   updatedAt: string;
 }

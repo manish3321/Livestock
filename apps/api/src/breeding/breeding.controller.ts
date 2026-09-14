@@ -81,6 +81,28 @@ export class BreedingController {
     return this.breeding.create(user, body, requestId);
   }
 
+  @Post('calving')
+  @RequirePermissions('breeding:write')
+  @ApiOperation({ summary: 'Record a calving (service optional)' })
+  farmCalving(
+    @CurrentUser() user: RequestUser,
+    @Body(new ZodValidationPipe(calvingSchema)) body: CalvingInput,
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    return this.breeding.recordFarmCalving(user, body, requestId);
+  }
+
+  @Post('colostrum')
+  @RequirePermissions('breeding:write')
+  @ApiOperation({ summary: 'Record a colostrum feeding' })
+  farmColostrum(
+    @CurrentUser() user: RequestUser,
+    @Body(new ZodValidationPipe(colostrumSchema)) body: ColostrumInput,
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    return this.breeding.recordFarmColostrum(user, body, requestId);
+  }
+
   @Post(':id/calving')
   @RequirePermissions('breeding:write')
   calving(

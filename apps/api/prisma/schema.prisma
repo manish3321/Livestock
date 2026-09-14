@@ -102,6 +102,12 @@ model Farm {
   notificationLogs NotificationLog[]
   feedLogs         FeedLog[]
   heatLogs         HeatLog[]
+  heatEvents       HeatEvent[]
+  semenStraws      SemenStraw[]
+  breedingServices BreedingService[]
+  pregnancyChecks  PregnancyCheck[]
+  calvingEvents    CalvingEvent[]
+  colostrumFeedings ColostrumFeeding[]
   expenseAllocations ExpenseAllocation[]
   animalStatusHistory AnimalStatusHistory[]
   tasks            Task[]
@@ -114,6 +120,10 @@ model Farm {
   milkDeliveries   MilkDelivery[]
   paymentStatements PaymentStatement[]
   productionRevisions ProductionRevision[]
+  recordingRounds  RecordingRound[]
+  scanEvents       ScanEvent[]
+  milkWithholds    MilkWithhold[]
+  meatWithholds    MeatWithhold[]
 }
 
 model FarmMembership {
@@ -232,6 +242,11 @@ model SpeciesConfig {
   targetCalvingIntervalDays  Int
   dryOffDaysBeforeCalving    Int
   minWeightFirstServiceKg    Int
+  /// Hours after standing heat when the service window opens / closes.
+  serviceWindowStartHours    Int      @default(12)
+  serviceWindowEndHours      Int      @default(18)
+  /// Buffalo only: clock hour to prompt a pre-dawn heat check. Null = skip.
+  silentHeatCheckHour        Int?
   /// Normal butterfat band for this species in Nepal. Buffalo 6.5–8.0, cattle 3.5–4.5.
   fatMinPercent              Decimal  @default(3.5) @db.Decimal(4, 2)
   fatMaxPercent              Decimal  @default(4.5) @db.Decimal(4, 2)
@@ -286,6 +301,12 @@ model Animal {
   lactationStartDate DateTime?
   /// Seeded from SpeciesConfig.lactationDays at registration.
   expectedLactationDays Int?
+  expectedDryOff     DateTime?
+  /// Calf missed the colostrum absorption window (~6h).
+  highRiskFPT        Boolean       @default(false)
+  birthWeightKg      Decimal?      @db.Decimal(5, 2)
+  /// Female of a mixed-sex twin pair — likely infertile.
+  isFreemartinSuspect Boolean      @default(false)
   /// Fractional breed makeup, e.g. {"murrah":0.75,"local":0.25}. Sums to 1.0.
   breedComposition Json?
   /** When true, animal can be used as a breeding parent. */
@@ -315,6 +336,12 @@ model Animal {
   revenues   Revenue[]
   feedLogs   FeedLog[]
   heatLogs   HeatLog[]
+  heatEvents HeatEvent[]
+  breedingServices BreedingService[]
+  pregnancyChecks PregnancyCheck[]
+  calvingEvents CalvingEvent[] @relation("CalvingDam")
+  calfRecord CalfRecord?
+  colostrumFeedings ColostrumFeeding[]
   expenseAllocations ExpenseAllocation[]
   calvingRecords BreedingRecord[] @relation("BreedingOffspring")
   statusHistory  AnimalStatusHistory[]
@@ -322,6 +349,8 @@ model Animal {
   photos         AnimalPhoto[]
   tags           AnimalTag[]
   markers        AnimalMarker[]
+  milkWithholds  MilkWithhold[]
+  meatWithholds  MeatWithhold[]
 
   @@unique([farmId, tag])
   @@unique([farmId, herdNumber])
@@ -775,6 +804,97 @@ enum HeatIntensity {
   WEAK
   MEDIUM
   STRONG
+  SILENT_SUSPECTED
+}
+
+enum HeatSign {
+  STANDING_HEAT
+  MOUNTING_OTHERS
+  MUCUS_DISCHARGE
+  VULVA_SWELLING
+  BELLOWING
+  RESTLESSNESS
+  REDUCED_MILK
+  TAIL_RAISED
+  OFF_FEED
+}
+
+enum ServiceMethod {
+  AI
+  NATURAL
+  EMBRYO_TRANSFER
+}
+
+enum ServiceResult {
+  PENDING
+  PREGNANT
+  FAILED
+  ABORTED
+  UNKNOWN
+}
+
+enum PregCheckMethod {
+  RECTAL_PALPATION
+  ULTRASOUND
+  BLOOD_TEST
+  MILK_TEST
+  OBSERVATION
+}
+
+enum PregCheckResult {
+  PREGNANT
+  NOT_PREGNANT
+  INCONCLUSIVE
+}
+
+enum CalvingOutcome {
+  LIVE_SINGLE
+  LIVE_TWINS
+  LIVE_TRIPLETS
+  STILLBORN
+  ABORTED
+}
+
+enum CalvingComplication {
+  RETAINED_PLACENTA
+  MILK_FEVER
+  PROLAPSE
+  METRITIS
+  DYSTOCIA
+  KETOSIS
+  NONE
+}
+
+enum DamCondition {
+  NORMAL
+  WEAK
+  CRITICAL
+}
+
+enum CalfVigour {
+  NORMAL
+  WEAK
+  NON_VIABLE
+}
+
+enum ColostrumSource {
+  OWN_DAM
+  OTHER_COW
+  STORED_FROZEN
+  COMMERCIAL_REPLACER
+}
+
+enum ColostrumMethod {
+  SUCKLED
+  BOTTLE
+  TUBE
+}
+
+enum ColostrumQuality {
+  THICK_YELLOW
+  THIN_WATERY
+  BLOODY
+  NOT_ASSESSED
 }
 
 enum CalvingDifficulty {
@@ -1020,6 +1140,9 @@ model InventoryItem {
   supplier        String?
   batchLotNumber  String?
   notes           String?
+  /// Days after the last dose that milk must not be sold. 0 = no withhold.
+  withdrawalDaysMilk Int             @default(0)
+  withdrawalDaysMeat Int             @default(0)
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
   deletedAt       DateTime?
@@ -1029,6 +1152,9 @@ model InventoryItem {
   movements StockMovement[]
   feeds     BatchFeedEvent[] @relation("BatchFeedInventory")
   feedLogs  FeedLog[]        @relation("FeedLogInventory")
+  health    HealthRecord[]
+  milkWithholds MilkWithhold[]
+  meatWithholds MeatWithhold[]
 
   @@index([farmId, category])
 }
@@ -1113,6 +1239,8 @@ model HealthRecord {
   milkWithholdUntil DateTime?
   meatWithholdUntil DateTime?
   batchNumber String?
+  inventoryItemId String?        @db.Uuid
+  durationDays    Int?
   performedAt DateTime
   nextDueAt   DateTime?
   notes       String?
@@ -1123,11 +1251,57 @@ model HealthRecord {
   animal    Animal?      @relation(fields: [animalId], references: [id], onDelete: SetNull)
   group     AnimalGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   herdBatch HerdBatch?   @relation(fields: [herdBatchId], references: [id], onDelete: SetNull)
+  inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+  milkWithholds MilkWithhold[]
+  meatWithholds MeatWithhold[]
 
   @@index([farmId, nextDueAt])
   @@index([animalId])
   @@index([groupId])
   @@index([herdBatchId])
+}
+
+/// Highest-consequence feature. Withheld milk in a cooperative tank
+/// rejects the whole collection. Rows stack; the later endDate wins.
+model MilkWithhold {
+  id            String    @id @default(uuid()) @db.Uuid
+  farmId        String    @db.Uuid
+  animalId      String    @db.Uuid
+  healthEventId String?   @db.Uuid
+  medicationId  String?   @db.Uuid
+  drugName      String
+  startDate     DateTime
+  endDate       DateTime
+  reason        String?
+  clearedAt     DateTime?
+  createdAt     DateTime  @default(now())
+
+  farm        Farm           @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal      Animal         @relation(fields: [animalId], references: [id], onDelete: Cascade)
+  healthEvent HealthRecord?  @relation(fields: [healthEventId], references: [id], onDelete: SetNull)
+  medication  InventoryItem? @relation(fields: [medicationId], references: [id], onDelete: SetNull)
+
+  @@index([animalId, endDate])
+  @@index([farmId, endDate])
+}
+
+model MeatWithhold {
+  id            String   @id @default(uuid()) @db.Uuid
+  farmId        String   @db.Uuid
+  animalId      String   @db.Uuid
+  healthEventId String?  @db.Uuid
+  medicationId  String?  @db.Uuid
+  drugName      String
+  startDate     DateTime
+  endDate       DateTime
+  createdAt     DateTime @default(now())
+
+  farm        Farm           @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal      Animal         @relation(fields: [animalId], references: [id], onDelete: Cascade)
+  healthEvent HealthRecord?  @relation(fields: [healthEventId], references: [id], onDelete: SetNull)
+  medication  InventoryItem? @relation(fields: [medicationId], references: [id], onDelete: SetNull)
+
+  @@index([animalId, endDate])
 }
 
 // ---------------------------------------------------------------------------
@@ -1175,6 +1349,162 @@ model BreedingRecord {
   @@index([motherId])
 }
 
+model HeatEvent {
+  id         String         @id @default(uuid()) @db.Uuid
+  animalId   String         @db.Uuid
+  farmId     String         @db.Uuid
+  observedAt DateTime
+  intensity  HeatIntensity
+  signs      HeatSign[]
+  observerId String?        @db.Uuid
+  wasBred    Boolean        @default(false)
+  notes      String?
+  createdAt  DateTime       @default(now())
+  deviceId   String?
+
+  farm     Farm              @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal   Animal            @relation(fields: [animalId], references: [id], onDelete: Cascade)
+  services BreedingService[]
+
+  @@index([animalId, observedAt])
+  @@index([farmId, observedAt])
+}
+
+model SemenStraw {
+  id              String   @id @default(uuid()) @db.Uuid
+  farmId          String   @db.Uuid
+  strawCode       String
+  bullName        String
+  bullBreed       String
+  bullIdOfficial  String?
+  supplier        String?
+  purchasedOn     DateTime?
+  qtyRemaining    Int      @default(0)
+  costPerStrawNpr Decimal  @db.Decimal(10, 2)
+  sireMilkIndex   Decimal? @db.Decimal(8, 2)
+
+  farm     Farm              @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  services BreedingService[]
+
+  @@unique([farmId, strawCode])
+}
+
+model BreedingService {
+  id              String        @id @default(uuid()) @db.Uuid
+  animalId        String        @db.Uuid
+  farmId          String        @db.Uuid
+  serviceDate     DateTime
+  heatEventId     String?       @db.Uuid
+  method          ServiceMethod
+  sireId          String?       @db.Uuid
+  strawId         String?       @db.Uuid
+  technicianName  String?
+  technicianPhone String?
+  costNpr         Decimal?      @db.Decimal(10, 2)
+  /// nth service this lactation. >= 3 raises REPEAT_BREEDER.
+  serviceNo       Int           @default(1)
+  result          ServiceResult @default(PENDING)
+  provisionalEdd  DateTime?
+  createdAt       DateTime      @default(now())
+  deviceId        String?
+
+  farm             Farm             @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal           Animal           @relation(fields: [animalId], references: [id], onDelete: Cascade)
+  heatEvent        HeatEvent?       @relation(fields: [heatEventId], references: [id], onDelete: SetNull)
+  straw            SemenStraw?      @relation(fields: [strawId], references: [id], onDelete: SetNull)
+  pregnancyChecks  PregnancyCheck[]
+  calvingEvents    CalvingEvent[]
+
+  @@index([animalId, serviceDate])
+  @@index([farmId, result])
+}
+
+model PregnancyCheck {
+  id                    String          @id @default(uuid()) @db.Uuid
+  serviceId             String          @db.Uuid
+  animalId              String          @db.Uuid
+  farmId                String          @db.Uuid
+  checkDate             DateTime
+  method                PregCheckMethod
+  result                PregCheckResult
+  estimatedDaysPregnant Int?
+  examinerName          String?
+  costNpr               Decimal?        @db.Decimal(10, 2)
+
+  farm    Farm            @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal  Animal          @relation(fields: [animalId], references: [id], onDelete: Cascade)
+  service BreedingService @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([animalId, checkDate])
+}
+
+model CalvingEvent {
+  id                        String                @id @default(uuid()) @db.Uuid
+  damId                     String                @db.Uuid
+  farmId                    String                @db.Uuid
+  serviceId                 String?               @db.Uuid
+  calvingAt                 DateTime
+  gestationDaysActual       Int?
+  difficulty                CalvingDifficulty     @default(EASY)
+  complications             CalvingComplication[]
+  placentaExpelledWithin12h Boolean?
+  outcome                   CalvingOutcome
+  damConditionPost          DamCondition          @default(NORMAL)
+  assistedBy                String?
+  interventionCostNpr       Decimal?              @db.Decimal(10, 2)
+  calvingIntervalDays       Int?
+  daysOpenDays              Int?
+  notes                     String?
+  createdAt                 DateTime              @default(now())
+  deviceId                  String?
+
+  farm   Farm         @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  dam    Animal       @relation("CalvingDam", fields: [damId], references: [id], onDelete: Cascade)
+  service BreedingService? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  calves CalfRecord[]
+
+  @@index([damId, calvingAt])
+  @@index([farmId, calvingAt])
+}
+
+model CalfRecord {
+  id                  String     @id @default(uuid()) @db.Uuid
+  calvingId           String     @db.Uuid
+  animalId            String?    @unique @db.Uuid
+  sex                 Gender
+  birthWeightKg       Decimal?   @db.Decimal(5, 2)
+  vigour              CalfVigour @default(NORMAL)
+  defects             String?
+  photoId             String?
+  isFreemartinSuspect Boolean    @default(false)
+
+  calving    CalvingEvent       @relation(fields: [calvingId], references: [id], onDelete: Cascade)
+  animal     Animal?            @relation(fields: [animalId], references: [id], onDelete: SetNull)
+  feedings   ColostrumFeeding[]
+}
+
+model ColostrumFeeding {
+  id              String           @id @default(uuid()) @db.Uuid
+  calfRecordId    String           @db.Uuid
+  animalId        String?          @db.Uuid
+  farmId          String           @db.Uuid
+  taskId          String?          @db.Uuid
+  fedAt           DateTime
+  hoursAfterBirth Decimal          @db.Decimal(5, 2)
+  volumeLitres    Decimal          @db.Decimal(5, 2)
+  source          ColostrumSource
+  method          ColostrumMethod
+  quality         ColostrumQuality @default(NOT_ASSESSED)
+  heatTreated     Boolean          @default(false)
+  fedById         String?          @db.Uuid
+
+  farm       Farm       @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  calfRecord CalfRecord @relation(fields: [calfRecordId], references: [id], onDelete: Cascade)
+  animal     Animal?    @relation(fields: [animalId], references: [id], onDelete: SetNull)
+
+  @@index([calfRecordId, fedAt])
+}
+
 // ---------------------------------------------------------------------------
 // Production tracking
 // ---------------------------------------------------------------------------
@@ -1211,6 +1541,22 @@ enum MilkRoundStatus {
   FINISHED
 }
 
+enum RecordingMode {
+  MILKING
+  VACCINATION
+  TREATMENT
+  WEIGHING
+  HEALTH_CHECK
+  MARKER_PLACEMENT
+  BROWSE
+}
+
+enum RoundStatus {
+  ACTIVE
+  FINISHED
+  ABANDONED
+}
+
 enum CobResult {
   NOT_TESTED
   PASS
@@ -1240,7 +1586,8 @@ model MilkRound {
   farm     Farm              @relation(fields: [farmId], references: [id], onDelete: Cascade)
   entries  ProductionEntry[]
   tank     MilkTank?
-  skipped  MilkRoundSkip[]
+  skipped         MilkRoundSkip[]
+  recordingRound  RecordingRound?
 
   @@unique([farmId, roundDate, session])
   @@index([farmId, status, roundDate])
@@ -1379,6 +1726,7 @@ model ProductionRevision {
   entryId          String   @db.Uuid
   previousQuantity Decimal  @db.Decimal(12, 2)
   newQuantity      Decimal  @db.Decimal(12, 2)
+  reason           String?
   changedById      String?  @db.Uuid
   createdAt        DateTime @default(now())
 
@@ -1447,6 +1795,8 @@ enum TaskType {
   PREGNANCY_CHECK
   DRY_OFF
   POSTPARTUM_CHECK
+  REPEAT_BREEDER
+  VET_URGENT
   MILK_WITHHOLD_END
   STOCK_REORDER
   LOT_EXPIRING
@@ -1542,4 +1892,68 @@ model ChangeLogEntry {
   farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
 
   @@index([farmId, seq])
+}
+
+/// Mode chosen once at the start of a shed walk. Milk rows still live on
+/// ProductionEntry + MilkRound so existing tank/delivery stays intact.
+model RecordingRound {
+  id                String         @id @default(uuid()) @db.Uuid
+  farmId            String         @db.Uuid
+  mode              RecordingMode
+  session           MilkSession?
+  date              DateTime
+  startedAt         DateTime       @default(now())
+  finishedAt        DateTime?
+  status            RoundStatus    @default(ACTIVE)
+  operatorId        String         @db.Uuid
+  contextItemId     String?
+  contextLotId      String?
+  contextDose       String?
+  expectedCount     Int?
+  recordedCount     Int            @default(0)
+  skippedCount      Int            @default(0)
+  totalLitres       Decimal?       @db.Decimal(9, 2)
+  durationSeconds   Int?
+  secondsPerAnimal  Decimal?       @db.Decimal(6, 2)
+  milkRoundId       String?        @unique @db.Uuid
+  deviceId          String?
+
+  farm      Farm           @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  milkRound MilkRound?     @relation(fields: [milkRoundId], references: [id], onDelete: SetNull)
+  skips     RoundSkip[]
+  scans     ScanEvent[]
+
+  @@index([farmId, date, mode])
+  @@index([farmId, status])
+}
+
+model RoundSkip {
+  id       String @id @default(uuid()) @db.Uuid
+  roundId  String @db.Uuid
+  animalId String @db.Uuid
+  reason   String
+  note     String?
+
+  round RecordingRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@unique([roundId, animalId])
+}
+
+model ScanEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  farmId     String   @db.Uuid
+  roundId    String?  @db.Uuid
+  animalId   String?  @db.Uuid
+  rawPayload String?
+  success    Boolean
+  failReason String?
+  method     String
+  scannedAt  DateTime @default(now())
+  deviceId   String?
+
+  farm  Farm            @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  round RecordingRound? @relation(fields: [roundId], references: [id], onDelete: SetNull)
+
+  @@index([farmId, scannedAt])
+  @@index([animalId, scannedAt])
 }

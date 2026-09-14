@@ -15,16 +15,30 @@ export type UnrecordedReason = (typeof UNRECORDED_REASONS)[number];
 export const COB_RESULTS = ['NOT_TESTED', 'PASS', 'FAIL'] as const;
 export type CobResult = (typeof COB_RESULTS)[number];
 
-export const SCAN_MODES = [
+export const RECORDING_MODES = [
   'MILKING',
   'VACCINATION',
   'TREATMENT',
   'WEIGHING',
-  'HEALTH',
-  'BAND',
-  'LOOKING',
+  'HEALTH_CHECK',
+  'MARKER_PLACEMENT',
+  'BROWSE',
 ] as const;
-export type ScanMode = (typeof SCAN_MODES)[number];
+export type RecordingMode = (typeof RECORDING_MODES)[number];
+export const SCAN_MODES = RECORDING_MODES;
+export type ScanMode = RecordingMode;
+
+export const ROUND_STATUSES = ['ACTIVE', 'FINISHED', 'ABANDONED'] as const;
+export type RoundStatus = (typeof ROUND_STATUSES)[number];
+
+export const MILK_DISPOSALS = ['SOLD', 'FED_TO_CALVES', 'HOUSEHOLD', 'DISCARDED'] as const;
+export type MilkDisposal = (typeof MILK_DISPOSALS)[number];
+
+export const SCAN_METHODS = ['CAMERA', 'MANUAL_NUMBER', 'LIST_TAP', 'PHOTO_PICK', 'NFC'] as const;
+export type ScanMethod = (typeof SCAN_METHODS)[number];
+
+export const ROUND_SKIP_REASONS = ['NOT_MILKED', 'FORGOT', 'SICK', 'DRIED_OFF', 'OTHER'] as const;
+export type RoundSkipReason = (typeof ROUND_SKIP_REASONS)[number];
 
 export const MARKER_COLORS = ['RED', 'YELLOW', 'BLUE', 'GREEN', 'WHITE'] as const;
 export type MarkerColor = (typeof MARKER_COLORS)[number];
@@ -57,6 +71,8 @@ export const TASK_TYPES = [
   'PREGNANCY_CHECK',
   'DRY_OFF',
   'POSTPARTUM_CHECK',
+  'REPEAT_BREEDER',
+  'VET_URGENT',
   'MILK_WITHHOLD_END',
   'STOCK_REORDER',
   'LOT_EXPIRING',
@@ -157,6 +173,54 @@ export const deliveryCreateSchema = z.object({
   expectedValue: z.number().nonnegative().optional(),
 });
 export type DeliveryCreate = z.infer<typeof deliveryCreateSchema>;
+
+export const recordingRoundCreateSchema = z.object({
+  mode: z.enum(RECORDING_MODES),
+  session: z.enum(MILK_SESSIONS).optional(),
+  contextItemId: z.string().uuid().optional(),
+  contextLotId: z.string().uuid().optional(),
+  contextDose: z.string().max(40).optional(),
+  deviceId: z.string().max(80).optional(),
+});
+export type RecordingRoundCreate = z.infer<typeof recordingRoundCreateSchema>;
+
+export const recordingRoundFinishSchema = z.object({
+  skips: z
+    .array(
+      z.object({
+        animalId: z.string().uuid(),
+        reason: z.enum(ROUND_SKIP_REASONS),
+        note: z.string().max(300).optional(),
+      }),
+    )
+    .default([]),
+});
+export type RecordingRoundFinish = z.infer<typeof recordingRoundFinishSchema>;
+
+export const scanCreateSchema = z.object({
+  rawPayload: z.string().max(500).optional(),
+  method: z.enum(SCAN_METHODS),
+  roundId: z.string().uuid().optional(),
+  deviceId: z.string().max(80).optional(),
+});
+export type ScanCreate = z.infer<typeof scanCreateSchema>;
+
+export const milkEntryCreateSchema = z.object({
+  animalId: z.string().uuid(),
+  date: z.coerce.date().optional(),
+  session: z.enum(MILK_SESSIONS),
+  litres: z.number().positive().max(80),
+  disposal: z.enum(MILK_DISPOSALS).default('SOLD'),
+  roundId: z.string().uuid().optional(),
+  confirmOutOfRange: z.boolean().optional(),
+});
+export type MilkEntryCreate = z.infer<typeof milkEntryCreateSchema>;
+
+export const milkEntryPatchSchema = z.object({
+  litres: z.number().positive().max(80),
+  reason: z.string().max(300).optional(),
+});
+export type MilkEntryPatch = z.infer<typeof milkEntryPatchSchema>;
 
 export const paymentStatementCreateSchema = z.object({
   periodStart: z.coerce.date(),
@@ -321,39 +385,108 @@ export const groupVaccinateSchema = z.object({
 });
 export type GroupVaccinate = z.infer<typeof groupVaccinateSchema>;
 
+export const PREG_CHECK_RESULTS = [
+  'PREGNANT',
+  'NOT_PREGNANT',
+  'INCONCLUSIVE',
+  'CONFIRMED',
+  'OPEN',
+] as const;
+export type PregCheckResultInput = (typeof PREG_CHECK_RESULTS)[number];
+
+export const PREG_CHECK_METHODS = [
+  'RECTAL_PALPATION',
+  'ULTRASOUND',
+  'BLOOD_TEST',
+  'MILK_TEST',
+  'OBSERVATION',
+] as const;
+
+export const CALVING_OUTCOMES = [
+  'LIVE_SINGLE',
+  'LIVE_TWINS',
+  'LIVE_TRIPLETS',
+  'STILLBORN',
+  'ABORTED',
+] as const;
+export type CalvingOutcome = (typeof CALVING_OUTCOMES)[number];
+
+export const CALVING_COMPLICATIONS = [
+  'RETAINED_PLACENTA',
+  'MILK_FEVER',
+  'PROLAPSE',
+  'METRITIS',
+  'DYSTOCIA',
+  'KETOSIS',
+  'NONE',
+] as const;
+
+export const DAM_CONDITIONS = ['NORMAL', 'WEAK', 'CRITICAL'] as const;
+export type DamCondition = (typeof DAM_CONDITIONS)[number];
+
+export const COLOSTRUM_SOURCES = [
+  'OWN_DAM',
+  'OTHER_COW',
+  'STORED_FROZEN',
+  'COMMERCIAL_REPLACER',
+  'OWN_MOTHER',
+  'OTHER_DAM',
+  'FROZEN',
+  'REPLACER',
+] as const;
+
 export const pregnancyCheckSchema = z.object({
-  result: z.enum(['CONFIRMED', 'OPEN', 'INCONCLUSIVE']),
+  result: z.enum(PREG_CHECK_RESULTS),
+  estimatedDaysPregnant: z.number().int().min(1).max(400).optional(),
   daysPregnant: z.number().int().min(1).max(400).optional(),
+  method: z.enum(PREG_CHECK_METHODS).optional(),
   examiner: z.string().max(120).optional(),
+  examinerName: z.string().max(120).optional(),
   cost: z.number().nonnegative().optional(),
+  costNpr: z.number().nonnegative().optional(),
   checkedAt: z.coerce.date().optional(),
+  checkDate: z.coerce.date().optional(),
 });
 export type PregnancyCheck = z.infer<typeof pregnancyCheckSchema>;
 
+const calfInputSchema = z.object({
+  sex: z.enum(['FEMALE', 'MALE']),
+  birthWeightKg: z.number().positive().max(80).optional(),
+  weightKg: z.number().positive().max(80).optional(),
+  name: z.string().max(80).optional(),
+  vigour: z.enum(['NORMAL', 'WEAK', 'NON_VIABLE']).optional(),
+});
+
 export const calvingSchema = z.object({
-  birthDate: z.coerce.date(),
+  damId: z.string().uuid().optional(),
+  serviceId: z.string().uuid().optional(),
+  calvingAt: z.coerce.date().optional(),
+  birthDate: z.coerce.date().optional(),
   difficulty: z.enum(['EASY', 'ASSISTED', 'EMERGENCY', 'STILLBIRTH']).optional(),
   placentaExpelled: z.boolean().optional(),
-  complications: z.string().max(500).optional(),
-  calves: z
-    .array(
-      z.object({
-        sex: z.enum(['FEMALE', 'MALE']),
-        weightKg: z.number().positive().max(80).optional(),
-        name: z.string().max(80).optional(),
-      }),
-    )
-    .max(4)
-    .default([]),
+  placentaExpelledWithin12h: z.boolean().optional(),
+  complications: z
+    .union([z.enum(CALVING_COMPLICATIONS), z.array(z.enum(CALVING_COMPLICATIONS)), z.string().max(500)])
+    .optional(),
+  outcome: z.enum(CALVING_OUTCOMES).optional(),
+  damConditionPost: z.enum(DAM_CONDITIONS).optional(),
+  assistedBy: z.string().max(120).optional(),
+  notes: z.string().max(2000).optional(),
+  calves: z.array(calfInputSchema).max(4).default([]),
 });
 export type CalvingInput = z.infer<typeof calvingSchema>;
 
 export const colostrumSchema = z.object({
+  calfId: z.string().uuid().optional(),
+  calfRecordId: z.string().uuid().optional(),
+  taskId: z.string().uuid().optional(),
   fedAt: z.coerce.date(),
-  liters: z.number().positive().max(20),
-  source: z.enum(['OWN_MOTHER', 'OTHER_DAM', 'FROZEN', 'REPLACER']).optional(),
+  volumeLitres: z.number().positive().max(20).optional(),
+  liters: z.number().positive().max(20).optional(),
+  source: z.enum(COLOSTRUM_SOURCES).optional(),
   method: z.enum(['SUCKLED', 'BOTTLE', 'TUBE']).optional(),
-  quality: z.enum(['THICK_YELLOW', 'THIN_WATERY', 'BLOODY']).optional(),
+  quality: z.enum(['THICK_YELLOW', 'THIN_WATERY', 'BLOODY', 'NOT_ASSESSED']).optional(),
+  heatTreated: z.boolean().optional(),
 });
 export type ColostrumInput = z.infer<typeof colostrumSchema>;
 
@@ -374,4 +507,132 @@ export interface DailySheetRow {
   dry: boolean;
   treatment: string | null;
   band: string | null;
+}
+
+export interface RecordingRoundDto {
+  id: string;
+  mode: RecordingMode;
+  session: MilkSession | null;
+  date: string;
+  status: RoundStatus;
+  startedAt: string;
+  finishedAt: string | null;
+  expectedCount: number | null;
+  recordedCount: number;
+  skippedCount: number;
+  totalLitres: number | null;
+  durationSeconds: number | null;
+  secondsPerAnimal: number | null;
+  milkRoundId: string | null;
+}
+
+export interface RoundRemainingAnimalDto {
+  id: string;
+  shortNo: string | null;
+  tag: string;
+  name: string | null;
+  species: string;
+  penName: string | null;
+  photoUrl: string | null;
+  status: string;
+  isPregnant: boolean;
+  withholdActive: boolean;
+  usualLitres: number | null;
+}
+
+export interface RoundRemainingDto {
+  round: RecordingRoundDto;
+  expected: number;
+  recorded: number;
+  remaining: RoundRemainingAnimalDto[];
+}
+
+export interface RoundMetricsDto {
+  from: string;
+  to: string;
+  rounds: number;
+  finished: number;
+  abandoned: number;
+  abandonRate: number;
+  recordedCount: number;
+  skippedCount: number;
+  completeness: number;
+  avgSecondsPerAnimal: number | null;
+  totalLitres: number;
+}
+
+export interface AnimalSearchHitDto {
+  id: string;
+  shortNo: string | null;
+  tag: string;
+  name: string | null;
+  species: string;
+  penName: string | null;
+  photoUrl: string | null;
+  status: string;
+}
+
+export interface ScanBlockDto {
+  kind: 'MILK_WITHHOLD';
+  until: string;
+  drug: string | null;
+  messageNp: string;
+  blocksDisposal: MilkDisposal[];
+}
+
+export interface ScanResolveDto {
+  animal: {
+    id: string;
+    shortNo: string | null;
+    name: string | null;
+    nameNp: string | null;
+    species: string;
+    penName: string | null;
+    photoUrl: string | null;
+  };
+  status: {
+    status: string;
+    isPregnant: boolean;
+    daysInMilk: number | null;
+    daysToCalving: number | null;
+  };
+  blocks: ScanBlockDto[];
+  markers: Array<{ reason: string; colour: string; until: string | null }>;
+  context: {
+    rolling7Mean: number | null;
+    alreadyRecordedThisRound: boolean;
+    existingValue: number | null;
+    existingEntryId: string | null;
+    expectedRangeLow: number | null;
+    expectedRangeHigh: number | null;
+  };
+  nextAction:
+    | 'MILK_ENTRY'
+    | 'DOSE_CONFIRM'
+    | 'WEIGHT_ENTRY'
+    | 'SYMPTOM_PICKER'
+    | 'MARKER_CONFIRM'
+    | 'PROFILE';
+}
+
+export interface FarmWithholdDto {
+  id: string;
+  animalId: string;
+  shortNo: string | null;
+  name: string | null;
+  drugName: string;
+  startDate: string;
+  endDate: string;
+  kind: 'MILK' | 'MEAT';
+  messageNp: string;
+}
+
+export interface MilkEntryDto {
+  id: string;
+  animalId: string;
+  date: string;
+  session: MilkSession;
+  litres: number;
+  disposal: MilkDisposal;
+  roundId: string | null;
 }

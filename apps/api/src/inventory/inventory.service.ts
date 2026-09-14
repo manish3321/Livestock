@@ -31,6 +31,8 @@ export interface InventoryItemDto {
   supplier: string | null;
   batchLotNumber: string | null;
   notes: string | null;
+  withdrawalDaysMilk: number;
+  withdrawalDaysMeat: number;
   alertLevel: string;
   createdAt: string;
   updatedAt: string;
@@ -109,6 +111,8 @@ export class InventoryService {
         supplier: input.supplier,
         batchLotNumber: input.batchLotNumber,
         notes: input.notes,
+        withdrawalDaysMilk: input.withdrawalDaysMilk ?? 0,
+        withdrawalDaysMeat: input.withdrawalDaysMeat ?? 0,
       },
     });
     await this.audit.record({
@@ -144,6 +148,12 @@ export class InventoryService {
           ? { batchLotNumber: input.batchLotNumber }
           : {}),
         ...(input.notes !== undefined ? { notes: input.notes } : {}),
+        ...(input.withdrawalDaysMilk !== undefined
+          ? { withdrawalDaysMilk: input.withdrawalDaysMilk }
+          : {}),
+        ...(input.withdrawalDaysMeat !== undefined
+          ? { withdrawalDaysMeat: input.withdrawalDaysMeat }
+          : {}),
       },
     });
     await this.audit.record({
@@ -381,6 +391,8 @@ function toDto(i: InventoryItem): InventoryItemDto {
     supplier: i.supplier,
     batchLotNumber: i.batchLotNumber,
     notes: i.notes,
+    withdrawalDaysMilk: i.withdrawalDaysMilk,
+    withdrawalDaysMeat: i.withdrawalDaysMeat,
     alertLevel: inventoryAlertLevel(current, minimum),
     createdAt: i.createdAt.toISOString(),
     updatedAt: i.updatedAt.toISOString(),

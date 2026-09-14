@@ -12,6 +12,8 @@ import {
   pregnancyCheck,
   recordCalving,
   recordColostrum,
+  recordFarmCalving,
+  recordFarmColostrum,
   type BreedingDto,
   type HeatLogDto,
 } from '../../api/breeding';
@@ -51,6 +53,7 @@ export function BreedingPage() {
   const tab: Tab = TABS.includes(formParam as Tab) ? (formParam as Tab) : 'records';
   const animalId = searchParams.get('animalId') ?? '';
   const breedingId = searchParams.get('breedingId') ?? '';
+  const taskId = searchParams.get('taskId') ?? '';
 
   const setTab = (next: Tab) => {
     const nextParams = new URLSearchParams(searchParams);
@@ -176,6 +179,7 @@ export function BreedingPage() {
           records={records}
           breedingId={breedingId}
           animalId={animalId}
+          taskId={taskId}
           canWrite={can('breeding:write')}
           onSaved={() => void qc.invalidateQueries({ queryKey: ['breeding'] })}
         />
@@ -518,9 +522,11 @@ function PdForm({
       pregnancyCheck(id, {
         result,
         daysPregnant: daysPregnant ? Number(daysPregnant) : undefined,
+        estimatedDaysPregnant: daysPregnant ? Number(daysPregnant) : undefined,
         examiner: examiner || undefined,
         cost: cost ? Number(cost) : undefined,
         checkedAt: checkedAt ? new Date(checkedAt) : undefined,
+        checkDate: checkedAt ? new Date(checkedAt) : undefined,
       }),
     onSuccess: onSaved,
   });
@@ -598,6 +604,8 @@ function CalvingForm({
   const [difficulty, setDifficulty] = useState<(typeof DIFFICULTY)[number]>('EASY');
   const [placenta, setPlacenta] = useState(true);
   const [complication, setComplication] = useState('NONE');
+  const [outcome, setOutcome] = useState<'LIVE' | 'ABORTED'>('LIVE');
+  const [damCondition, setDamCondition] = useState<'NORMAL' | 'WEAK' | 'CRITICAL'>('NORMAL');
   const [calves, setCalves] = useState<Array<{ sex: 'FEMALE' | 'MALE'; weightKg: string; name: string }>>([
     { sex: 'FEMALE', weightKg: '', name: '' },
   ]);
@@ -607,25 +615,29 @@ function CalvingForm({
     mutationFn: async () => {
       const body = {
         birthDate: fromDateTimeLocal(birthDate),
+        calvingAt: fromDateTimeLocal(birthDate),
         difficulty,
         placentaExpelled: placenta,
+        placentaExpelledWithin12h: placenta,
         complications: complication === 'NONE' ? undefined : complication,
-        calves: calves.map((c) => ({
-          sex: c.sex,
-          weightKg: c.weightKg ? Number(c.weightKg) : undefined,
-          name: c.name || undefined,
-        })),
+        outcome: outcome === 'ABORTED' ? ('ABORTED' as const) : undefined,
+        damConditionPost: damCondition,
+        calves:
+          outcome === 'ABORTED'
+            ? []
+            : calves.map((c) => ({
+                sex: c.sex,
+                weightKg: c.weightKg ? Number(c.weightKg) : undefined,
+                birthWeightKg: c.weightKg ? Number(c.weightKg) : undefined,
+                name: c.name || undefined,
+              })),
       };
-      if (noService) {
-        if (!motherId) throw new Error(t('breeding.requiredFields'));
-        const rec = await createBreeding({
-          motherId,
-          matingType: 'NATURAL',
-          matingDate: fromDateTimeLocal(birthDate),
-          pregnancyStatus: 'PREGNANT',
-          notes: 'No service record — bull with the herd',
+      if (noService || outcome === 'ABORTED') {
+        if (!motherId && !id) throw new Error(t('breeding.requiredFields'));
+        return recordFarmCalving({
+          ...body,
+          damId: motherId || records.find((r) => r.id === id)?.motherId,
         });
-        return recordCalving(rec.id, body);
       }
       return recordCalving(id, body);
     },
@@ -684,9 +696,31 @@ function CalvingForm({
       <label>
         <input type="checkbox" checked={placenta} onChange={(e) => setPlacenta(e.target.checked)} /> {t('breeding.placenta12h')}
       </label>
+      <div className="form-grid">
+        <div className="field">
+          <label htmlFor="calve-out">{t('breeding.outcome')}</label>
+          <select id="calve-out" value={outcome} onChange={(e) => setOutcome(e.target.value as typeof outcome)}>
+            <option value="LIVE">{t('breeding.outcomeLive')}</option>
+            <option value="ABORTED">{t('breeding.outcomeAborted')}</option>
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="calve-damc">{t('breeding.damCondition')}</label>
+          <select
+            id="calve-damc"
+            value={damCondition}
+            onChange={(e) => setDamCondition(e.target.value as typeof damCondition)}
+          >
+            <option value="NORMAL">{t('enum.damCondition.NORMAL')}</option>
+            <option value="WEAK">{t('enum.damCondition.WEAK')}</option>
+            <option value="CRITICAL">{t('enum.damCondition.CRITICAL')}</option>
+          </select>
+        </div>
+      </div>
 
       <h3>{t('breeding.calves')}</h3>
-      {calves.map((calf, i) => (
+      {outcome === 'ABORTED' && <p className="warn-text">{t('breeding.abortHelp')}</p>}
+      {outcome !== 'ABORTED' && calves.map((calf, i) => (
         <div className="form-grid" key={i}>
           <div className="field">
             <label>{t('animals.gender')}</label>
@@ -719,6 +753,7 @@ function CalvingForm({
           </div>
         </div>
       ))}
+      {outcome !== 'ABORTED' && (
       <button
         type="button"
         className="btn secondary"
@@ -726,6 +761,7 @@ function CalvingForm({
       >
         {t('breeding.addCalf')}
       </button>
+      )}
       {error && <p className="error-text">{error}</p>}
       {canWrite && (
         <div className="page-actions">
@@ -742,12 +778,14 @@ function ColostrumForm({
   records,
   breedingId,
   animalId,
+  taskId,
   canWrite,
   onSaved,
 }: {
   records: BreedingDto[];
   breedingId: string;
   animalId: string;
+  taskId: string;
   canWrite: boolean;
   onSaved: () => void;
 }) {
@@ -767,14 +805,20 @@ function ColostrumForm({
   const hourClass = hours == null ? '' : hours < 2 ? 'ok' : hours <= 6 ? 'warn' : 'bad';
 
   const save = useMutation({
-    mutationFn: () =>
-      recordColostrum(id, {
+    mutationFn: () => {
+      const body = {
         fedAt: fromDateTimeLocal(fedAt),
         liters: Number(liters),
+        volumeLitres: Number(liters),
         source,
         method,
         quality,
-      }),
+        taskId: taskId || undefined,
+        calfId: animalId || undefined,
+      };
+      if (animalId) return recordFarmColostrum(body);
+      return recordColostrum(id, body);
+    },
     onSuccess: onSaved,
   });
 
@@ -837,7 +881,7 @@ function ColostrumForm({
       )}
       {canWrite && (
         <div className="page-actions">
-          <button className="btn" type="submit" disabled={save.isPending || !id}>
+          <button className="btn" type="submit" disabled={save.isPending || (!id && !animalId)}>
             {t('breeding.saveColostrum')}
           </button>
         </div>
