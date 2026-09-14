@@ -1,5 +1,4 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
 import type { DeviceRegister, NotificationPreferenceUpdate, TaskType } from '@farm/contracts';
 import { loadEnv } from '../config/env';
 import type { RequestUser } from '../common/types';
@@ -55,7 +54,6 @@ export class NotificationDispatchService {
     @Inject(NOTIFICATION_PORT) private readonly notifier: NotificationPort,
   ) {}
 
-  @Cron('*/5 * * * *', { timeZone: 'Asia/Kathmandu' })
   async tick(): Promise<void> {
     const now = new Date();
     await this.dispatch(now);

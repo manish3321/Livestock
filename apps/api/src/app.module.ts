@@ -43,7 +43,9 @@ function cronSupport(): { imports: DynamicModule[]; providers: Provider[] } {
   const { ScheduleModule } = require('@nestjs/schedule') as typeof import('@nestjs/schedule');
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { NightlyJob } = require('./jobs/nightly.job') as typeof import('./jobs/nightly.job');
-  return { imports: [ScheduleModule.forRoot()], providers: [NightlyJob] };
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { NotificationCronJob } = require('./notifications/notification-cron.job') as typeof import('./notifications/notification-cron.job');
+  return { imports: [ScheduleModule.forRoot()], providers: [NightlyJob, NotificationCronJob] };
 }
 
 const cron = cronSupport();
