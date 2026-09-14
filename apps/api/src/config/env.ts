@@ -29,6 +29,9 @@ let cached: Env | undefined;
 /** Validate process.env once at boot; fail fast with a readable message. */
 export function loadEnv(): Env {
   if (!cached) {
+    if (!process.env.DIRECT_URL && process.env.DATABASE_URL) {
+      process.env.DIRECT_URL = process.env.DATABASE_URL;
+    }
     const parsed = envSchema.safeParse(process.env);
     if (!parsed.success) {
       const issues = parsed.error.issues

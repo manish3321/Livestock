@@ -16,6 +16,7 @@ export const en = {
       passwordHint: 'Ask your farm admin if you forgot it',
       submit: 'Sign in',
       failed: 'Sign-in failed. Check your email and password.',
+      serverUnreachable: 'Cannot reach the farm server. Try again in a moment.',
     },
     nav: {
       dashboard: 'Home',

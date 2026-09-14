@@ -2,5 +2,14 @@
   "buildCommand": "pnpm run build:vercel",
   "outputDirectory": "apps/web/dist",
   "installCommand": "pnpm install",
-  "rewrites": [{ "source": "/((?!assets/).*)", "destination": "/index.html" }]
+  "functions": {
+    "api/[...path].ts": {
+      "includeFiles": "{apps/api/dist/**,apps/api/prisma/**,node_modules/.prisma/client/**,node_modules/@prisma/client/**}"
+    }
+  },
+  "rewrites": [
+    { "source": "/v1/:path*", "destination": "/api/v1/:path*" },
+    { "source": "/health/:path*", "destination": "/api/health/:path*" },
+    { "source": "/((?!assets/|api/).*)", "destination": "/index.html" }
+  ]
 }

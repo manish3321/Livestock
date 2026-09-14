@@ -6,7 +6,17 @@ settings:
 
 importers:
 
-  .: {}
+  .:
+    dependencies:
+      '@nestjs/platform-express':
+        specifier: ^11.0.0
+        version: 11.1.28(@nestjs/common@11.1.28(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/core@11.1.28)(supports-color@8.1.1)
+      express:
+        specifier: ^5.1.0
+        version: 5.2.1(supports-color@8.1.1)
+      reflect-metadata:
+        specifier: ^0.2.2
+        version: 0.2.2
 
   apps/api:
     dependencies:
@@ -40,6 +50,9 @@ importers:
       bcryptjs:
         specifier: ^2.4.3
         version: 2.4.3
+      express:
+        specifier: ^5.1.0
+        version: 5.2.1(supports-color@8.1.1)
       helmet:
         specifier: ^8.0.0
         version: 8.3.0

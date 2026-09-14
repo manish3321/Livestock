@@ -1,6 +1,7 @@
 ﻿import { useState, type FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { ApiRequestError } from '../api/client';
 import { useAuth } from '../auth/auth-context';
 
 export function LoginPage() {
@@ -11,17 +12,28 @@ export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(false);
+  const [unreachable, setUnreachable] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(false);
+    setUnreachable(false);
     try {
       await signIn(email, password);
       const from = (location.state as { from?: { pathname: string } } | null)?.from;
       navigate(from?.pathname ?? '/dashboard', { replace: true });
-    } catch {
+    } catch (err) {
+      const status = err instanceof ApiRequestError ? err.error.statusCode : undefined;
+      const message = err instanceof Error ? err.message : '';
+      setUnreachable(
+        status === 405 ||
+          status === 404 ||
+          status === 502 ||
+          status === 503 ||
+          /Method Not Allowed|Failed to fetch|NetworkError/i.test(message),
+      );
       setError(true);
     } finally {
       setBusy(false);
@@ -71,7 +83,9 @@ export function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
-          {error && <p className="error-text">{t('login.failed')}</p>}
+          {error && (
+            <p className="error-text">{t(unreachable ? 'login.serverUnreachable' : 'login.failed')}</p>
+          )}
           <button className="btn block" type="submit" disabled={busy}>
             {busy ? t('common.loading') : t('login.submit')}
           </button>

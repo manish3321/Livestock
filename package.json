@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "build:vercel": "pnpm --filter @farm/contracts build && pnpm --filter @farm/design-tokens build && pnpm --filter @farm/web build",
+    "build:vercel": "pnpm --filter @farm/contracts build && pnpm --filter @farm/design-tokens build && pnpm --filter @farm/api db:generate && pnpm --filter @farm/api build && pnpm --filter @farm/web build",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
@@ -17,5 +17,10 @@
     "dev:web": "pnpm --filter @farm/web dev",
     "db:migrate": "pnpm --filter @farm/api db:migrate",
     "db:seed": "pnpm --filter @farm/api db:seed"
+  },
+  "dependencies": {
+    "@nestjs/platform-express": "^11.0.0",
+    "express": "^5.1.0",
+    "reflect-metadata": "^0.2.2"
   }
 }
