@@ -195,6 +195,7 @@ function highestPriority(group: GroupableTask[]): string {
 }
 
 const GSM7 =
+  // eslint-disable-next-line no-control-regex -- GSM-7 includes NUL as a legal code point
   /^[\x00-\x7F€£¥èéùìòÇØøÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ¡ÄÖÑÜ§¿äöñüà\n\r ]*$/;
 
 export function smsEncoding(text: string): {

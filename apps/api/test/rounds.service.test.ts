@@ -300,7 +300,7 @@ function matchEntry(e: any, where: any) {
   return true;
 }
 
-function withIncludes(animal: any, include: any, db: RecordingFake) {
+function withIncludes(animal: any, include: any, _db: RecordingFake) {
   if (!include) return animal;
   return {
     ...animal,
