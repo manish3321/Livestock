@@ -248,7 +248,7 @@ export class HealthRecordsService {
         await this.create(
           user,
           {
-            type: protocol?.key === 'DEWORM' ? 'DEWORMING' : 'VACCINATION',
+            type: protocol?.key === 'DEWORMING' ? 'DEWORMING' : 'VACCINATION',
             title: input.title,
             animalId: animal.id,
             performedAt: input.performedAt,

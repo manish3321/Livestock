@@ -19,6 +19,8 @@ import {
   ProductionType,
   QualityGrade,
   HerdBatchKind,
+  ProtocolTrigger,
+  SexRestriction,
 } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
@@ -397,6 +399,110 @@ async function main(): Promise<void> {
       where: { species: config.species },
       update: config,
       create: config,
+    });
+  }
+
+  const dairy = [Species.BUFFALO, Species.COW];
+  const allSpecies = [Species.BUFFALO, Species.COW, Species.PIG, Species.GOAT];
+  const systemProtocols = [
+    {
+      id: '00000000-0000-4000-8000-0000000000f1',
+      disease: 'FMD',
+      diseaseNp: 'खोरेत',
+      species: dairy,
+      trigger: ProtocolTrigger.AGE_BASED,
+      triggerAgeDays: 180,
+      boosterAfterDays: 28,
+      repeatIntervalDays: 180,
+      sexRestriction: SexRestriction.ANY,
+      pregnancyContraindicated: false,
+      active: true,
+      notes: 'First at 180d, booster +28d, then every 180d',
+    },
+    {
+      id: '00000000-0000-4000-8000-0000000000f2',
+      disease: 'HS',
+      diseaseNp: 'एच.एस.',
+      species: dairy,
+      trigger: ProtocolTrigger.SEASONAL,
+      triggerMonth: 4,
+      repeatIntervalDays: 365,
+      sexRestriction: SexRestriction.ANY,
+      pregnancyContraindicated: false,
+      active: true,
+      notes: 'Annually, month 4 (April–May, pre-monsoon)',
+    },
+    {
+      id: '00000000-0000-4000-8000-0000000000f3',
+      disease: 'BQ',
+      diseaseNp: 'बि.क्यू.',
+      species: [Species.COW],
+      trigger: ProtocolTrigger.SEASONAL,
+      triggerMonth: 4,
+      triggerAgeDays: 180,
+      repeatIntervalDays: 365,
+      sexRestriction: SexRestriction.ANY,
+      pregnancyContraindicated: false,
+      active: true,
+      notes: 'Annually month 4. Young cattle 6mo–2yr especially',
+    },
+    {
+      id: '00000000-0000-4000-8000-0000000000f4',
+      disease: 'BRUCELLOSIS',
+      diseaseNp: 'ब्रुसेलोसिस',
+      species: dairy,
+      trigger: ProtocolTrigger.AGE_BASED,
+      triggerAgeDays: 120,
+      sexRestriction: SexRestriction.FEMALE,
+      pregnancyContraindicated: true,
+      active: true,
+      notes: 'Once at 120d, females only, contraindicated in pregnancy',
+    },
+    {
+      id: '00000000-0000-4000-8000-0000000000f6',
+      disease: 'ANTHRAX',
+      diseaseNp: 'एन्थ्राक्स',
+      species: dairy,
+      trigger: ProtocolTrigger.SEASONAL,
+      triggerMonth: 4,
+      repeatIntervalDays: 365,
+      sexRestriction: SexRestriction.ANY,
+      pregnancyContraindicated: false,
+      active: false,
+      notes: 'Annually, endemic districts only — enable per farm',
+    },
+    {
+      id: '00000000-0000-4000-8000-0000000000f5',
+      disease: 'DEWORMING',
+      diseaseNp: 'जुकाको औषधी',
+      species: allSpecies,
+      trigger: ProtocolTrigger.INTERVAL,
+      triggerAgeDays: 30,
+      repeatIntervalDays: 90,
+      sexRestriction: SexRestriction.ANY,
+      pregnancyContraindicated: false,
+      active: true,
+      notes: 'Every 90d; calves under 180d every 30d',
+    },
+    {
+      id: '00000000-0000-4000-8000-0000000000f7',
+      disease: 'ECTOPARASITE',
+      diseaseNp: 'बाह्य परजीवी',
+      species: dairy,
+      trigger: ProtocolTrigger.INTERVAL,
+      triggerAgeDays: 30,
+      repeatIntervalDays: 30,
+      sexRestriction: SexRestriction.ANY,
+      pregnancyContraindicated: false,
+      active: true,
+      notes: 'Every 30d, months 6–9 only (monsoon)',
+    },
+  ];
+  for (const protocol of systemProtocols) {
+    await prisma.vaccineProtocol.upsert({
+      where: { id: protocol.id },
+      update: { ...protocol, farmId: null, isSystemDefault: true },
+      create: { ...protocol, farmId: null, isSystemDefault: true },
     });
   }
 

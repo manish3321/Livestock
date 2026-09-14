@@ -4,7 +4,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Html5Qrcode } from 'html5-qrcode';
 import type { MilkSession, RecordingMode, RoundSkipReason } from '@farm/contracts';
-import { RECORDING_MODES } from '@farm/contracts';
+import { NEPAL_VACCINE_PROTOCOLS, RECORDING_MODES } from '@farm/contracts';
+import { batchVaccinate } from '../../api/health';
+import { listInventory } from '../../api/inventory';
 import { ApiRequestError } from '../../api/client';
 import { api } from '../../api/client';
 import { getMilkRound, updateTank } from '../../api/milk';
@@ -91,6 +93,8 @@ export function ShedPage() {
   } | null>(null);
   const [actual, setActual] = useState('');
   const [showPhotos, setShowPhotos] = useState(false);
+  const [vaxItemId, setVaxItemId] = useState('');
+  const [vaxDisease, setVaxDisease] = useState('FMD');
   const [cacheTick, setCacheTick] = useState(0);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const lastScanAt = useRef(0);
@@ -148,8 +152,19 @@ export function ShedPage() {
     return () => window.removeEventListener('online', onOnline);
   }, []);
 
+  const inventoryQ = useQuery({
+    queryKey: ['inventory', 'shed-vax'],
+    queryFn: () => listInventory({ pageSize: 100 }),
+    enabled: mode === 'VACCINATION' || mode === 'TREATMENT',
+  });
+
   const start = useMutation({
-    mutationFn: () => startRound({ mode, session: mode === 'MILKING' ? session : undefined }),
+    mutationFn: () =>
+      startRound({
+        mode,
+        session: mode === 'MILKING' ? session : undefined,
+        contextItemId: vaxItemId || undefined,
+      }),
     onSuccess: (r) => {
       setRoundId(r.id);
       rememberActiveRound(r.id, r.mode, r.session);
@@ -269,6 +284,52 @@ export function ShedPage() {
       } else {
         setError(t('shed.saveFailed'));
       }
+    },
+  });
+
+  const confirmDose = useMutation({
+    mutationFn: async () => {
+      if (!scan || !roundId) throw new Error('no scan');
+      return batchVaccinate({
+        animalIds: [scan.animal.id],
+        itemId: vaxItemId || undefined,
+        disease: vaxDisease,
+        administeredAt: new Date(),
+        doseAmount: 2,
+        route: 'SUBCUTANEOUS',
+        roundId,
+      });
+    },
+    onSuccess: (res) => {
+      if (res.skipped.length) {
+        setError(t('health.skippedPregnant', { n: res.skipped.length }));
+        setFlash('bad');
+        shedFeedback('bad');
+        setTimeout(() => setFlash(null), 700);
+        setScan(null);
+        void remainingQ.refetch();
+        return;
+      }
+      shedFeedback('ok');
+      setFlash('ok');
+      setTimeout(() => setFlash(null), 400);
+      setError(null);
+      const next = readShedCache();
+      writeShedCache({
+        ...next,
+        remaining: next.remaining.filter((a) => a.id !== scan!.animal.id),
+        recorded: (next.recorded ?? 0) + 1,
+      });
+      setCacheTick((n) => n + 1);
+      setScan(null);
+      void remainingQ.refetch();
+    },
+    onError: (err) => {
+      setFlash('bad');
+      shedFeedback('bad');
+      setTimeout(() => setFlash(null), 700);
+      if (err instanceof ApiRequestError) setError(err.error.message);
+      else setError(t('shed.saveFailed'));
     },
   });
 
@@ -409,6 +470,31 @@ export function ShedPage() {
               ))}
             </div>
           )}
+          {mode === 'VACCINATION' && (
+            <div className="form-grid">
+              <label>
+                {t('shed.vaxDisease')}
+                <select value={vaxDisease} onChange={(e) => setVaxDisease(e.target.value)}>
+                  {NEPAL_VACCINE_PROTOCOLS.map((p) => (
+                    <option key={p.key} value={p.key}>
+                      {p.titleEn}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                {t('health.medicine')}
+                <select value={vaxItemId} onChange={(e) => setVaxItemId(e.target.value)}>
+                  <option value="">—</option>
+                  {(inventoryQ.data?.items ?? []).map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
           <button type="button" className="btn shed-go" onClick={() => start.mutate()} disabled={start.isPending}>
             {t('shed.start')}
           </button>
@@ -541,6 +627,16 @@ export function ShedPage() {
             <p className="muted">{t(`shed.next.${scan.nextAction}`)}</p>
           )}
           {error && <p className="error-text">{error}</p>}
+          {mode === 'VACCINATION' && (
+            <button
+              type="button"
+              className="btn shed-save"
+              onClick={() => confirmDose.mutate()}
+              disabled={confirmDose.isPending}
+            >
+              {t('shed.confirmDose')}
+            </button>
+          )}
           {mode === 'MILKING' && (
             <button
               type="button"

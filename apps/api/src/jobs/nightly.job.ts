@@ -1,10 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { NEPAL_VACCINE_PROTOCOLS } from '@farm/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 import { SpeciesConfigService } from '../species-config/species-config.service';
+import { VaccinationsService } from '../vaccinations/vaccinations.service';
 import { nepalSixAmOn } from '../withholds/withhold-rules';
-import { PROTOCOL_TASK_IDS, ensureTask } from './task-writer';
+import { ensureTask } from './task-writer';
 
 const DAY = 24 * 60 * 60 * 1000;
 const EXIT = ['SOLD', 'DEAD', 'CULLED'] as const;
@@ -20,6 +20,7 @@ export class NightlyJob {
   constructor(
     private readonly prisma: PrismaService,
     private readonly species: SpeciesConfigService,
+    private readonly vaccinations?: VaccinationsService,
   ) {}
 
   @Cron('0 1 * * *', { timeZone: 'Asia/Kathmandu' })
@@ -63,60 +64,8 @@ export class NightlyJob {
   }
 
   private async vaccinationTasks(farmId: string, now: Date): Promise<void> {
-    const herd = await this.prisma.animal.findMany({
-      where: { farmId, deletedAt: null, status: { notIn: [...EXIT] } },
-      select: {
-        id: true,
-        herdNumber: true,
-        tag: true,
-        species: true,
-        gender: true,
-        dateOfBirth: true,
-        isPregnant: true,
-        health: {
-          where: { type: { in: ['VACCINATION', 'DEWORMING'] } },
-          orderBy: { performedAt: 'desc' },
-          take: 20,
-        },
-      },
-    });
-
-    const horizon = new Date(now.getTime() + 60 * DAY);
-    for (const protocol of NEPAL_VACCINE_PROTOCOLS) {
-      for (const animal of herd) {
-        if (protocol.sex === 'FEMALE' && animal.gender !== 'FEMALE') continue;
-        const ageMonths = animal.dateOfBirth
-          ? (now.getTime() - animal.dateOfBirth.getTime()) / (30.44 * DAY)
-          : 24;
-        if (ageMonths < protocol.firstDoseMonths) continue;
-
-        const last = animal.health.find((h) =>
-          h.title.toUpperCase().includes(protocol.key) || h.title.includes(protocol.titleEn),
-        );
-        let due = last?.nextDueAt ?? last?.performedAt ?? animal.dateOfBirth ?? now;
-        if (last?.performedAt && protocol.intervalDays) {
-          due = new Date(last.performedAt.getTime() + protocol.intervalDays * DAY);
-        } else if (!last && animal.dateOfBirth) {
-          due = new Date(animal.dateOfBirth);
-          due.setMonth(due.getMonth() + protocol.firstDoseMonths);
-        }
-        if (due < now) due = now;
-        if (due > horizon) continue;
-
-        const label = animal.herdNumber ?? animal.tag;
-        await ensureTask(this.prisma, {
-          farmId,
-          animalId: animal.id,
-          type: 'VACCINATION_DUE',
-          titleEn: `${protocol.titleEn} due for ${label}`,
-          titleNp: `${protocol.titleNp} ${label} लाई दिन बाँकी`,
-          dueAt: due,
-          priority: due <= now ? 'HIGH' : 'NORMAL',
-          sourceRefType: 'vaccineProtocol',
-          sourceRefId: PROTOCOL_TASK_IDS[protocol.key] ?? null,
-        });
-      }
-    }
+    if (!this.vaccinations) return;
+    await this.vaccinations.generateForFarm(farmId, now);
   }
 
   private async breedingTasks(farmId: string, now: Date): Promise<void> {

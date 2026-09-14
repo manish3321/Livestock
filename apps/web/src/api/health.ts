@@ -48,6 +48,17 @@ export function groupVaccinate(body: import('@farm/contracts').GroupVaccinate) {
   });
 }
 
+export function batchVaccinate(body: import('@farm/contracts').BatchVaccinate) {
+  return api<{
+    recorded: Array<{ animalId: string; vaccinationId: string }>;
+    skipped: Array<{ animalId: string; reason: string }>;
+    movements: number;
+  }>('/v1/health/vaccinations/batch', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
 export function listHealthCalendar(from?: Date, to?: Date): Promise<HealthRecordDto[]> {
   return api(`/v1/health-records/calendar${toQuery({ from, to })}`);
 }

@@ -33,6 +33,7 @@ import { MilkModule } from './milk/milk.module';
 import { RoundsModule } from './rounds/rounds.module';
 import { TasksModule } from './tasks/tasks.module';
 import { WithholdsModule } from './withholds/withholds.module';
+import { VaccinationsModule } from './vaccinations/vaccinations.module';
 
 /** Cron does not run on Vercel serverless; skip the ESM schedule package there. */
 function cronSupport(): { imports: DynamicModule[]; providers: Provider[] } {
@@ -77,6 +78,7 @@ const cron = cronSupport();
     RoundsModule,
     TasksModule,
     WithholdsModule,
+    VaccinationsModule,
   ],
   providers: [
     ...cron.providers,

@@ -371,6 +371,30 @@ export interface AnimalImportPreviewRow {
   errors: string[];
 }
 
+export const ADMIN_ROUTES = [
+  'INTRAMUSCULAR',
+  'SUBCUTANEOUS',
+  'INTRAVENOUS',
+  'ORAL',
+  'TOPICAL',
+  'INTRAMAMMARY',
+  'INTRANASAL',
+] as const;
+
+export const batchVaccinateSchema = z.object({
+  animalIds: z.array(z.string().uuid()).min(1).max(200),
+  itemId: z.string().uuid().optional(),
+  lotId: z.string().uuid().optional(),
+  doseAmount: z.number().positive().max(100).default(2),
+  route: z.enum(ADMIN_ROUTES).default('SUBCUTANEOUS'),
+  administeredBy: z.string().max(120).optional(),
+  administeredAt: z.coerce.date().default(() => new Date()),
+  roundId: z.string().uuid().optional(),
+  expiredLotReason: z.string().max(300).nullable().optional(),
+  disease: z.string().max(40).optional(),
+});
+export type BatchVaccinate = z.infer<typeof batchVaccinateSchema>;
+
 export const groupVaccinateSchema = z.object({
   title: z.string().min(1).max(120),
   protocolKey: z.string().max(40).optional(),
@@ -491,11 +515,13 @@ export const colostrumSchema = z.object({
 export type ColostrumInput = z.infer<typeof colostrumSchema>;
 
 export const NEPAL_VACCINE_PROTOCOLS = [
-  { key: 'FMD', titleEn: 'FMD', titleNp: 'खोरत', firstDoseMonths: 6, boosterDays: 28, intervalDays: 182, sex: 'ANY' as const, blockPregnant: false },
-  { key: 'HS', titleEn: 'Haemorrhagic septicaemia', titleNp: 'गालेरोग', firstDoseMonths: 6, boosterDays: null, intervalDays: 365, sex: 'ANY' as const, blockPregnant: false, seasonMonths: [4, 5] },
-  { key: 'BQ', titleEn: 'Black quarter', titleNp: 'ब्ल्याक क्वार्टर', firstDoseMonths: 4, boosterDays: null, intervalDays: 365, sex: 'ANY' as const, blockPregnant: false, seasonMonths: [4, 5] },
-  { key: 'BRUCELLA', titleEn: 'Brucellosis', titleNp: 'ब्रुसेलोसिस', firstDoseMonths: 4, boosterDays: null, intervalDays: null, sex: 'FEMALE' as const, blockPregnant: true },
-  { key: 'DEWORM', titleEn: 'Deworming', titleNp: 'जुकाको औषधि', firstDoseMonths: 1, boosterDays: null, intervalDays: 90, sex: 'ANY' as const, blockPregnant: false },
+  { key: 'FMD', titleEn: 'FMD', titleNp: 'खोरेत', firstDoseMonths: 6, boosterDays: 28, intervalDays: 180, sex: 'ANY' as const, blockPregnant: false },
+  { key: 'HS', titleEn: 'Haemorrhagic septicaemia', titleNp: 'एच.एस.', firstDoseMonths: 6, boosterDays: null, intervalDays: 365, sex: 'ANY' as const, blockPregnant: false, seasonMonths: [4, 5] },
+  { key: 'BQ', titleEn: 'Black quarter', titleNp: 'बि.क्यू.', firstDoseMonths: 6, boosterDays: null, intervalDays: 365, sex: 'ANY' as const, blockPregnant: false, seasonMonths: [4, 5] },
+  { key: 'BRUCELLOSIS', titleEn: 'Brucellosis', titleNp: 'ब्रुसेलोसिस', firstDoseMonths: 4, boosterDays: null, intervalDays: null, sex: 'FEMALE' as const, blockPregnant: true },
+  { key: 'ANTHRAX', titleEn: 'Anthrax', titleNp: 'एन्थ्राक्स', firstDoseMonths: 6, boosterDays: null, intervalDays: 365, sex: 'ANY' as const, blockPregnant: false, farmEnabled: true },
+  { key: 'DEWORMING', titleEn: 'Deworming', titleNp: 'जुकाको औषधी', firstDoseMonths: 1, boosterDays: null, intervalDays: 90, sex: 'ANY' as const, blockPregnant: false },
+  { key: 'ECTOPARASITE', titleEn: 'Ectoparasite', titleNp: 'बाह्य परजीवी', firstDoseMonths: 1, boosterDays: null, intervalDays: 30, sex: 'ANY' as const, blockPregnant: false, seasonMonths: [6, 7, 8, 9] },
 ] as const;
 
 export interface DailySheetRow {

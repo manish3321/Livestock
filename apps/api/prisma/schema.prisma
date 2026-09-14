@@ -124,6 +124,10 @@ model Farm {
   scanEvents       ScanEvent[]
   milkWithholds    MilkWithhold[]
   meatWithholds    MeatWithhold[]
+  vaccineProtocols VaccineProtocol[]
+  healthEvents     HealthEvent[]
+  vaccinationRecords VaccinationRecord[]
+  stockLots        StockLot[]
 }
 
 model FarmMembership {
@@ -330,6 +334,8 @@ model Animal {
   sireOffspring Animal[]      @relation("AnimalSire")
   weights    WeightRecord[]
   health     HealthRecord[]
+  healthEvents HealthEvent[]
+  vaccinationRecords VaccinationRecord[]
   breeding   BreedingRecord[]
   production ProductionEntry[]
   expenses   Expense[]
@@ -1150,6 +1156,7 @@ model InventoryItem {
   farm      Farm             @relation(fields: [farmId], references: [id], onDelete: Cascade)
   restock   RestockRequest[]
   movements StockMovement[]
+  lots      StockLot[]
   feeds     BatchFeedEvent[] @relation("BatchFeedInventory")
   feedLogs  FeedLog[]        @relation("FeedLogInventory")
   health    HealthRecord[]
@@ -1165,10 +1172,32 @@ enum StockMovementType {
   ADJUST
 }
 
+model StockLot {
+  id              String    @id @default(uuid()) @db.Uuid
+  itemId          String    @db.Uuid
+  farmId          String    @db.Uuid
+  lotNumber       String
+  qtyReceived     Decimal   @db.Decimal(12, 3)
+  qtyRemaining    Decimal   @db.Decimal(12, 3)
+  unitCostNpr     Decimal   @db.Decimal(10, 2) @default(0)
+  receivedOn      DateTime
+  expiryDate      DateTime?
+  supplierId      String?
+  storageLocation String?
+
+  farm      Farm            @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  item      InventoryItem   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  movements StockMovement[]
+
+  @@index([itemId, expiryDate])
+  @@index([farmId, expiryDate])
+}
+
 model StockMovement {
   id        String            @id @default(uuid()) @db.Uuid
   farmId    String            @db.Uuid
   itemId    String            @db.Uuid
+  lotId     String?           @db.Uuid
   type      StockMovementType
   quantity  Decimal           @db.Decimal(12, 2)
   reason    String?
@@ -1177,9 +1206,11 @@ model StockMovement {
 
   farm Farm          @relation(fields: [farmId], references: [id], onDelete: Cascade)
   item InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  lot  StockLot?     @relation(fields: [lotId], references: [id], onDelete: SetNull)
 
   @@index([itemId, createdAt])
   @@index([farmId, createdAt])
+  @@index([lotId, createdAt])
 }
 
 enum RestockStatus {
@@ -1259,6 +1290,149 @@ model HealthRecord {
   @@index([animalId])
   @@index([groupId])
   @@index([herdBatchId])
+}
+
+enum ProtocolTrigger {
+  AGE_BASED
+  SEASONAL
+  INTERVAL
+  EVENT_BASED
+}
+
+enum SexRestriction {
+  ANY
+  FEMALE
+  MALE
+}
+
+enum HealthEventType {
+  VACCINATION
+  TREATMENT
+  OBSERVATION
+  DEWORMING
+  HOOF_TRIM
+}
+
+enum AdminRoute {
+  INTRAMUSCULAR
+  SUBCUTANEOUS
+  INTRAVENOUS
+  ORAL
+  TOPICAL
+  INTRAMAMMARY
+  INTRANASAL
+}
+
+enum Symptom {
+  FEVER
+  OFF_FEED
+  DIARRHOEA
+  LAMENESS
+  SWOLLEN_UDDER
+  ABNORMAL_MILK
+  LETHARGY
+}
+
+enum Severity {
+  MILD
+  MODERATE
+  SEVERE
+}
+
+enum DiagnosedBy {
+  FARMER
+  VET
+}
+
+enum TreatmentOutcome {
+  ONGOING
+  RECOVERED
+  FAILED
+  CULLED
+}
+
+model VaccineProtocol {
+  id                       String           @id @default(uuid()) @db.Uuid
+  farmId                   String?          @db.Uuid
+  disease                  String
+  diseaseNp                String?
+  species                  Species[]
+  trigger                  ProtocolTrigger
+  triggerAgeDays           Int?
+  triggerMonth             Int?
+  boosterAfterDays         Int?
+  repeatIntervalDays       Int?
+  sexRestriction           SexRestriction   @default(ANY)
+  pregnancyContraindicated Boolean          @default(false)
+  isSystemDefault          Boolean          @default(false)
+  active                   Boolean          @default(true)
+  notes                    String?
+
+  farm Farm? @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  records VaccinationRecord[]
+
+  @@index([farmId, active])
+}
+
+model HealthEvent {
+  id                   String            @id @default(uuid()) @db.Uuid
+  animalId             String            @db.Uuid
+  farmId               String            @db.Uuid
+  type                 HealthEventType
+  eventAt              DateTime
+  roundId              String?           @db.Uuid
+  symptoms             Symptom[] @default([])
+  temperatureC         Decimal?          @db.Decimal(4, 1)
+  severity             Severity?
+  provisionalDiagnosis String?
+  finalDiagnosis       String?
+  diagnosedBy          DiagnosedBy       @default(FARMER)
+  vetName              String?
+  vetPhone             String?
+  outcome              TreatmentOutcome  @default(ONGOING)
+  recoveredOn          DateTime?
+  totalCostNpr         Decimal?          @db.Decimal(10, 2)
+  taskId               String?           @db.Uuid
+  notes                String?
+  createdAt            DateTime          @default(now())
+  deletedAt            DateTime?
+  deviceId             String?
+
+  farm        Farm               @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal      Animal             @relation(fields: [animalId], references: [id], onDelete: Cascade)
+  vaccination VaccinationRecord?
+
+  @@index([animalId, eventAt])
+  @@index([farmId, outcome])
+}
+
+model VaccinationRecord {
+  id                      String      @id @default(uuid()) @db.Uuid
+  healthEventId           String      @unique @db.Uuid
+  animalId                String      @db.Uuid
+  farmId                  String      @db.Uuid
+  disease                 String
+  protocolId              String?     @db.Uuid
+  itemId                  String?     @db.Uuid
+  lotId                   String?     @db.Uuid
+  lotNumber               String?
+  roundId                 String?     @db.Uuid
+  administeredAt          DateTime
+  doseAmount              Decimal?    @db.Decimal(6, 2)
+  route                   AdminRoute?
+  administeredBy          String?
+  costNpr                 Decimal?    @db.Decimal(10, 2)
+  adverseReaction         Severity?
+  disputedEfficacy        Boolean     @default(false)
+  scheduleWasEstimatedAge Boolean     @default(false)
+  nextDueOn               DateTime?
+
+  farm         Farm             @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal       Animal           @relation(fields: [animalId], references: [id], onDelete: Cascade)
+  healthEvent  HealthEvent      @relation(fields: [healthEventId], references: [id], onDelete: Cascade)
+  protocol     VaccineProtocol? @relation(fields: [protocolId], references: [id], onDelete: SetNull)
+
+  @@index([animalId, disease, administeredAt])
 }
 
 /// Highest-consequence feature. Withheld milk in a cooperative tank

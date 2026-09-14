@@ -9,11 +9,12 @@ import {
   type HealthCreate,
   type HealthListQuery,
 } from '@farm/contracts';
+import { ApiRequestError } from '../../api/client';
 import { listAnimals } from '../../api/animals';
 import { listBatches } from '../../api/batches';
 import { NEPAL_VACCINE_PROTOCOLS } from '@farm/contracts';
 import { listInventory } from '../../api/inventory';
-import { createHealthRecord, groupVaccinate, listHealthCalendar, listHealthRecords, type HealthRecordDto } from '../../api/health';
+import { batchVaccinate, createHealthRecord, listHealthCalendar, listHealthRecords, type HealthRecordDto } from '../../api/health';
 import { listActiveWithholds } from '../../api/withholds';
 import { WithholdBanner } from '../../components/WithholdBanner';
 import { useAuth } from '../../auth/auth-context';
@@ -35,7 +36,8 @@ export function HealthPage() {
   const [showGroup, setShowGroup] = useState(false);
   const [protocolKey, setProtocolKey] = useState('FMD');
   const [groupIds, setGroupIds] = useState<string[]>([]);
-  const [batchNumber, setBatchNumber] = useState('');
+  const [groupItemId, setGroupItemId] = useState('');
+  const [expiredLotReason, setExpiredLotReason] = useState('');
   const [symptoms, setSymptoms] = useState<string[]>([]);
   const [appearance, setAppearance] = useState('NORMAL');
   const [form, setForm] = useState<Partial<HealthCreate>>({
@@ -77,6 +79,12 @@ export function HealthPage() {
   const batchesQ = useQuery({
     queryKey: ['batches', 'health-select'],
     queryFn: () => listBatches({ pageSize: 200 }),
+  });
+
+  const inventoryQ = useQuery({
+    queryKey: ['inventory', 'health-vax'],
+    queryFn: () => listInventory({ pageSize: 100 }),
+    enabled: showGroup,
   });
 
   const animalById = useMemo(() => {
@@ -240,6 +248,7 @@ export function HealthPage() {
         <div className="card" style={{ marginBottom: 16 }}>
           <h2>{t('health.groupVax')}</h2>
           <p className="muted">{t('health.groupVaxHelp')}</p>
+          {error && <p className="error-text">{error}</p>}
           <label>
             {t('health.protocol')}
             <select value={protocolKey} onChange={(e) => setProtocolKey(e.target.value)}>
@@ -251,8 +260,25 @@ export function HealthPage() {
             </select>
           </label>
           <label>
-            {t('health.batchNumber')}
-            <input value={batchNumber} onChange={(e) => setBatchNumber(e.target.value)} />
+            {t('health.inventoryItem')}
+            <select value={groupItemId} onChange={(e) => setGroupItemId(e.target.value)}>
+              <option value="">—</option>
+              {(inventoryQ.data?.items ?? [])
+                .filter((i) => i.category === 'MEDICINE' || i.category === 'VACCINE')
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label>
+            {t('health.expiredLotReason')}
+            <input
+              value={expiredLotReason}
+              onChange={(e) => setExpiredLotReason(e.target.value)}
+              placeholder={t('health.expiredLotReasonHelp')}
+            />
           </label>
           <div className="chip-row" style={{ margin: '12px 0' }}>
             {(animalsQ.data?.items ?? []).map((a) => (
@@ -273,18 +299,30 @@ export function HealthPage() {
             className="btn"
             disabled={groupIds.length === 0}
             onClick={() => {
-              const proto = NEPAL_VACCINE_PROTOCOLS.find((p) => p.key === protocolKey);
-              void groupVaccinate({
-                title: proto?.titleEn ?? protocolKey,
-                protocolKey,
+              void batchVaccinate({
                 animalIds: groupIds,
-                performedAt: new Date(),
-                batchNumber: batchNumber || undefined,
-              }).then(() => {
-                setShowGroup(false);
-                setGroupIds([]);
-                void qc.invalidateQueries({ queryKey: ['health-records'] });
-              });
+                itemId: groupItemId || undefined,
+                administeredAt: new Date(),
+                doseAmount: 2,
+                route: 'SUBCUTANEOUS',
+                disease: protocolKey,
+                expiredLotReason: expiredLotReason || undefined,
+              })
+                .then((res) => {
+                  setShowGroup(false);
+                  setGroupIds([]);
+                  setExpiredLotReason('');
+                  if (res.skipped.length) {
+                    setError(t('health.skippedPregnant', { n: res.skipped.length }));
+                  } else {
+                    setError(null);
+                  }
+                  void qc.invalidateQueries({ queryKey: ['health-records'] });
+                  void qc.invalidateQueries({ queryKey: ['inventory'] });
+                })
+                .catch((err) => {
+                  setError(err instanceof ApiRequestError ? err.error.message : t('health.batchFailed'));
+                });
             }}
           >
             {t('health.vaccinateN', { n: groupIds.length })}
