@@ -1,5 +1,4 @@
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
-import { ScheduleModule } from '@nestjs/schedule';
+import { MiddlewareConsumer, Module, NestModule, type DynamicModule, type Provider } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, Reflector } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AnimalsModule } from './animals/animals.module';
@@ -32,12 +31,23 @@ import { StorageModule } from './storage/storage.module';
 import { SyncModule } from './sync/sync.module';
 import { MilkModule } from './milk/milk.module';
 import { TasksModule } from './tasks/tasks.module';
-import { NightlyJob } from './jobs/nightly.job';
+
+/** Cron does not run on Vercel serverless; skip the ESM schedule package there. */
+function cronSupport(): { imports: DynamicModule[]; providers: Provider[] } {
+  if (process.env.VERCEL) return { imports: [], providers: [] };
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { ScheduleModule } = require('@nestjs/schedule') as typeof import('@nestjs/schedule');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { NightlyJob } = require('./jobs/nightly.job') as typeof import('./jobs/nightly.job');
+  return { imports: [ScheduleModule.forRoot()], providers: [NightlyJob] };
+}
+
+const cron = cronSupport();
 
 @Module({
   imports: [
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
-    ScheduleModule.forRoot(),
+    ...cron.imports,
     PrismaModule,
     SpeciesConfigModule,
     NotificationsModule,
@@ -65,7 +75,7 @@ import { NightlyJob } from './jobs/nightly.job';
     TasksModule,
   ],
   providers: [
-    NightlyJob,
+    ...cron.providers,
     { provide: APP_FILTER, useClass: AppExceptionFilter },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     {
