@@ -73,8 +73,6 @@ export function ShedPage() {
     queryFn: () =>
       api<{ morningMilkingHour: number; eveningMilkingHour: number }>('/v1/farms/me'),
   });
-  const morningHour = farmQ.data?.morningMilkingHour ?? 5;
-  const eveningHour = farmQ.data?.eveningMilkingHour ?? 17;
 
   const [mode, setMode] = useState<RecordingMode>(modeParam && RECORDING_MODES.includes(modeParam) ? modeParam : 'MILKING');
   const [session, setSession] = useState<MilkSession>(() => defaultSession(5, 17));
