@@ -139,7 +139,7 @@ describe('collectBreedingWork', () => {
       ],
       heats: [heat({ id: 'h1', animalId: ANIMAL, observedAt: '2026-09-15T02:00:00.000Z' })],
     });
-    expect(items.map((row) => row.kind)).toEqual(['colostrum', 'window', 'open']);
+    expect(items.map((row) => row.kind)).toEqual(['colostrum', 'window', 'pd', 'open']);
     expect(items[1]?.form).toBe('service');
     expect(items[0]?.breedingId).toBe('r-col');
   });
