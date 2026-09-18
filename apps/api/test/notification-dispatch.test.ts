@@ -110,6 +110,11 @@ function makePrisma(state: {
           return true;
         }),
     },
+    animal: {
+      findFirst: async () => (state as { buffalo?: boolean }).buffalo
+        ? { id: randomUUID() }
+        : null,
+    },
   };
 }
 
@@ -140,7 +145,7 @@ function task(partial: Record<string, unknown>) {
 
 describe('notification dispatch', () => {
   let port: FakePort;
-  let state: { tasks: any[]; logs: any[]; members: any[] };
+  let state: { tasks: any[]; logs: any[]; members: any[]; buffalo?: boolean };
   let service: NotificationDispatchService;
 
   beforeEach(() => {
@@ -311,5 +316,60 @@ describe('notification dispatch', () => {
     await service.dispatch(now);
     expect(port.voice[0]?.clipIds.length).toBeGreaterThan(0);
     expect(port.voice[0]?.clipIds.join(' ')).not.toMatch(/TTS|speak/i);
+  });
+
+  it('sends one heat-watch notification for six animals', async () => {
+    const now = atNepalHour(10);
+    for (let i = 0; i < 6; i++) {
+      state.tasks.push(
+        task({
+          id: randomUUID(),
+          type: 'HEAT_WATCH',
+          titleEn: `Heat watch B${i}`,
+          titleNp: `गर्मी B${i}`,
+          priority: 'NORMAL',
+          dueAt: now,
+        }),
+      );
+    }
+    await service.dispatch(now);
+    expect(port.pushes).toHaveLength(1);
+    expect(port.pushes[0]?.message.title).toMatch(/6/);
+  });
+
+  it('never batches colostrum tasks', async () => {
+    const now = atNepalHour(10);
+    for (let i = 0; i < 3; i++) {
+      state.tasks.push(
+        task({
+          id: randomUUID(),
+          type: 'COLOSTRUM_FEED',
+          titleEn: `Colostrum ${i}`,
+          titleNp: `बिगौती ${i}`,
+          priority: 'CRITICAL',
+          dueAt: now,
+        }),
+      );
+    }
+    const stats = await service.dispatch(now);
+    expect(stats.grouped).toBe(3);
+    expect(port.pushes).toHaveLength(3);
+  });
+
+  it('delivers SILENT_HEAT_CHECK at 04:00 on a buffalo farm', async () => {
+    state.buffalo = true;
+    const dawn = atNepalHour(4);
+    state.tasks.push(
+      task({
+        id: randomUUID(),
+        type: 'SILENT_HEAT_CHECK',
+        titleEn: 'Silent heat B10',
+        titleNp: 'मौन गर्मी',
+        priority: 'NORMAL',
+        dueAt: dawn,
+      }),
+    );
+    await service.dispatch(dawn);
+    expect(port.pushes).toHaveLength(1);
   });
 });

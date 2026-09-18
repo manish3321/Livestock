@@ -28,9 +28,11 @@ import {
 } from '../../api/expenses';
 import { useAuth } from '../../auth/auth-context';
 import { DataTable, type Column } from '../../components/DataTable';
+import { FieldError } from '../../components/FieldError';
 import { ErrorState, LoadingState } from '../../components/PageState';
 import { StatusChip } from '../../components/StatusChip';
 import { useFarmMode } from '../../hooks/useFarmMode';
+import { inRange, notFuture, required, useFieldErrors } from '../../lib/form-errors';
 
 const PAYMENT_OPTIONS = ['UNPAID', 'PAID', 'PARTIAL'] as const;
 
@@ -62,7 +64,7 @@ export function ExpensesPage() {
     description: '',
     dayOfMonth: 1,
   });
-  const [error, setError] = useState<string | null>(null);
+  const { errors: fieldErrors, validate, clearField, fieldProps } = useFieldErrors('exp');
 
   useEffect(() => {
     const animalId = searchParams.get('animalId') ?? undefined;
@@ -140,13 +142,11 @@ export function ExpensesPage() {
     },
     onSuccess: () => {
       setShowForm(false);
-      setError(null);
       setReceiptFile(null);
       setSplits([{ animalId: '', amount: '' }]);
       setForm({ category: 'FEED', expenseDate: new Date(), paymentStatus: 'UNPAID' });
       void qc.invalidateQueries({ queryKey: ['expenses'] });
     },
-    onError: (err: Error) => setError(err.message),
   });
 
   const review = useMutation({
@@ -273,11 +273,14 @@ export function ExpensesPage() {
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!form.description?.trim() || !form.amount || Number(form.amount) <= 0) {
-      setError(t('expenses.requiredFields'));
-      return;
-    }
-    save.mutate();
+    const ok = validate({
+      description: required(form.description, t('common.requiredField')),
+      amount:
+        required(form.amount == null ? '' : String(form.amount), t('common.requiredField')) ||
+        inRange(String(form.amount ?? ''), 0.01, 100_000_000, t('common.numberRange', { min: 0.01, max: 100000000 })),
+      expenseDate: notFuture(form.expenseDate ?? null, t('common.futureDate')),
+    });
+    if (ok) save.mutate();
   };
 
   return (
@@ -522,19 +525,20 @@ export function ExpensesPage() {
             <div className="field">
               <label htmlFor="exp-amount">{t('expenses.amount')}</label>
               <input
-                id="exp-amount"
+                {...fieldProps('amount')}
                 type="number"
                 min="0.01"
                 step="0.01"
-                required
                 value={form.amount ?? ''}
-                onChange={(e) =>
+                onChange={(e) => {
+                  clearField('amount');
                   setForm((prev) => ({
                     ...prev,
                     amount: e.target.value ? Number(e.target.value) : undefined,
-                  }))
-                }
+                  }));
+                }}
               />
+              <FieldError id="exp-amount-error" message={fieldErrors.amount} />
               {form.category &&
                 form.amount != null &&
                 form.amount > EXPENSE_ESCALATION_THRESHOLDS[form.category] && (
@@ -590,19 +594,20 @@ export function ExpensesPage() {
               </select>
             </div>
             <div className="field">
-              <label htmlFor="exp-date">{t('common.date')}</label>
+              <label htmlFor="exp-expenseDate">{t('common.date')}</label>
               <input
-                id="exp-date"
+                {...fieldProps('expenseDate')}
                 type="date"
-                required
                 value={toDateInput(form.expenseDate)}
-                onChange={(e) =>
+                onChange={(e) => {
+                  clearField('expenseDate');
                   setForm((prev) => ({
                     ...prev,
                     expenseDate: e.target.value ? new Date(e.target.value) : new Date(),
-                  }))
-                }
+                  }));
+                }}
               />
+              <FieldError id="exp-expenseDate-error" message={fieldErrors.expenseDate} />
             </div>
             <div className="field">
               <label htmlFor="exp-receipt">{t('expenses.receiptNumber')}</label>
@@ -712,19 +717,22 @@ export function ExpensesPage() {
           </div>
           )}
           <div className="field">
-            <label htmlFor="exp-desc">{t('expenses.description')}</label>
+            <label htmlFor="exp-description">{t('expenses.description')}</label>
             <textarea
-              id="exp-desc"
-              required
+              {...fieldProps('description')}
               rows={2}
               value={form.description ?? ''}
-              onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
+              onChange={(e) => {
+                clearField('description');
+                setForm((prev) => ({ ...prev, description: e.target.value }));
+              }}
             />
+            <FieldError id="exp-description-error" message={fieldErrors.description} />
           </div>
-          {error && <p className="error-text">{error}</p>}
+          {Object.keys(fieldErrors).length > 0 && <p className="form-summary-error">{t('common.fixErrors')}</p>}
           <div className="page-actions">
-            <button className="btn" type="submit" disabled={save.isPending}>
-              {t('common.save')}
+            <button className="btn" type="submit" disabled={save.isPending} aria-busy={save.isPending}>
+              {save.isPending ? t('common.saving') : t('common.save')}
             </button>
           </div>
         </form>

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { SpeciesConfigService } from '../species-config/species-config.service';
@@ -6,6 +6,10 @@ import { ProfitService } from '../profit/profit.service';
 import { VaccinationsService } from '../vaccinations/vaccinations.service';
 import { nepalSixAmOn } from '../withholds/withhold-rules';
 import { ensureTask } from './task-writer';
+import { nepalDayBounds } from '../notifications/notification-rules';
+import { atNepalHour } from '../common/nepal-time';
+import { ReproStageService } from '../breeding/repro-stage.service';
+import { ReminderEngineService } from '../breeding/reminder-engine.service';
 
 const DAY = 24 * 60 * 60 * 1000;
 const EXIT = ['SOLD', 'DEAD', 'CULLED'] as const;
@@ -23,6 +27,8 @@ export class NightlyJob {
     private readonly species: SpeciesConfigService,
     private readonly vaccinations?: VaccinationsService,
     private readonly profit?: ProfitService,
+    @Optional() private readonly reproStage?: ReproStageService,
+    @Optional() private readonly reminders?: ReminderEngineService,
   ) {}
 
   @Cron('0 1 * * *', { timeZone: 'Asia/Kathmandu' })
@@ -42,30 +48,41 @@ export class NightlyJob {
     this.logger.log(`Nightly job finished for ${farms.length} farm(s)`);
   }
 
+  async runFarm(farmId: string, now = new Date()): Promise<void> {
+    await this.generateForFarm(farmId, now);
+  }
+
   private async generateForFarm(farmId: string, now: Date): Promise<void> {
-    await this.expireOldTasks(farmId, now);
+    await this.reproStage?.recomputeFarm(farmId, now);
+    await this.reminders?.generateStageReminders(farmId, now);
+    await this.reminders?.generateEventReminders(farmId, now);
+    await this.reminders?.escalateAnestrus(farmId, now);
+    await this.checkProtocolIntegrity(farmId, now);
+    await this.expireStaleTasks(farmId, now);
+    await this.computeBreedingMetrics(farmId, now);
     await this.vaccinationTasks(farmId, now);
-    await this.breedingTasks(farmId, now);
-    await this.silentHeatTasks(farmId, now);
     await this.withholdEndTasks(farmId, now);
     await this.stockTasks(farmId, now);
     await this.missingMilkTasks(farmId, now);
-    if (this.profit) {
-      await this.profit.generateDailyMetrics(farmId, now);
-    }
   }
 
-  private async expireOldTasks(farmId: string, now: Date): Promise<void> {
+  private async expireStaleTasks(farmId: string, now: Date): Promise<void> {
     const cutoff = new Date(now.getTime() - 30 * DAY);
-    await this.prisma.task.updateMany({
+    const result = await this.prisma.task.updateMany({
       where: {
         farmId,
         status: { in: ['PENDING', 'SNOOZED'] },
         dueAt: { lt: cutoff },
-        priority: { not: 'CRITICAL' },
       },
       data: { status: 'EXPIRED' },
     });
+    const expired = (result as { count?: number }).count ?? 0;
+    if (expired > 0) this.logger.log(`Expired ${expired} stale task(s) for farm ${farmId}`);
+  }
+
+  private async computeBreedingMetrics(farmId: string, now: Date): Promise<void> {
+    await this.reproStage?.stageDurations(farmId, undefined, undefined, now);
+    if (this.profit) await this.profit.generateDailyMetrics(farmId, now);
   }
 
   private async vaccinationTasks(farmId: string, now: Date): Promise<void> {
@@ -73,140 +90,58 @@ export class NightlyJob {
     await this.vaccinations.generateForFarm(farmId, now);
   }
 
-  private async breedingTasks(farmId: string, now: Date): Promise<void> {
-    const open = await this.prisma.breedingRecord.findMany({
+  private async checkProtocolIntegrity(farmId: string, now: Date): Promise<void> {
+    const { start } = nepalDayBounds(now);
+    const overdue = await this.prisma.task.findMany({
       where: {
         farmId,
-        pregnancyStatus: { in: ['PREGNANT', 'CONFIRMED', 'OPEN'] },
-      },
-      include: { mother: true },
-    });
-
-    for (const rec of open) {
-      if (!rec.mother || rec.mother.deletedAt) continue;
-      const label = rec.mother.herdNumber ?? rec.mother.tag;
-      const cfg = await this.species.forSpecies(rec.mother.species);
-
-      if (rec.pregnancyStatus === 'OPEN' || rec.pregnancyStatus === 'PREGNANT') {
-        const checkAt = new Date(rec.matingDate.getTime() + cfg.pregnancyCheckEarliestDays * DAY);
-        await ensureTask(this.prisma, {
-          farmId,
-          animalId: rec.motherId,
-          type: 'PREGNANCY_CHECK',
-          titleEn: `Pregnancy check ${label}`,
-          titleNp: `${label} को गर्भ जाँच`,
-          dueAt: checkAt,
-          priority: 'HIGH',
-          sourceRefType: 'breedingRecord',
-          sourceRefId: rec.id,
-        });
-      }
-
-      if (rec.pregnancyStatus === 'CONFIRMED' || rec.pregnancyStatus === 'PREGNANT') {
-        const dryOff = new Date(rec.dueDate.getTime() - cfg.dryOffDaysBeforeCalving * DAY);
-        await ensureTask(this.prisma, {
-          farmId,
-          animalId: rec.motherId,
-          type: 'DRY_OFF',
-          titleEn: `Dry off ${label}`,
-          titleNp: `${label} सुकाउने बेला`,
-          dueAt: dryOff,
-          priority: 'HIGH',
-          sourceRefType: 'breedingRecord',
-          sourceRefId: rec.id,
-        });
-        for (const days of [7, 3, 1, 0]) {
-          const when = new Date(rec.dueDate.getTime() - days * DAY);
-          await ensureTask(this.prisma, {
-            farmId,
-            animalId: rec.motherId,
-            type: 'CALVING_WATCH',
-            titleEn: days === 0 ? `${label} due to calve today` : `${label} calving in ${days} day(s)`,
-            titleNp: days === 0 ? `${label} आज बियाउने` : `${label} ${days} दिनमा बियाउने`,
-            dueAt: when,
-            priority: 'CRITICAL',
-            sourceRefType: 'breedingRecord',
-            sourceRefId: rec.id,
-          });
-        }
-      }
-
-    }
-
-    const heats = await this.prisma.heatEvent.findMany({
-      where: { farmId, observedAt: { gte: new Date(now.getTime() - 4 * DAY) } },
-      include: { animal: true },
-    });
-    for (const heat of heats) {
-      const cfg = await this.species.forSpecies(heat.animal.species);
-      const watch = new Date(heat.observedAt.getTime() + (cfg.estrusCycleDays - 2) * DAY);
-      watch.setHours(5, 0, 0, 0);
-      const label = heat.animal.herdNumber ?? heat.animal.tag;
-      await ensureTask(this.prisma, {
-        farmId,
-        animalId: heat.animalId,
-        type: 'HEAT_WATCH',
-        titleEn: `Heat watch ${label}`,
-        titleNp: `${label} रजस्वला हेर्ने`,
-        dueAt: watch,
-        priority: 'HIGH',
-        sourceRefType: 'heatEvent',
-        sourceRefId: heat.id,
-      });
-      const windowOpen = new Date(
-        heat.observedAt.getTime() + cfg.serviceWindowStartHours * 60 * 60 * 1000,
-      );
-      await ensureTask(this.prisma, {
-        farmId,
-        animalId: heat.animalId,
-        type: 'SERVICE_WINDOW',
-        titleEn: `Breed ${label} within ${cfg.serviceWindowEndHours} hours of standing heat`,
-        titleNp: `${label} लाई ${cfg.serviceWindowEndHours} घण्टाभित्र सेवा दिनुहोस्`,
-        dueAt: windowOpen,
-        priority: 'HIGH',
-        sourceRefType: 'heatEvent',
-        sourceRefId: heat.id,
-      });
-    }
-  }
-
-  private async silentHeatTasks(farmId: string, now: Date): Promise<void> {
-    const cfg = await this.species.forSpecies('BUFFALO');
-    if (cfg.silentHeatCheckHour == null) return;
-
-    const herd = await this.prisma.animal.findMany({
-      where: {
-        farmId,
-        deletedAt: null,
-        species: 'BUFFALO',
-        gender: 'FEMALE',
-        isPregnant: false,
-        status: { notIn: [...EXIT] },
+        type: 'SYNC_INJECTION',
+        status: { in: ['PENDING', 'SNOOZED'] },
+        dueAt: { lt: start },
       },
     });
-    const since = new Date(now.getTime() - 30 * DAY);
-    for (const animal of herd) {
-      if (!animal.lactationStartDate) continue;
-      const dim = (now.getTime() - animal.lactationStartDate.getTime()) / DAY;
-      if (dim < cfg.voluntaryWaitingDays) continue;
-      const recent = await this.prisma.heatEvent.findFirst({
-        where: { farmId, animalId: animal.id, observedAt: { gte: since } },
+    const seen = new Set<string>();
+    for (const task of overdue) {
+      const enrollmentId = task.sourceRefType?.startsWith('sync:') ? task.sourceRefType.slice(5) : null;
+      if (!enrollmentId || seen.has(enrollmentId) || !task.animalId) continue;
+      seen.add(enrollmentId);
+      const enrollment = await this.prisma.syncEnrollment.findFirst({
+        where: { id: enrollmentId, farmId, status: 'ACTIVE' },
+        include: { protocol: true, animal: { select: { herdNumber: true, tag: true } } },
       });
-      if (recent) continue;
-      const due = new Date(now);
-      due.setHours(cfg.silentHeatCheckHour, 0, 0, 0);
-      const label = animal.herdNumber ?? animal.tag;
+      if (!enrollment) continue;
+      const stepDay = Math.round((task.dueAt.getTime() - enrollment.startDate.getTime()) / DAY);
+      await this.prisma.syncEnrollment.update({
+        where: { id: enrollment.id },
+        data: {
+          status: 'BROKEN',
+          brokenAtStep: stepDay,
+          brokenReason: `Day ${stepDay} injection missed`,
+        },
+      });
+      await this.prisma.task.updateMany({
+        where: {
+          farmId,
+          animalId: enrollment.animalId,
+          sourceRefType: `sync:${enrollment.id}`,
+          status: { in: ['PENDING', 'SNOOZED'] },
+        },
+        data: { status: 'SUPERSEDED' },
+      });
+      const label = enrollment.animal.herdNumber ?? enrollment.animal.tag;
+      const protocolName = enrollment.protocol.nameEn;
       await ensureTask(this.prisma, {
         farmId,
-        animalId: animal.id,
-        type: 'SILENT_HEAT_CHECK',
-        titleEn: `Check ${label} between 4 and 7am — buffalo silent heat`,
-        titleNp: `${label} बिहान ४ देखि ७ बजेसम्म हेर्नुहोस् — मौन रजस्वला`,
-        dueAt: due,
-        priority: 'NORMAL',
-        sourceRefType: 'silentHeat',
-        sourceRefId: animal.id,
+        animalId: enrollment.animalId,
+        type: 'PROTOCOL_BROKEN',
+        titleEn: `${protocolName} for ${label} is void — the day ${stepDay} injection was missed. Restart from the beginning, or switch to a CIDR protocol.`,
+        titleNp: `${label} को ${enrollment.protocol.nameNp} रद्द — दिन ${stepDay} को सुई छुट्यो। सुरुबाट वा सिडरमा सार्नुहोस्।`,
+        dueAt: now,
+        priority: 'HIGH',
+        sourceRefType: 'syncEnrollment',
+        sourceRefId: enrollment.id,
       });
+      await this.reproStage?.recomputeAnimal(farmId, enrollment.animalId, 'PROTOCOL_BROKEN', now);
     }
   }
 
@@ -303,12 +238,11 @@ export class NightlyJob {
     }
   }
 
+  /** Nightly runs at 01:00 NPT, so the milking day that just closed is yesterday's. */
   private async missingMilkTasks(farmId: string, now: Date): Promise<void> {
-    const evening = new Date(now);
-    evening.setHours(20, 0, 0, 0);
-    if (now < evening) return;
+    const { start, end } = nepalDayBounds(new Date(now.getTime() - DAY));
+    const evening = atNepalHour(start, 20);
 
-    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
     const herd = await this.prisma.animal.findMany({
       where: {
         farmId,
@@ -318,7 +252,7 @@ export class NightlyJob {
       },
     });
     const recorded = await this.prisma.productionEntry.findMany({
-      where: { farmId, type: 'MILK', entryDate: { gte: start } },
+      where: { farmId, type: 'MILK', entryDate: { gte: start, lt: end } },
       select: { animalId: true },
     });
     const seen = new Set(recorded.map((r) => r.animalId).filter(Boolean));

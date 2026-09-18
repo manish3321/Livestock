@@ -11,6 +11,7 @@ import { getAnimal, getAnimalEconomics, updateAnimal } from '../api/animals';
 import { getBatch, getBatchEconomics } from '../api/batches';
 import { useAuth } from '../auth/auth-context';
 import { AnimalActionGrid } from './AnimalActionGrid';
+import { Modal } from './Modal';
 import { ErrorState, LoadingState } from './PageState';
 import type { QrTarget } from '../lib/qr';
 
@@ -229,33 +230,17 @@ export function ScanResultModal({
   const { t } = useTranslation();
 
   return (
-    <div
-      className="modal-backdrop"
-      role="presentation"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <Modal
+      open
+      onClose={onClose}
+      title={t('qr.resultTitle')}
+      label={t('qr.resultTitle')}
     >
-      <div
-        className="modal-sheet"
-        role="dialog"
-        aria-modal="true"
-        aria-label={t('qr.resultTitle')}
-      >
-        <div className="modal-sheet-header">
-          <h2>{t('qr.resultTitle')}</h2>
-          <button className="btn secondary" type="button" onClick={onClose}>
-            {t('common.close')}
-          </button>
-        </div>
-        <div className="modal-sheet-body">
-          {target.kind === 'animal' ? (
-            <AnimalResult id={target.id} onClose={onClose} />
-          ) : (
-            <BatchResult id={target.id} onClose={onClose} />
-          )}
-        </div>
-      </div>
-    </div>
+      {target.kind === 'animal' ? (
+        <AnimalResult id={target.id} onClose={onClose} />
+      ) : (
+        <BatchResult id={target.id} onClose={onClose} />
+      )}
+    </Modal>
   );
 }

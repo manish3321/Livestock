@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { REPRO_STAGES, type ReproStage } from './domain';
 
 export const MILK_SESSIONS = ['MORNING', 'EVENING', 'MIDDAY'] as const;
 export type MilkSession = (typeof MILK_SESSIONS)[number];
@@ -84,13 +85,30 @@ export const TASK_TYPES = [
   'REMOVE_MARKER',
   'RETAG_REQUIRED',
   'TREATMENT_FOLLOWUP',
+  'SYNC_INJECTION',
+  'SYNC_AI',
+  'ANESTRUS_MINERAL',
+  'ANESTRUS_VET',
+  'ANESTRUS_DECISION',
+  'FEED_TRANSITION',
+  'PROTOCOL_BROKEN',
+  'CALF_HEALTH_CHECK',
+  'CYCLING_UNBRED',
+  'PD_STALLED',
 ] as const;
 export type TaskType = (typeof TASK_TYPES)[number];
 
 export const TASK_PRIORITIES = ['CRITICAL', 'HIGH', 'NORMAL', 'LOW'] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
 
-export const TASK_STATUSES = ['PENDING', 'DONE', 'SNOOZED', 'DISMISSED', 'EXPIRED'] as const;
+export const TASK_STATUSES = [
+  'PENDING',
+  'DONE',
+  'SNOOZED',
+  'DISMISSED',
+  'EXPIRED',
+  'SUPERSEDED',
+] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
 export const TASK_DISMISS_REASONS = [
@@ -838,4 +856,262 @@ export interface MilkEntryDto {
   litres: number;
   disposal: MilkDisposal;
   roundId: string | null;
+}
+
+export const BOARD_GROUP_KEYS = [
+  'BREED_TODAY',
+  'CHECK_HEAT',
+  'CALVING_WATCH',
+  'PREGNANCY_CHECK',
+  'INJECTION',
+  'DRY_OFF',
+  'POSTPARTUM_CHECK',
+] as const;
+export type BoardGroupKey = (typeof BOARD_GROUP_KEYS)[number];
+
+export const breedingBoardQuerySchema = z.object({
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+});
+export type BreedingBoardQuery = z.infer<typeof breedingBoardQuerySchema>;
+
+export const WATCH_GROUP_KEYS = [
+  'CALVING_SOON',
+  'FRESH',
+  'WATCHING_HEAT',
+  'BREED_NOW',
+  'WAITING_CHECK',
+  'TOO_SOON',
+  'ON_PROTOCOL',
+  'CARRYING',
+  'HEIFERS',
+  'DECISIONS',
+] as const;
+export type WatchGroupKey = (typeof WATCH_GROUP_KEYS)[number];
+
+export const COUNTDOWN_KINDS = [
+  'DAYS_TO_EVENT',
+  'HOURS_TO_DEADLINE',
+  'CYCLE_DAY',
+  'ELAPSED_OF_TARGET',
+  'PROTOCOL_DAY',
+  'DAYS_QUIET',
+] as const;
+export type CountdownKind = (typeof COUNTDOWN_KINDS)[number];
+
+export const COUNTDOWN_URGENCIES = ['CALM', 'NORMAL', 'SOON', 'IMMINENT', 'OVERDUE'] as const;
+export type CountdownUrgency = (typeof COUNTDOWN_URGENCIES)[number];
+
+export const breedingWatchQuerySchema = z.object({
+  stage: z.enum(REPRO_STAGES).optional(),
+});
+export type BreedingWatchQuery = z.infer<typeof breedingWatchQuerySchema>;
+
+export interface CountdownDto {
+  kind: CountdownKind;
+  eventEn: string;
+  eventNp: string;
+  targetDate: string | null;
+  remaining: number;
+  unit: 'DAYS' | 'HOURS';
+  total: number | null;
+  elapsed: number;
+  progressPct: number;
+  urgency: CountdownUrgency;
+  labelEn: string;
+  labelNp: string;
+}
+
+export interface WatchItemDto {
+  animalId: string;
+  shortNo: string;
+  name: string | null;
+  species: string;
+  stage: ReproStage;
+  penName: string;
+  penSortOrder: number;
+  seqNo: number;
+  photoUrl: string | null;
+  contextEn: string;
+  contextNp: string;
+  countdown: CountdownDto;
+}
+
+export interface WatchGroupDto {
+  key: WatchGroupKey;
+  labelEn: string;
+  labelNp: string;
+  colour: 'RED' | 'YELLOW' | 'BLUE' | 'PURPLE' | 'AMBER' | 'GREY';
+  items: WatchItemDto[];
+}
+
+export interface BreedingWatchDto {
+  totalAnimals: number;
+  groups: WatchGroupDto[];
+}
+
+export interface ReproMilestoneDto {
+  key: string;
+  labelEn: string;
+  labelNp: string;
+  date: string | null;
+  day: number | null;
+  remainingDays: number | null;
+  completed: boolean;
+}
+
+export interface ReproNextEventDto {
+  titleEn: string;
+  titleNp: string;
+  dueAt: string;
+  type: string;
+}
+
+export interface ReproTimelineDto {
+  animalId: string;
+  shortNo: string;
+  name: string | null;
+  stage: ReproStage;
+  stageLabelEn: string;
+  stageLabelNp: string;
+  cycleDay: number | null;
+  cycleTotal: number | null;
+  headlineEn: string;
+  headlineNp: string;
+  youAreHerePct: number;
+  milestones: ReproMilestoneDto[];
+  next: ReproNextEventDto[];
+}
+
+export const stageDurationsQuerySchema = z.object({
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+});
+export type StageDurationsQuery = z.infer<typeof stageDurationsQuerySchema>;
+
+export interface StageDurationRowDto {
+  stage: ReproStage;
+  meanDays: number | null;
+  sampleCount: number;
+}
+
+export interface StageDurationsDto {
+  from: string | null;
+  to: string | null;
+  stages: StageDurationRowDto[];
+  anestrusStuckBeyond60: number;
+}
+
+export const heatObservationSchema = z.object({
+  animalId: z.string().uuid(),
+  observed: z.boolean(),
+  taskId: z.string().uuid().optional(),
+  observedAt: z.coerce.date().optional(),
+});
+export type HeatObservationInput = z.infer<typeof heatObservationSchema>;
+
+export const syncEnrollSchema = z.object({
+  animalId: z.string().uuid(),
+  protocolId: z.string().uuid(),
+  startDate: z.coerce.date(),
+  vetName: z.string().max(80).optional(),
+  vetPhone: z.string().max(32).optional(),
+});
+export type SyncEnrollInput = z.infer<typeof syncEnrollSchema>;
+
+export const dryOffCompleteSchema = z.object({
+  animalId: z.string().uuid(),
+  taskId: z.string().uuid().optional(),
+  /**
+   * Answer to "is she still pregnant?" asked at the dry-off moment. False puts
+   * her back in the breeding cycle instead of drying off an empty animal, which
+   * would otherwise go unnoticed until she failed to calve.
+   */
+  stillPregnant: z.boolean().optional(),
+});
+export type DryOffCompleteInput = z.infer<typeof dryOffCompleteSchema>;
+
+export const decisionResolveSchema = z.object({
+  action: z.enum(['MINERAL_STARTED', 'STOP', 'ENROLLED']),
+});
+export type DecisionResolveInput = z.infer<typeof decisionResolveSchema>;
+
+export const protocolListQuerySchema = z.object({
+  species: z.enum(['BUFFALO', 'COW', 'PIG', 'GOAT']).optional(),
+});
+export type ProtocolListQuery = z.infer<typeof protocolListQuerySchema>;
+
+export const protocolSuggestQuerySchema = z.object({
+  animalId: z.string().uuid(),
+});
+export type ProtocolSuggestQuery = z.infer<typeof protocolSuggestQuerySchema>;
+
+export interface BoardActionDto {
+  key: string;
+  labelEn: string;
+  labelNp: string;
+  primary?: boolean;
+  phone?: string;
+  to?: string;
+}
+
+export interface BoardItemDto {
+  taskId: string;
+  taskType: TaskType;
+  animalId: string;
+  shortNo: string;
+  name: string | null;
+  species: string;
+  penName: string;
+  penSortOrder: number;
+  seqNo: number;
+  photoUrl: string | null;
+  contextEn: string;
+  contextNp: string;
+  deadline: string | null;
+  actions: BoardActionDto[];
+}
+
+export interface BoardGroupDto {
+  key: BoardGroupKey;
+  labelEn: string;
+  labelNp: string;
+  colour: 'RED' | 'YELLOW' | 'BLUE' | 'PURPLE' | 'AMBER' | 'GREY';
+  subLabelEn: string;
+  subLabelNp: string;
+  items: BoardItemDto[];
+}
+
+export interface BoardDecisionDto {
+  taskId: string;
+  animalId: string;
+  shortNo: string;
+  name: string | null;
+  titleEn: string;
+  titleNp: string;
+  kind: TaskType;
+  actions: BoardActionDto[];
+}
+
+export interface BreedingBoardDto {
+  date: string;
+  groups: BoardGroupDto[];
+  decisionQueue: { count: number; items: BoardDecisionDto[] };
+  summary: { totalActions: number; overdue: number };
+}
+
+export interface ProtocolSuggestDto {
+  protocolId: string;
+  code: string;
+  nameEn: string;
+  nameNp: string;
+  daysQuiet: number;
+  reasonEn: string;
+  reasonNp: string;
+  seasonalWarningEn: string | null;
+  seasonalWarningNp: string | null;
+  estimatedCostNpr: number;
+  requiresCyclicity: boolean;
 }

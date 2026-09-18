@@ -2,13 +2,17 @@ import type { Prisma, TaskPriority, TaskType } from '@prisma/client';
 
 type TaskDb = {
   task: {
-    create: (args: { data: Prisma.TaskUncheckedCreateInput }) => Promise<unknown>;
+    create: (args: { data: Prisma.TaskUncheckedCreateInput }) => Promise<{ id?: string } | unknown>;
+    updateMany: (args: {
+      where: Prisma.TaskWhereInput;
+      data: Prisma.TaskUncheckedUpdateInput;
+    }) => Promise<unknown>;
   };
 };
 
 /** Idempotent insert: the pending-task unique index turns a repeat into a no-op. */
 export async function ensureTask(
-  db: TaskDb,
+  db: Pick<TaskDb, 'task'> & { task: Pick<TaskDb['task'], 'create'> },
   data: {
     farmId: string;
     type: TaskType;
@@ -20,9 +24,9 @@ export async function ensureTask(
     sourceRefType?: string | null;
     sourceRefId?: string | null;
   },
-): Promise<void> {
-  await db.task
-    .create({
+): Promise<string | null> {
+  try {
+    const row = (await db.task.create({
       data: {
         farmId: data.farmId,
         animalId: data.animalId ?? null,
@@ -35,8 +39,54 @@ export async function ensureTask(
         sourceRefType: data.sourceRefType ?? null,
         sourceRefId: data.sourceRefId ?? null,
       },
-    })
-    .catch(() => undefined);
+    })) as { id?: string };
+    return row?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Cancel open work because a later event replaced it. History stays readable. */
+export async function supersedeOpenTasks(
+  db: Pick<TaskDb, 'task'> & { task: Pick<TaskDb['task'], 'updateMany'> },
+  where: {
+    farmId: string;
+    animalId: string;
+    types: TaskType[];
+  },
+  supersededBy?: string | null,
+): Promise<void> {
+  if (where.types.length === 0) return;
+  await db.task.updateMany({
+    where: {
+      farmId: where.farmId,
+      animalId: where.animalId,
+      type: { in: where.types },
+      status: { in: ['PENDING', 'SNOOZED'] },
+    },
+    data: { status: 'SUPERSEDED', supersededBy: supersededBy ?? null },
+  });
+}
+
+export async function completeOpenTasksOfType(
+  db: Pick<TaskDb, 'task'> & { task: Pick<TaskDb['task'], 'updateMany'> },
+  where: {
+    farmId: string;
+    animalId: string;
+    types: TaskType[];
+  },
+  userId: string,
+): Promise<void> {
+  if (where.types.length === 0) return;
+  await db.task.updateMany({
+    where: {
+      farmId: where.farmId,
+      animalId: where.animalId,
+      type: { in: where.types },
+      status: { in: ['PENDING', 'SNOOZED'] },
+    },
+    data: { status: 'DONE', completedAt: new Date(), completedById: userId },
+  });
 }
 
 export async function completeOpenTask(

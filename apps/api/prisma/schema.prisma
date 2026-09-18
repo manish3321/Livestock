@@ -144,6 +144,11 @@ model Farm {
   feedRecords      FeedRecord[]
   dailyMetrics     DailyMetric[]
   coopPayments     CooperativePayment[]
+  pens             Pen[]
+  heatObservations HeatObservation[]
+  syncEnrollments  SyncEnrollment[]
+  reproStageHistory ReproStageHistory[]
+  reminderRules    ReminderRule[]
 }
 
 model FarmMembership {
@@ -157,6 +162,22 @@ model FarmMembership {
 
   @@unique([userId, farmId])
   @@index([farmId])
+}
+
+/// Physical walking order of the farm. The breeding board never sorts by name.
+model Pen {
+  id        String   @id @default(uuid()) @db.Uuid
+  farmId    String   @db.Uuid
+  name      String
+  sortOrder Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  farm    Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animals Animal[]
+
+  @@unique([farmId, name])
+  @@index([farmId, sortOrder])
 }
 
 // ---------------------------------------------------------------------------
@@ -240,6 +261,27 @@ enum AnimalStatus {
   DEAD
 }
 
+/// Derived reproductive stage. Never entered by hand — first matching rule wins.
+enum ReproStage {
+  CALF
+  HEIFER_READY
+  VOLUNTARY_WAIT
+  AWAITING_HEAT
+  IN_HEAT
+  SERVED_UNCONFIRMED
+  PREGNANCY_CHECK_DUE
+  PREGNANT_EARLY
+  PREGNANT_DRYOFF_DUE
+  DRY_PREGNANT
+  CALVING_IMMINENT
+  FRESH
+  ANESTRUS_SUSPECTED
+  REPEAT_BREEDER
+  UNDER_PROTOCOL
+  DO_NOT_BREED
+  NOT_BREEDING
+}
+
 /// Reproductive constants per species. Buffalo and cattle differ on every one
 /// of these, and a 305-day lactation is a Holstein number that is simply wrong
 /// for Nepal — so nothing here may be hardcoded in application code.
@@ -261,6 +303,8 @@ model SpeciesConfig {
   pregnancyCheckEarliestDays Int
   targetCalvingIntervalDays  Int
   dryOffDaysBeforeCalving    Int
+  /// Days past EDD before CALVING_LATE fires. Buffalo 10, cattle 7.
+  gestationVarianceDays      Int      @default(7)
   minWeightFirstServiceKg    Int
   /// Hours after standing heat when the service window opens / closes.
   serviceWindowStartHours    Int      @default(12)
@@ -336,18 +380,28 @@ model Animal {
   /** When true, animal can be used as a breeding parent. */
   breedingStock  Boolean       @default(true)
   shed           String?
+  penId          String?       @db.Uuid
+  /// Walking order inside the pen. Board sorts by pen.sortOrder, then this.
+  seqNo          Int           @default(0)
   distinguishingMarks String?
   photoStorageKey String?
   photoUrl       String?
   damId          String?        @db.Uuid
   sireId         String?        @db.Uuid
   notes          String?
+  /// Derived. Stored so the watch screen and nightly job can query without recomputing.
+  reproStage     ReproStage    @default(NOT_BREEDING)
+  reproStageSince DateTime?
+  reproStageComputedAt DateTime?
+  doNotBreed     Boolean       @default(false)
+  doNotBreedReason String?
   version        Int           @default(1)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   deletedAt      DateTime?
 
   farm       Farm              @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  pen        Pen?              @relation(fields: [penId], references: [id], onDelete: SetNull)
   dam        Animal?          @relation("AnimalDam", fields: [damId], references: [id], onDelete: SetNull)
   sire       Animal?          @relation("AnimalSire", fields: [sireId], references: [id], onDelete: SetNull)
   damOffspring Animal[]       @relation("AnimalDam")
@@ -381,6 +435,9 @@ model Animal {
   meatWithholds  MeatWithhold[]
   udderChecks    UdderCheck[]
   mortalityRecord MortalityRecord?
+  heatObservations HeatObservation[]
+  syncEnrollments  SyncEnrollment[]
+  reproStageHistory ReproStageHistory[]
 
   @@unique([farmId, tag])
   @@unique([farmId, herdNumber])
@@ -390,8 +447,65 @@ model Animal {
   @@index([farmId, breedingStock])
   @@index([farmId, isPregnant])
   @@index([farmId, shed])
+  @@index([penId])
+  @@index([farmId, seqNo])
   @@index([damId])
   @@index([sireId])
+  @@index([farmId, reproStage])
+}
+
+/// Append-only stage transitions. daysInPrevious is how long she was in fromStage.
+model ReproStageHistory {
+  id             String      @id @default(uuid()) @db.Uuid
+  animalId       String      @db.Uuid
+  farmId         String      @db.Uuid
+  fromStage      ReproStage?
+  toStage        ReproStage
+  enteredAt      DateTime    @default(now())
+  daysInPrevious Int?
+  /// CALVING / SERVICE / PREG_CONFIRMED / NIGHTLY / HEAT / PROTOCOL / STATUS / REGISTERED
+  trigger        String?
+
+  farm   Farm   @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal Animal @relation(fields: [animalId], references: [id], onDelete: Cascade)
+
+  @@index([animalId, enteredAt(sort: Desc)])
+  @@index([farmId, toStage, enteredAt])
+}
+
+/// Seeded reminder catalogue. farmId null = system default; a farm row with
+/// the same code overrides it. Offsets that depend on species are resolved
+/// from SpeciesConfig at fire time — they are not copied into this table.
+model ReminderRule {
+  id                   String      @id @default(uuid()) @db.Uuid
+  farmId               String?     @db.Uuid
+  code                 String
+  taskType             TaskType
+  triggerStage         ReproStage?
+  triggerEvent         String?
+  species              Species[]   @default([])
+  offsetDays           Int         @default(0)
+  offsetHours          Int         @default(0)
+  fireAtHour           Int?
+  repeatEveryDays      Int?
+  repeatUntilStage     ReproStage?
+  maxRepeats           Int?
+  priority             TaskPriority
+  channels             String[]
+  escalateAfterMinutes Int?
+  escalateToRole       Role?
+  titleEn              String
+  titleNp              String
+  bodyEn               String?
+  bodyNp               String?
+  actionKeys           String[]
+  active               Boolean     @default(true)
+  isSystemDefault      Boolean     @default(false)
+
+  farm Farm? @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@index([farmId, active])
+  @@index([code])
 }
 
 /// Append-only record of every status change. A status is never overwritten
@@ -1798,6 +1912,25 @@ model HeatEvent {
   @@index([farmId, observedAt])
 }
 
+/// Looked-and-saw-nothing is data. It drives anestrus escalation.
+model HeatObservation {
+  id          String    @id @default(uuid()) @db.Uuid
+  animalId    String    @db.Uuid
+  farmId      String    @db.Uuid
+  observedAt  DateTime
+  observed    Boolean
+  heatEventId String?   @db.Uuid
+  observerId  String?   @db.Uuid
+  taskId      String?   @db.Uuid
+  createdAt   DateTime  @default(now())
+
+  farm   Farm   @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal Animal @relation(fields: [animalId], references: [id], onDelete: Cascade)
+
+  @@index([animalId, observedAt(sort: Desc)])
+  @@index([farmId, observedAt])
+}
+
 model SemenStraw {
   id              String   @id @default(uuid()) @db.Uuid
   farmId          String   @db.Uuid
@@ -1815,6 +1948,49 @@ model SemenStraw {
   services BreedingService[]
 
   @@unique([farmId, strawCode])
+}
+
+model SyncProtocol {
+  id                String    @id @default(uuid()) @db.Uuid
+  code              String    @unique
+  nameEn            String
+  nameNp            String
+  species           Species[]
+  requiresCyclicity Boolean   @default(true)
+  totalDays         Int
+  steps             Json
+  notesEn           String?
+  notesNp           String?
+  active            Boolean   @default(true)
+  estimatedCostNpr  Decimal   @default(0) @db.Decimal(10, 2)
+
+  enrollments SyncEnrollment[]
+}
+
+model SyncEnrollment {
+  id                 String    @id @default(uuid()) @db.Uuid
+  animalId           String    @db.Uuid
+  farmId             String    @db.Uuid
+  protocolId         String    @db.Uuid
+  startDate          DateTime  @db.Date
+  vetName            String?
+  vetPhone           String?
+  status             String    @default("ACTIVE")
+  brokenAtStep       Int?
+  brokenReason       String?
+  aiDate             DateTime? @db.Date
+  serviceId          String?   @db.Uuid
+  estimatedCostNpr   Decimal?  @db.Decimal(10, 2)
+  startedInLowSeason Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  farm     Farm         @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animal   Animal       @relation(fields: [animalId], references: [id], onDelete: Cascade)
+  protocol SyncProtocol @relation(fields: [protocolId], references: [id], onDelete: Restrict)
+
+  @@index([animalId, startDate(sort: Desc)])
+  @@index([farmId, status])
 }
 
 model BreedingService {
@@ -2264,6 +2440,16 @@ enum TaskType {
   REMOVE_MARKER
   RETAG_REQUIRED
   TREATMENT_FOLLOWUP
+  SYNC_INJECTION
+  SYNC_AI
+  ANESTRUS_MINERAL
+  ANESTRUS_VET
+  ANESTRUS_DECISION
+  FEED_TRANSITION
+  PROTOCOL_BROKEN
+  CALF_HEALTH_CHECK
+  CYCLING_UNBRED
+  PD_STALLED
 }
 
 enum TaskPriority {
@@ -2279,6 +2465,7 @@ enum TaskStatus {
   SNOOZED
   DISMISSED
   EXPIRED
+  SUPERSEDED
 }
 
 /// AUTO tasks come from the nightly generators and must be idempotent.
@@ -2320,6 +2507,7 @@ model Task {
   completedById String?      @db.Uuid
   dismissReason TaskDismissReason?
   dismissNote   String?
+  supersededBy  String?      @db.Uuid
   deviceId      String?
   createdBy     String?      @db.Uuid
   createdAt     DateTime     @default(now())

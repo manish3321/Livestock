@@ -48,6 +48,7 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ProfitService } from '../profit/profit.service';
 import { STORAGE_PORT, type StoragePort } from '../storage/storage.port';
 import { AnimalsService } from './animals.service';
+import { BreedingWatchService } from '../breeding/breeding-watch.service';
 
 @ApiTags('animals')
 @Controller('animals')
@@ -56,6 +57,7 @@ export class AnimalsController {
     private readonly animals: AnimalsService,
     private readonly profit: ProfitService,
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
+    private readonly watch: BreedingWatchService,
   ) {}
 
   @Get('search')
@@ -163,6 +165,16 @@ export class AnimalsController {
     @Headers('x-request-id') requestId?: string,
   ) {
     return this.animals.removeMarker(user, id, body.byScan !== false, requestId);
+  }
+
+  @Get(':id/repro-timeline')
+  @RequirePermissions('breeding:read')
+  @ApiOperation({ summary: 'Current reproductive cycle timeline' })
+  reproTimeline(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.watch.getTimeline(user, id);
   }
 
   @Get(':id')
@@ -274,5 +286,18 @@ export class AnimalsController {
     @Headers('x-request-id') requestId?: string,
   ): Promise<WeightRecordDto> {
     return this.animals.addWeight(user, id, body, requestId);
+  }
+
+  @Delete(':id/weights/:weightId')
+  @HttpCode(204)
+  @RequirePermissions('animals:write')
+  @ApiOperation({ summary: 'Delete a weight measurement' })
+  async removeWeight(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('weightId', ParseUUIDPipe) weightId: string,
+    @Headers('x-request-id') requestId?: string,
+  ): Promise<void> {
+    await this.animals.removeWeight(user, id, weightId, requestId);
   }
 }

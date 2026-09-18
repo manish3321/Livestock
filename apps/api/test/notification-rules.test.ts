@@ -6,8 +6,10 @@ import {
   escalationTarget,
   groupSameType,
   nepalHour,
+  NEVER_BATCH_TYPES,
   offerMute,
   shouldHoldUntilMorning,
+  silentHeatOptIn,
   smsAllowed,
   smsEncoding,
   spliceDigits,
@@ -27,6 +29,60 @@ describe('notification-rules', () => {
     expect(groups).toHaveLength(1);
     expect(groups[0]?.titleEn).toBe('6 animals due for FMD');
     expect(groups[0]?.tasks).toHaveLength(6);
+  });
+
+  it('groups six heat-watch tasks into one morning notification', () => {
+    const tasks = Array.from({ length: 6 }, (_, i) => ({
+      id: `h${i}`,
+      type: 'HEAT_WATCH',
+      titleEn: `Heat watch B${i}`,
+      titleNp: `गर्मी B${i}`,
+      priority: 'NORMAL',
+    }));
+    const groups = groupSameType(tasks);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.titleEn).toBe('6 animals to check for heat this morning');
+    expect(groups[0]?.titleNp).toContain('6');
+  });
+
+  it('never batches a colostrum task', () => {
+    const tasks = Array.from({ length: 3 }, (_, i) => ({
+      id: `c${i}`,
+      type: 'COLOSTRUM_FEED',
+      titleEn: `Colostrum ${i}`,
+      titleNp: `बिगौती ${i}`,
+      priority: 'CRITICAL',
+    }));
+    expect(groupSameType(tasks)).toHaveLength(3);
+    expect(NEVER_BATCH_TYPES.has('COLOSTRUM_FEED')).toBe(true);
+    expect(NEVER_BATCH_TYPES.has('CALVING_WATCH')).toBe(true);
+    expect(NEVER_BATCH_TYPES.has('VET_URGENT')).toBe(true);
+    expect(NEVER_BATCH_TYPES.has('SYNC_INJECTION')).toBe(true);
+  });
+
+  it('lets SILENT_HEAT_CHECK through at 04:00 when opted in', () => {
+    expect(
+      shouldHoldUntilMorning({
+        priority: 'NORMAL',
+        hour: 4,
+        type: 'SILENT_HEAT_CHECK',
+        silentHeatOptIn: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldHoldUntilMorning({
+        priority: 'NORMAL',
+        hour: 4,
+        type: 'SILENT_HEAT_CHECK',
+        silentHeatOptIn: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('defaults silent-heat opt-in on for a buffalo farm', () => {
+    expect(silentHeatOptIn(undefined, true)).toBe(true);
+    expect(silentHeatOptIn(undefined, false)).toBe(false);
+    expect(silentHeatOptIn({ push: true, muted: true }, true)).toBe(false);
   });
 
   it('holds a NORMAL task at 21:00 until 05:00', () => {
@@ -63,9 +119,10 @@ describe('notification-rules', () => {
     expect(escalationTarget(sent, new Date('2026-09-14T11:00:00Z'), 'MANAGER')).toBe('OWNER');
   });
 
-  it('offers to mute a type after three dismissals', () => {
+  it('offers to mute a type after three dismissals, never for CRITICAL', () => {
     expect(offerMute(2)).toBe(false);
     expect(offerMute(DISMISSALS_BEFORE_MUTE_OFFER)).toBe(true);
+    expect(offerMute(DISMISSALS_BEFORE_MUTE_OFFER, 'CRITICAL')).toBe(false);
   });
 
   it('gates SMS to CRITICAL and overdue HIGH under the monthly cap', () => {

@@ -129,6 +129,10 @@ export function addWeight(id: string, body: WeightCreate): Promise<WeightRecordD
   });
 }
 
+export function deleteWeight(animalId: string, weightId: string): Promise<void> {
+  return api(`/v1/animals/${animalId}/weights/${weightId}`, { method: 'DELETE' });
+}
+
 /** Download CSV using the current access token (not routed through api()). */
 export async function downloadAnimalsCsv(): Promise<void> {
   const token = getAccessToken();

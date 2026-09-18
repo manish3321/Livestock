@@ -41,6 +41,7 @@ describe('tasks.complete', () => {
             if (where.type && t.type !== where.type) return false;
             if (where.status && t.status !== where.status) return false;
             if (where.completedById && t.completedById !== where.completedById) return false;
+            if (where.completedAt?.gte && t.completedAt && t.completedAt < where.completedAt.gte) return false;
             return true;
           }).length,
       },
@@ -129,6 +130,36 @@ describe('tasks.complete', () => {
       const result = await service.dismiss(actor, id, { reason: 'NOT_NEEDED' });
       if (i < 2) expect(result.offerMute).toBeUndefined();
       else expect(result.offerMute).toBe(true);
+    }
+  });
+
+  it('does not offer to mute a CRITICAL type', async () => {
+    const actor = user();
+    for (let i = 0; i < 3; i++) {
+      const id = randomUUID();
+      tasks.push({
+        id,
+        farmId: FARM,
+        animalId: randomUUID(),
+        type: 'COLOSTRUM_FEED',
+        status: 'PENDING',
+        titleEn: 'Colostrum',
+        titleNp: 'बिगौती',
+        dueAt: new Date(),
+        priority: 'CRITICAL',
+        assignedToId: null,
+        source: 'AUTO',
+        sourceRefType: 'calvingEvent',
+        sourceRefId: randomUUID(),
+        snoozeCount: 0,
+        snoozedUntil: null,
+        completedAt: null,
+        dismissReason: null,
+        batchId: null,
+        deletedAt: null,
+      });
+      const result = await service.dismiss(actor, id, { reason: 'NOT_NEEDED' });
+      expect(result.offerMute).toBeUndefined();
     }
   });
 });

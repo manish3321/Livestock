@@ -161,7 +161,9 @@ export function ShedPage() {
     enabled: mode === 'VACCINATION' || mode === 'TREATMENT',
   });
 
+  // The shed flow has its own sound, flash, and inline error text; toasts would double up.
   const start = useMutation({
+    meta: { silent: true },
     mutationFn: () =>
       startRound({
         mode,
@@ -222,6 +224,7 @@ export function ShedPage() {
   }, [params, roundId, openAnimal]);
 
   const save = useMutation({
+    meta: { silent: true },
     mutationFn: async () => {
       if (!scan || !roundId) throw new Error('no scan');
       const qty = Number(digits);
@@ -291,6 +294,7 @@ export function ShedPage() {
   });
 
   const confirmDose = useMutation({
+    meta: { silent: true },
     mutationFn: async () => {
       if (!scan || !roundId) throw new Error('no scan');
       return batchVaccinate({

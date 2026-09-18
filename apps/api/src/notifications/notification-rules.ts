@@ -10,7 +10,17 @@ export const SMS_UCS2_CHARS_PER_SEGMENT = 70;
 export const SMS_GSM7_CHARS_PER_SEGMENT = 160;
 export const SMS_COST_NPR = 1;
 export const DISMISSALS_BEFORE_MUTE_OFFER = 3;
+export const MUTE_WINDOW_DAYS = 14;
 export const OVERDUE_HIGH_MS = 24 * 60 * 60 * 1000;
+export const OFFLINE_TASK_HORIZON_DAYS = 30;
+
+/** One animal, one moment — never collapse these into a herd ping. */
+export const NEVER_BATCH_TYPES = new Set<string>([
+  'COLOSTRUM_FEED',
+  'CALVING_WATCH',
+  'VET_URGENT',
+  'SYNC_INJECTION',
+]);
 
 /** Section 9.3 — urgency used when a generator did not set one. */
 export const TRIGGER_CATALOGUE: Record<
@@ -40,6 +50,16 @@ export const TRIGGER_CATALOGUE: Record<
   RETAG_REQUIRED: { urgency: 'HIGH', sms: false },
   TREATMENT_FOLLOWUP: { urgency: 'HIGH', sms: false },
   REPEAT_BREEDER: { urgency: 'HIGH', sms: false },
+  SYNC_INJECTION: { urgency: 'HIGH', sms: false },
+  SYNC_AI: { urgency: 'HIGH', sms: false },
+  ANESTRUS_MINERAL: { urgency: 'NORMAL', sms: false },
+  ANESTRUS_VET: { urgency: 'HIGH', sms: false },
+  ANESTRUS_DECISION: { urgency: 'HIGH', sms: false },
+  FEED_TRANSITION: { urgency: 'NORMAL', sms: false },
+  PROTOCOL_BROKEN: { urgency: 'HIGH', sms: false },
+  CALF_HEALTH_CHECK: { urgency: 'CRITICAL', sms: false },
+  CYCLING_UNBRED: { urgency: 'HIGH', sms: false },
+  PD_STALLED: { urgency: 'HIGH', sms: false },
 };
 
 /**
@@ -137,14 +157,25 @@ export type TaskGroup = {
 };
 
 export function groupSameType(tasks: GroupableTask[]): TaskGroup[] {
+  const singles: TaskGroup[] = [];
   const buckets = new Map<string, GroupableTask[]>();
   for (const task of tasks) {
+    if (NEVER_BATCH_TYPES.has(task.type)) {
+      singles.push({
+        type: task.type,
+        priority: task.priority,
+        tasks: [task],
+        titleEn: task.titleEn,
+        titleNp: task.titleNp,
+      });
+      continue;
+    }
     const key = `${task.type}:${diseaseKey(task.titleEn)}`;
     const list = buckets.get(key) ?? [];
     list.push(task);
     buckets.set(key, list);
   }
-  return [...buckets.values()].map((group) => {
+  const grouped = [...buckets.values()].map((group) => {
     const first = group[0]!;
     const disease = diseaseKey(first.titleEn);
     const n = group.length;
@@ -165,6 +196,7 @@ export function groupSameType(tasks: GroupableTask[]): TaskGroup[] {
       titleNp: groupedTitleNp(first.type, n, disease),
     };
   });
+  return [...grouped, ...singles];
 }
 
 function diseaseKey(titleEn: string): string {
@@ -176,12 +208,18 @@ function diseaseKey(titleEn: string): string {
 }
 
 function groupedTitleEn(type: string, n: number, disease: string): string {
+  if (type === 'HEAT_WATCH') return `${n} animals to check for heat this morning`;
+  if (type === 'SILENT_HEAT_CHECK') return `${n} animals to check for silent heat`;
+  if (type === 'PREGNANCY_CHECK') return `${n} animals due for pregnancy check`;
   if (type === 'VACCINATION_DUE' && disease) return `${n} animals due for ${disease}`;
   if (type === 'VACCINATION_DUE') return `${n} animals due for vaccination`;
   return `${n} animals: ${type.replace(/_/g, ' ').toLowerCase()}`;
 }
 
 function groupedTitleNp(type: string, n: number, disease: string): string {
+  if (type === 'HEAT_WATCH') return `आज बिहान ${n} पशुको गर्मी हेर्नुहोस्`;
+  if (type === 'SILENT_HEAT_CHECK') return `${n} पशुको मौन गर्मी हेर्नुहोस्`;
+  if (type === 'PREGNANCY_CHECK') return `${n} पशुको गर्भ जाँच`;
   if (type === 'VACCINATION_DUE' && disease) return `${n} पशुलाई ${disease} खोप`;
   if (type === 'VACCINATION_DUE') return `${n} पशुलाई खोप`;
   return `${n} पशु — ${type}`;
@@ -224,8 +262,18 @@ export function smsAllowed(input: {
   return false;
 }
 
-export function offerMute(dismissalsOfType: number): boolean {
+export function offerMute(dismissalsOfType: number, priority?: string): boolean {
+  if (priority === 'CRITICAL') return false;
   return dismissalsOfType >= DISMISSALS_BEFORE_MUTE_OFFER;
+}
+
+/** Missing preference defaults on for a buffalo farm — the 04:00 check is the point. */
+export function silentHeatOptIn(
+  pref: { muted: boolean; push: boolean } | null | undefined,
+  buffaloFarm: boolean,
+): boolean {
+  if (pref) return pref.push && !pref.muted;
+  return buffaloFarm;
 }
 
 export function escalationTarget(
@@ -268,6 +316,16 @@ const CLIP_BY_TYPE: Record<string, string> = {
   RETAG_REQUIRED: 'retag',
   TREATMENT_FOLLOWUP: 'follow-up',
   REPEAT_BREEDER: 'repeat-breeder',
+  SYNC_INJECTION: 'open-form',
+  SYNC_AI: 'service-now',
+  ANESTRUS_MINERAL: 'heat-watch',
+  ANESTRUS_VET: 'vet-urgent',
+  ANESTRUS_DECISION: 'heat-watch',
+  FEED_TRANSITION: 'open-form',
+  PROTOCOL_BROKEN: 'open-form',
+  CALF_HEALTH_CHECK: 'postpartum',
+  CYCLING_UNBRED: 'service-now',
+  PD_STALLED: 'pregnancy-check',
 };
 
 export function voiceClipsFor(input: {

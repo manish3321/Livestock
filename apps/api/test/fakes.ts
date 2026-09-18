@@ -8,6 +8,25 @@ export const fakeAudit = {
 } as unknown as AuditService;
 
 /**
+ * Nepal wall-clock hour of an instant, read through Intl.
+ *
+ * Deliberately a different mechanism from the production helper in
+ * common/nepal-time, so an hour assertion cannot pass by agreeing with the code
+ * it is checking. Never assert Date#getHours: that reads the machine's zone and
+ * so passes whatever the value is.
+ */
+export function nepalHourIn(date: Date): number {
+  const hour = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kathmandu',
+    hour: '2-digit',
+    hourCycle: 'h23',
+  })
+    .formatToParts(date)
+    .find((part) => part.type === 'hour')?.value;
+  return Number(hour ?? '-1');
+}
+
+/**
  * Reproductive constants for tests. Buffalo and cow values match the seed, so a
  * test asserting a due date is checking the real gestation length.
  */
@@ -21,6 +40,7 @@ const SPECIES_CONSTANTS: Record<string, Record<string, number | null>> = {
     pregnancyCheckEarliestDays: 45,
     targetCalvingIntervalDays: 425,
     dryOffDaysBeforeCalving: 60,
+    gestationVarianceDays: 10,
     minWeightFirstServiceKg: 300,
     serviceWindowStartHours: 12,
     serviceWindowEndHours: 18,
@@ -39,6 +59,7 @@ const SPECIES_CONSTANTS: Record<string, Record<string, number | null>> = {
     pregnancyCheckEarliestDays: 35,
     targetCalvingIntervalDays: 380,
     dryOffDaysBeforeCalving: 60,
+    gestationVarianceDays: 7,
     minWeightFirstServiceKg: 250,
     serviceWindowStartHours: 12,
     serviceWindowEndHours: 18,
@@ -57,6 +78,7 @@ const SPECIES_CONSTANTS: Record<string, Record<string, number | null>> = {
     pregnancyCheckEarliestDays: 30,
     targetCalvingIntervalDays: 180,
     dryOffDaysBeforeCalving: 0,
+    gestationVarianceDays: 3,
     minWeightFirstServiceKg: 120,
     serviceWindowStartHours: 12,
     serviceWindowEndHours: 18,
@@ -75,6 +97,7 @@ const SPECIES_CONSTANTS: Record<string, Record<string, number | null>> = {
     pregnancyCheckEarliestDays: 35,
     targetCalvingIntervalDays: 240,
     dryOffDaysBeforeCalving: 30,
+    gestationVarianceDays: 3,
     minWeightFirstServiceKg: 25,
     serviceWindowStartHours: 12,
     serviceWindowEndHours: 18,
@@ -123,6 +146,12 @@ interface AnimalRow {
   lactationStartDate: Date | null;
   expectedLactationDays: number | null;
   breedComposition: unknown;
+  breedingStock?: boolean;
+  doNotBreed?: boolean;
+  doNotBreedReason?: string | null;
+  reproStage?: string;
+  reproStageSince?: Date | null;
+  reproStageComputedAt?: Date | null;
   notes: string | null;
   version: number;
   createdAt: Date;
@@ -228,6 +257,12 @@ export class FakePrisma {
         lactationStartDate: data.lactationStartDate ?? null,
         expectedLactationDays: data.expectedLactationDays ?? null,
         breedComposition: data.breedComposition ?? null,
+        breedingStock: data.breedingStock ?? true,
+        doNotBreed: data.doNotBreed ?? false,
+        doNotBreedReason: data.doNotBreedReason ?? null,
+        reproStage: data.reproStage ?? 'NOT_BREEDING',
+        reproStageSince: data.reproStageSince ?? null,
+        reproStageComputedAt: data.reproStageComputedAt ?? null,
         notes: data.notes ?? null,
         version: data.version ?? 1,
         createdAt: new Date(),
@@ -363,6 +398,17 @@ export class FakePrisma {
       const row = { id: randomUUID(), status: 'PENDING', ...data };
       this.tasks.push(row);
       return row;
+    },
+    updateMany: async ({ where, data }: any) => {
+      const matches = this.tasks.filter((task: any) => {
+        if (where.farmId && task.farmId !== where.farmId) return false;
+        if (where.animalId && task.animalId !== where.animalId) return false;
+        if (where.type?.in && !where.type.in.includes(task.type)) return false;
+        if (where.status?.in && !where.status.in.includes(task.status)) return false;
+        return true;
+      });
+      for (const task of matches) Object.assign(task, data);
+      return { count: matches.length };
     },
   };
 }

@@ -5,6 +5,12 @@ export function listTasks(): Promise<PageResult<TaskDto>> {
   return api('/v1/tasks?pageSize=80');
 }
 
+/** Open reminders due in the next 30 days — enough to schedule locally offline. */
+export function listUpcomingTasks(): Promise<PageResult<TaskDto>> {
+  const dueBefore = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  return api(`/v1/tasks?pageSize=200&dueBefore=${encodeURIComponent(dueBefore)}`);
+}
+
 export function completeTask(id: string, body: { byScan?: boolean } = {}): Promise<TaskDto> {
   return api(`/v1/tasks/${id}/complete`, { method: 'PATCH', body: JSON.stringify(body) });
 }

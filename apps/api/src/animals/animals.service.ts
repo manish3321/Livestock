@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import type {
   AnimalCreate,
@@ -21,7 +22,7 @@ import type {
   WeightCreate,
   WeightRecordDto,
 } from '@farm/contracts';
-import { DEFAULT_MARKER_SCHEME, animalImportRowSchema } from '@farm/contracts';
+import { DEFAULT_MARKER_SCHEME, ANIMAL_EXIT_STATUSES, animalImportRowSchema } from '@farm/contracts';
 import { MIN_DAM_AGE_GAP_MONTHS, type AnimalStatusHistoryDto, type BreedComposition, type Species } from '@farm/contracts';
 import { Prisma, type Animal, type AnimalStatusHistory, type WeightRecord } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
@@ -32,6 +33,7 @@ import { SpeciesConfigService } from '../species-config/species-config.service';
 import { toSnapshot } from '../sync/animal.applier';
 import { completeOpenTask, ensureTask } from '../jobs/task-writer';
 import { digitsOf, rankAnimalMatch } from '../milk/milk-rules';
+import { ReproStageService } from '../breeding/repro-stage.service';
 
 const MONTH_MS = 30.44 * 24 * 60 * 60 * 1000;
 
@@ -42,6 +44,7 @@ export class AnimalsService {
     private readonly audit: AuditService,
     private readonly speciesConfig: SpeciesConfigService,
     private readonly herdNumbers: HerdNumberService,
+    @Optional() private readonly reproStage?: ReproStageService,
   ) {}
 
   async list(
@@ -296,6 +299,8 @@ export class AnimalsService {
           expectedLactationDays: lactationDays,
           breedComposition: data.breedComposition ?? Prisma.DbNull,
           breedingStock: data.breedingStock ?? true,
+          doNotBreed: data.doNotBreed ?? false,
+          doNotBreedReason: data.doNotBreedReason,
           shed: data.shed,
           damId: data.damId,
           sireId: data.sireId,
@@ -360,6 +365,7 @@ export class AnimalsService {
       requestId,
     });
 
+    await this.reproStage?.recomputeAnimal(user.farmId, animal.id, 'REGISTERED');
     return this.get(user, animal.id);
   }
 
@@ -416,6 +422,16 @@ export class AnimalsService {
             changedBy: user.id,
           },
         });
+        if ((ANIMAL_EXIT_STATUSES as readonly string[]).includes(input.status)) {
+          await tx.task.updateMany({
+            where: {
+              farmId: user.farmId,
+              animalId: row.id,
+              status: { in: ['PENDING', 'SNOOZED'] },
+            },
+            data: { status: 'SUPERSEDED' },
+          });
+        }
       }
 
       await tx.changeLogEntry.create({
@@ -439,6 +455,7 @@ export class AnimalsService {
       requestId,
     });
 
+    await this.reproStage?.recomputeAnimal(user.farmId, updated.id, 'STATUS');
     return this.get(user, updated.id);
   }
 
@@ -448,6 +465,14 @@ export class AnimalsService {
       const deleted = await tx.animal.update({
         where: { id },
         data: { deletedAt: new Date(), version: current.version + 1 },
+      });
+      await tx.task.updateMany({
+        where: {
+          farmId: user.farmId,
+          animalId: id,
+          status: { in: ['PENDING', 'SNOOZED'] },
+        },
+        data: { status: 'SUPERSEDED' },
       });
       await tx.changeLogEntry.create({
         data: {
@@ -500,6 +525,33 @@ export class AnimalsService {
     });
 
     return toWeightDto(record);
+  }
+
+  async removeWeight(
+    user: RequestUser,
+    animalId: string,
+    weightId: string,
+    requestId?: string,
+  ): Promise<void> {
+    await this.requireAnimal(user.farmId, animalId);
+    const row = await this.prisma.weightRecord.findFirst({
+      where: { id: weightId, animalId, farmId: user.farmId },
+    });
+    if (!row) {
+      throw new NotFoundException({
+        code: 'WEIGHT_NOT_FOUND',
+        message: 'Weight record not found',
+      });
+    }
+    await this.prisma.weightRecord.delete({ where: { id: weightId } });
+    await this.audit.record({
+      farmId: user.farmId,
+      userId: user.id,
+      action: 'animals.weight.delete',
+      entityType: 'weightRecord',
+      entityId: weightId,
+      requestId,
+    });
   }
 
   async economics(user: RequestUser, id: string): Promise<AnimalEconomicsDto> {
@@ -1015,6 +1067,10 @@ function toDto(
     isFreemartinSuspect: animal.isFreemartinSuspect,
     breedComposition: (animal.breedComposition as BreedComposition | null) ?? null,
     breedingStock: animal.breedingStock,
+    doNotBreed: animal.doNotBreed ?? false,
+    doNotBreedReason: animal.doNotBreedReason ?? null,
+    reproStage: animal.reproStage ?? 'NOT_BREEDING',
+    reproStageSince: animal.reproStageSince?.toISOString() ?? null,
     shed: animal.shed,
     photoUrl: animal.photoUrl,
     damId: animal.damId,
