@@ -10,6 +10,7 @@ import type {
 import { expectedRange, parseScanPayload, rankAnimalMatch } from './scan-payload';
 import type { CachedAnimal, ConflictRow, FarmStore, OutboxItem } from './store';
 import { upsertAnimal } from './store';
+import { randomId } from './id';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -30,7 +31,13 @@ export type ScanLookup =
 
 export function startLocalRound(
   store: FarmStore,
-  input: { id: string; mode: RecordingMode; session?: string | null; date?: string },
+  input: {
+    id: string;
+    mode: RecordingMode;
+    session?: string | null;
+    date?: string;
+    offlineOnly?: boolean;
+  },
 ): void {
   store.round = {
     id: input.id,
@@ -38,9 +45,41 @@ export function startLocalRound(
     session: input.session ?? null,
     date: input.date ?? new Date().toISOString().slice(0, 10),
     status: 'ACTIVE',
+    offlineOnly: input.offlineOnly ?? false,
     recordedIds: [],
     lastSaved: null,
   };
+  if (input.offlineOnly) {
+    store.outbox.push({
+      id: randomId(),
+      state: 'pending',
+      rest: {
+        kind: 'round-start',
+        body: {
+          mode: input.mode,
+          session: input.session ?? undefined,
+          deviceId: store.deviceId,
+        },
+      },
+    });
+  }
+}
+
+export function finishLocalRound(store: FarmStore): void {
+  if (!store.round || store.round.status !== 'ACTIVE') return;
+  store.round.status = 'FINISHED';
+  if (!store.round.offlineOnly) {
+    store.outbox.push({
+      id: randomId(),
+      state: 'pending',
+      rest: { kind: 'round-finish', id: store.round.id, body: { skips: [] } },
+    });
+  }
+}
+
+export function abandonLocalRound(store: FarmStore): void {
+  if (!store.round || store.round.status !== 'ACTIVE') return;
+  store.round.status = 'ABANDONED';
 }
 
 export function remainingAnimals(store: FarmStore): CachedAnimal[] {
@@ -151,7 +190,7 @@ export function saveMilkLocal(
   }
 
   const existing = store.milk.find((m) => m.animalId === input.animalId && m.roundId === round.id);
-  const id = existing?.id ?? crypto.randomUUID();
+  const id = existing?.id ?? randomId();
   const row = {
     id,
     animalId: input.animalId,
@@ -175,13 +214,13 @@ export function saveMilkLocal(
           session: store.round.session ?? 'MORNING',
           litres: input.litres,
           disposal: input.disposal,
-          roundId: round.id,
+          ...(round.offlineOnly ? {} : { roundId: round.id }),
           confirmOutOfRange: input.confirmOutOfRange,
         },
       };
-  store.outbox.push({ id: crypto.randomUUID(), state: 'pending', rest });
+  store.outbox.push({ id: randomId(), state: 'pending', rest });
   store.outbox.push({
-    id: crypto.randomUUID(),
+    id: randomId(),
     state: 'pending',
     rest: {
       kind: 'scan',
@@ -189,6 +228,98 @@ export function saveMilkLocal(
     },
   });
   return { ok: true, id };
+}
+
+export function saveWeightLocal(
+  store: FarmStore,
+  input: { animalId: string; weightKg: number; notes?: string },
+): { ok: true } | { ok: false; code: 'NO_ROUND' | 'QTY' } {
+  if (!store.round) return { ok: false, code: 'NO_ROUND' };
+  if (!Number.isFinite(input.weightKg) || input.weightKg <= 0) return { ok: false, code: 'QTY' };
+  const round = store.round;
+  if (!round.recordedIds.includes(input.animalId)) round.recordedIds.push(input.animalId);
+  round.lastSaved = { animalId: input.animalId, litres: String(input.weightKg), entryId: null };
+  store.outbox.push({
+    id: randomId(),
+    state: 'pending',
+    rest: {
+      kind: 'weight',
+      animalId: input.animalId,
+      body: {
+        weightKg: input.weightKg,
+        recordedAt: new Date().toISOString(),
+        notes: input.notes,
+      },
+    },
+  });
+  store.outbox.push({
+    id: randomId(),
+    state: 'pending',
+    rest: {
+      kind: 'scan',
+      body: { method: 'CAMERA', roundId: round.id, deviceId: store.deviceId, rawPayload: input.animalId },
+    },
+  });
+  return { ok: true };
+}
+
+export function saveHealthLocal(
+  store: FarmStore,
+  input: {
+    animalId: string;
+    type: 'VACCINATION' | 'TREATMENT';
+    title: string;
+    medicine?: string;
+    dosage?: string;
+  },
+): { ok: true } | { ok: false; code: 'NO_ROUND' | 'TITLE' } {
+  if (!store.round) return { ok: false, code: 'NO_ROUND' };
+  if (!input.title.trim()) return { ok: false, code: 'TITLE' };
+  const round = store.round;
+  if (!round.recordedIds.includes(input.animalId)) round.recordedIds.push(input.animalId);
+  round.lastSaved = { animalId: input.animalId, litres: input.title, entryId: null };
+  store.outbox.push({
+    id: randomId(),
+    state: 'pending',
+    rest: {
+      kind: 'health',
+      body: {
+        type: input.type,
+        title: input.title.trim(),
+        animalId: input.animalId,
+        medicine: input.medicine,
+        dosage: input.dosage,
+        performedAt: new Date().toISOString(),
+      },
+    },
+  });
+  store.outbox.push({
+    id: randomId(),
+    state: 'pending',
+    rest: {
+      kind: 'scan',
+      body: { method: 'CAMERA', roundId: round.id, deviceId: store.deviceId, rawPayload: input.animalId },
+    },
+  });
+  return { ok: true };
+}
+
+export function enqueueExpense(store: FarmStore, body: Record<string, unknown>): void {
+  store.outbox.push({ id: randomId(), state: 'pending', rest: { kind: 'expense', body } });
+}
+
+export function enqueueTaskComplete(
+  store: FarmStore,
+  taskId: string,
+  body: Record<string, unknown> = {},
+): void {
+  store.outbox.push({
+    id: randomId(),
+    state: 'pending',
+    rest: { kind: 'task-complete', id: taskId, body },
+  });
+  const task = store.tasks.get(taskId);
+  if (task) task.status = 'DONE';
 }
 
 export function undoLastMilk(store: FarmStore): boolean {

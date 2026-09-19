@@ -1,0 +1,45 @@
+import type { ConfigContext, ExpoConfig } from 'expo/config';
+
+export default ({ config }: ConfigContext): ExpoConfig => ({
+  ...config,
+  name: 'Farm Management',
+  slug: 'farm-shed',
+  version: '0.2.0',
+  orientation: 'portrait',
+  scheme: 'farmshed',
+  userInterfaceStyle: 'light',
+  newArchEnabled: true,
+  platforms: ['ios', 'android'],
+  ios: {
+    bundleIdentifier: 'np.evoqed.farm.shed',
+    supportsTablet: false,
+    infoPlist: {
+      NSCameraUsageDescription: 'The camera reads ear-tag QR codes in the shed.',
+      UIBackgroundModes: ['remote-notification'],
+    },
+  },
+  android: {
+    package: 'np.evoqed.farm.shed',
+    permissions: ['CAMERA', 'VIBRATE', 'POST_NOTIFICATIONS', 'RECEIVE_BOOT_COMPLETED'],
+  },
+  plugins: [
+    [
+      'expo-camera',
+      {
+        cameraPermission: 'The camera reads ear-tag QR codes in the shed.',
+      },
+    ],
+    [
+      'expo-image-picker',
+      {
+        photosPermission: 'Allow access to photos for animal and receipt images.',
+      },
+    ],
+    'expo-secure-store',
+    'expo-sqlite',
+    'expo-font',
+  ],
+  extra: {
+    apiUrl: process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4001',
+  },
+});

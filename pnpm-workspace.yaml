@@ -1,6 +1,28 @@
 packages:
   - apps/*
   - packages/*
+
+# Expo SDK 52 needs Metro 0.81. Without this, web's optional react-native peer
+# can hoist Metro 0.84 and break `expo start` (FileStore export error).
+overrides:
+  react-native: 0.76.9
+  metro: 0.81.5
+  metro-babel-transformer: 0.81.5
+  metro-cache: 0.81.5
+  metro-cache-key: 0.81.5
+  metro-config: 0.81.5
+  metro-core: 0.81.5
+  metro-file-map: 0.81.5
+  metro-minify-terser: 0.81.5
+  metro-resolver: 0.81.5
+  metro-runtime: 0.81.5
+  metro-source-map: 0.81.5
+  metro-symbolicate: 0.81.5
+  metro-transform-plugins: 0.81.5
+  metro-transform-worker: 0.81.5
+  '@react-native/community-cli-plugin': 0.76.9
+  '@react-native/metro-config': 0.76.9
+
 allowBuilds:
   '@prisma/client': true
   '@prisma/engines': true

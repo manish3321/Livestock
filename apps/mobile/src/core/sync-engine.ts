@@ -151,7 +151,22 @@ export async function runSync(
       } else if (item.rest?.kind === 'scan') await api.postRest('/v1/scans', item.rest.body, token);
       else if (item.rest?.kind === 'round-start') await api.postRest('/v1/rounds', item.rest.body, token);
       else if (item.rest?.kind === 'round-finish') {
-        await api.postRest(`/v1/rounds/${item.rest.id}/finish`, item.rest.body, token);
+        const finished = (await api.postRest(
+          `/v1/rounds/${item.rest.id}/finish`,
+          item.rest.body,
+          token,
+        )) as { milkRoundId?: string | null } | undefined;
+        if (store.round?.id === item.rest.id && finished?.milkRoundId) {
+          store.round.milkRoundId = finished.milkRoundId;
+        }
+      } else if (item.rest?.kind === 'weight') {
+        await api.postRest(`/v1/animals/${item.rest.animalId}/weights`, item.rest.body, token);
+      } else if (item.rest?.kind === 'health') {
+        await api.postRest('/v1/health-records', item.rest.body, token);
+      } else if (item.rest?.kind === 'expense') {
+        await api.postRest('/v1/expenses', item.rest.body, token);
+      } else if (item.rest?.kind === 'task-complete') {
+        await api.patchRest(`/v1/tasks/${item.rest.id}/complete`, item.rest.body, token);
       }
       item.state = 'synced';
     } catch (err) {

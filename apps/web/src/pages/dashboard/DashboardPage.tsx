@@ -13,6 +13,7 @@ import { speciesColor } from '@farm/design-tokens';
 import { useAuth } from '../../auth/auth-context';
 import { getDashboardSummary } from '../../api/dashboard';
 import { ErrorState, LoadingState } from '../../components/PageState';
+import { ModuleIcon } from '../../components/ModuleIcon';
 import { StatusChip } from '../../components/StatusChip';
 import { useFarmMode } from '../../hooks/useFarmMode';
 
@@ -104,6 +105,29 @@ export function DashboardPage() {
         )}
       </div>
 
+      <div className="home-farm-pill rise-in">
+        <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            d="M12 21s-6-5.2-6-10a6 6 0 1 1 12 0c0 4.8-6 10-6 10Z"
+          />
+          <circle cx="12" cy="11" r="2" fill="currentColor" />
+        </svg>
+        {user?.farmName}
+      </div>
+
+      <div className="home-hero rise-in rise-in-delay-1" role="img" aria-label={t('login.pocket')}>
+        <div className="home-hero-body">
+          <div>
+            <strong>{t('login.pocket')}</strong>
+            <span>{t('dashboard.heroHint')}</span>
+          </div>
+        </div>
+      </div>
+
       {data.yesterdayProduction && (
         <div className="stats-grid" style={{ marginBottom: 24 }}>
           <div className="stat-card stat-milk">
@@ -129,6 +153,98 @@ export function DashboardPage() {
           <span aria-hidden="true">→</span>
         </Link>
       )}
+
+      <div className="section-block rise-in rise-in-delay-2">
+        <div className="section-head">
+          <div>
+            <h2 className="section-title">{t('dashboard.quickAccess')}</h2>
+            <p className="section-hint">{t('dashboard.quickAccessHint')}</p>
+          </div>
+        </div>
+        <div className="shortcut-grid">
+          <Link to="/shed" className="shortcut-tile">
+            <div className="shortcut-copy">
+              <strong>{t('nav.shed')}</strong>
+              <span>{t('dashboard.tileShed')}</span>
+            </div>
+            <span className="shortcut-icon">
+              <ModuleIcon module="shed" size={26} />
+            </span>
+          </Link>
+          <Link to="/scan" className="shortcut-tile">
+            <div className="shortcut-copy">
+              <strong>{t('nav.scan')}</strong>
+              <span>{t('dashboard.tileScan')}</span>
+            </div>
+            <span className="shortcut-icon">
+              <ModuleIcon module="scan" size={26} />
+            </span>
+          </Link>
+          <Link to="/inbox" className="shortcut-tile">
+            <div className="shortcut-copy">
+              <strong>{t('nav.inbox')}</strong>
+              <span className={urgentCount > 0 ? 'urgent-text' : undefined}>
+                {urgentCount > 0
+                  ? t('dashboard.tileInboxOverdue', { count: urgentCount })
+                  : t('dashboard.tileInbox')}
+              </span>
+            </div>
+            <span className="shortcut-icon">
+              <ModuleIcon module="inbox" size={26} />
+            </span>
+          </Link>
+          <Link to="/animals" className="shortcut-tile">
+            <div className="shortcut-copy">
+              <strong>{t('nav.animals')}</strong>
+              <span>
+                {data.animalCount} · {t('dashboard.animals')}
+              </span>
+            </div>
+            <span className="shortcut-icon">
+              <ModuleIcon module="animals" size={26} />
+            </span>
+          </Link>
+          <Link to="/breeding" className="shortcut-tile">
+            <div className="shortcut-copy">
+              <strong>{t('nav.breeding')}</strong>
+              <span>{t('dashboard.tileBreeding')}</span>
+            </div>
+            <span className="shortcut-icon">
+              <ModuleIcon module="breeding" size={26} />
+            </span>
+          </Link>
+          <Link to="/health" className="shortcut-tile">
+            <div className="shortcut-copy">
+              <strong>{t('nav.health')}</strong>
+              <span>
+                {vaccineDue > 0
+                  ? t('dashboard.tileHealthDue', { count: vaccineDue })
+                  : t('dashboard.tileHealth')}
+              </span>
+            </div>
+            <span className="shortcut-icon">
+              <ModuleIcon module="health" size={26} />
+            </span>
+          </Link>
+          {showFinance ? (
+            <Link to="/expenses" className="shortcut-tile">
+              <div className="shortcut-copy">
+                <strong>{t('nav.expenses')}</strong>
+                <span>
+                  {(alerts.pendingApprovals?.length ?? 0) > 0
+                    ? t('dashboard.tileExpensesPending', {
+                        count: alerts.pendingApprovals.length,
+                      })
+                    : t('dashboard.tileExpenses')}
+                </span>
+              </div>
+              <span className="shortcut-icon">
+                <ModuleIcon module="expenses" size={26} />
+              </span>
+            </Link>
+          ) : null}
+        </div>
+      </div>
 
       <div className="section-block rise-in rise-in-delay-3">
         <div className="section-head">

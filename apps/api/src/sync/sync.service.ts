@@ -36,7 +36,15 @@ export class SyncService {
     await this.prisma.device.upsert({
       where: { id: request.deviceId },
       update: { lastSeenAt: new Date(), userId: user.id },
-      create: { id: request.deviceId, userId: user.id, platform: 'android' },
+      create: {
+        id: request.deviceId,
+        userId: user.id,
+        platform: request.deviceId.startsWith('ios-')
+          ? 'ios'
+          : request.deviceId.startsWith('web-')
+            ? 'web'
+            : 'android',
+      },
     });
 
     const results: SyncMutationResult[] = [];

@@ -8,7 +8,6 @@ import {
   ScanAnywhere,
   ScanOverlayProvider,
   TopbarScanButton,
-  useScanOverlay,
 } from '../components/ScanAnywhere';
 import { useFarmMode } from '../hooks/useFarmMode';
 import { setLocale } from '../i18n';
@@ -71,7 +70,7 @@ function FarmMark() {
   return (
     <span className="brand-mark" aria-hidden="true">
       <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-        <rect width="28" height="28" rx="8" fill="currentColor" />
+        <rect width="28" height="28" rx="8" fill="rgba(255,255,255,0.18)" />
         <path
           d="M8 18.5c2.2-4.2 4.6-6.5 6-6.5s3.8 2.3 6 6.5"
           stroke="#fff"
@@ -84,7 +83,7 @@ function FarmMark() {
   );
 }
 
-/** Role-aware shell: compact sidebar + top bar. */
+/** Role-aware shell: moss sidebar + cream top bar + mobile tabs. */
 export function AppLayout() {
   return (
     <ScanOverlayProvider>
@@ -99,7 +98,6 @@ function AppLayoutInner() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const { openScan } = useScanOverlay();
   const [moreOpen, setMoreOpen] = useState(false);
 
   useEffect(() => {
@@ -220,6 +218,7 @@ function AppLayoutInner() {
         </main>
       </div>
       <ScanAnywhere />
+      {/* Mobile: Home / Shed / Inbox / More + ember Scan FAB (from ScanAnywhere) */}
       <nav className="tab-bar no-print" aria-label={t('appName')}>
         {allowed.has('dashboard') && (
           <NavLink to="/dashboard" className={({ isActive }) => (isActive ? 'active' : '')}>
@@ -233,11 +232,11 @@ function AppLayoutInner() {
             {t('nav.shed')}
           </NavLink>
         )}
-        {allowed.has('scan') && (
-          <button type="button" onClick={openScan}>
-            <ModuleIcon module="scan" size={20} />
-            {t('nav.scan')}
-          </button>
+        {allowed.has('inbox') && (
+          <NavLink to="/inbox" className={({ isActive }) => (isActive ? 'active' : '')}>
+            <ModuleIcon module="inbox" size={20} />
+            {t('nav.inbox')}
+          </NavLink>
         )}
         <button
           type="button"

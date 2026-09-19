@@ -7,7 +7,14 @@
     "noEmit": true,
     "declaration": false,
     "declarationMap": false,
-    "lib": ["ES2022"]
+    "lib": ["ES2022"],
+    "types": ["node"]
   },
-  "include": ["src/core", "src/native", "src/native-shim.d.ts", "test"]
+  "include": [
+    "App.tsx",
+    "index.ts",
+    "src",
+    "test",
+    "src/native-shim.d.ts"
+  ]
 }

@@ -5,7 +5,7 @@ export const loginRequestSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8).max(128),
   deviceName: z.string().max(120).optional(),
-  platform: z.enum(['web', 'android']).default('web'),
+  platform: z.enum(['web', 'android', 'ios']).default('web'),
 });
 export type LoginRequest = z.infer<typeof loginRequestSchema>;
 

@@ -11,6 +11,7 @@ import type {
   TaskPriority,
   TaskType,
 } from '@farm/contracts';
+import { randomId } from './id';
 
 export const CACHE_HORIZON_DAYS = 30;
 export const CACHE_HORIZON_MS = CACHE_HORIZON_DAYS * 24 * 60 * 60 * 1000;
@@ -77,7 +78,11 @@ export interface OutboxItem {
     | { kind: 'milk-patch'; id: string; litres: number; reason?: string }
     | { kind: 'scan'; body: Record<string, unknown> }
     | { kind: 'round-start'; body: Record<string, unknown> }
-    | { kind: 'round-finish'; id: string; body: Record<string, unknown> };
+    | { kind: 'round-finish'; id: string; body: Record<string, unknown> }
+    | { kind: 'weight'; animalId: string; body: Record<string, unknown> }
+    | { kind: 'health'; body: Record<string, unknown> }
+    | { kind: 'expense'; body: Record<string, unknown> }
+    | { kind: 'task-complete'; id: string; body: Record<string, unknown> };
   error?: string;
   current?: Record<string, unknown> | null;
 }
@@ -97,8 +102,11 @@ export interface LocalRound {
   session: string | null;
   date: string;
   status: 'ACTIVE' | 'FINISHED' | 'ABANDONED';
+  offlineOnly: boolean;
   recordedIds: string[];
   lastSaved: { animalId: string; litres: string; entryId: string | null } | null;
+  /** Set after milking finish sync — used for tank/delivery settlement. */
+  milkRoundId?: string | null;
 }
 
 export interface LocalMilk {
@@ -110,6 +118,20 @@ export interface LocalMilk {
   disposal: MilkDisposal | string;
   recordedAt: string;
 }
+
+export type ModuleCacheEntry = {
+  fetchedAt: string;
+  payload: unknown;
+};
+
+export type ModuleOutboxItem = {
+  id: string;
+  method: 'POST' | 'PATCH' | 'DELETE';
+  path: string;
+  body?: unknown;
+  state: 'pending' | 'sending' | 'failed';
+  error?: string;
+};
 
 export interface FarmSnapshot {
   animals: CachedAnimal[];
@@ -136,10 +158,12 @@ export interface FarmStore {
   conflicts: ConflictRow[];
   round: LocalRound | null;
   milk: LocalMilk[];
+  moduleCache: Record<string, ModuleCacheEntry>;
+  moduleOutbox: ModuleOutboxItem[];
 }
 
-export function newDeviceId(): string {
-  return `android-${crypto.randomUUID()}`;
+export function newDeviceId(platform: 'android' | 'ios' = 'android'): string {
+  return `${platform}-${randomId()}`;
 }
 
 export function createStore(deviceId = newDeviceId()): FarmStore {
@@ -158,6 +182,8 @@ export function createStore(deviceId = newDeviceId()): FarmStore {
     conflicts: [],
     round: null,
     milk: [],
+    moduleCache: {},
+    moduleOutbox: [],
   };
 }
 

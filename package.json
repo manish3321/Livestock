@@ -15,6 +15,7 @@
     "test": "pnpm -r test",
     "dev:api": "pnpm --filter @farm/api dev",
     "dev:web": "pnpm --filter @farm/web dev",
+    "dev:mobile": "pnpm --filter @farm/mobile start",
     "db:migrate": "pnpm --filter @farm/api db:migrate",
     "db:seed": "pnpm --filter @farm/api db:seed"
   },
