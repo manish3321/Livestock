@@ -10,6 +10,15 @@ if (!process.env.DIRECT_URL && process.env.DATABASE_URL) {
   process.env.DIRECT_URL = process.env.DATABASE_URL;
 }
 
+// Serverless: one Prisma client per isolate — keep the pool tiny against PgBouncer.
+function withConnectionLimit(url, limit) {
+  if (!url || /[?&]connection_limit=/.test(url)) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}connection_limit=${limit}`;
+}
+if (process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = withConnectionLimit(process.env.DATABASE_URL, 1);
+}
+
 const express = require('express');
 const { ExpressAdapter } = require('@nestjs/platform-express');
 const { createFarmApp } = require('../apps/api/dist/create-app');
