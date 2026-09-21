@@ -331,19 +331,28 @@ export function ShedPage() {
         if (!fromCache && !rosterHit && !searchHit) {
           applyScanDto(dto);
         } else if (scanAnimalIdRef.current === dto.animal.id) {
+          const stillTodo = remaining.some((a) => a.id === dto.animal.id);
           setScan((prev) => {
             if (!prev || prev.animal.id !== dto.animal.id) return dto;
-            // Keep digits the milker already typed; merge server ids/withhold/usual.
             return {
               ...dto,
               context: {
                 ...dto.context,
-                // If they already typed, don't clobber with existingValue unless correcting.
-                existingEntryId: dto.context.existingEntryId ?? prev.context.existingEntryId,
+                // Roster says still to-do — don't block the pad with a stale "already recorded".
+                alreadyRecordedThisRound: stillTodo ? false : dto.context.alreadyRecordedThisRound,
+                existingEntryId: stillTodo
+                  ? null
+                  : (dto.context.existingEntryId ?? prev.context.existingEntryId),
+                existingValue: stillTodo ? null : dto.context.existingValue,
               },
             };
           });
-          if (dto.context.alreadyRecordedThisRound && dto.context.existingValue != null && !typedRef.current) {
+          if (
+            !stillTodo &&
+            dto.context.alreadyRecordedThisRound &&
+            dto.context.existingValue != null &&
+            !typedRef.current
+          ) {
             setDigits(String(dto.context.existingValue));
           }
           if (dto.blocks.some((b) => b.kind === 'MILK_WITHHOLD')) {
@@ -385,7 +394,8 @@ export function ShedPage() {
       return saveMilkOnlineOrQueue(
         {
           animalId: scan.animal.id,
-          session,
+          session: remainingQ.data?.round.session ?? session,
+          date: remainingQ.data?.round.date ? new Date(remainingQ.data.round.date) : undefined,
           litres: qty,
           disposal,
           roundId,

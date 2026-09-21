@@ -644,19 +644,29 @@ export class MilkService {
         entryDate: date,
       },
     });
+    const destination = mapMilkDisposal(input.disposal);
     if (existing) {
-      throw new ConflictException({
-        code: 'DUPLICATE_MILK_RECORD',
-        message: 'This animal already has a figure for that session',
-        details: {
-          id: existing.id,
-          litres: Number(existing.quantity),
-          disposal: toApiDisposal(existing.destination),
+      // Shed re-saves are edits, not errors — update the existing session figure.
+      const updated = await this.prisma.productionEntry.update({
+        where: { id: existing.id },
+        data: {
+          quantity: input.litres,
+          destination,
+          milkerName: user.email,
         },
       });
+      await this.audit.record({
+        farmId: user.farmId,
+        userId: user.id,
+        action: 'milk.correct',
+        entityType: 'productionEntry',
+        entityId: updated.id,
+        metadata: { litres: input.litres, disposal: input.disposal, prior: Number(existing.quantity) },
+        requestId,
+      });
+      return toMilkEntryDto(updated, input.roundId ?? null);
     }
 
-    const destination = mapMilkDisposal(input.disposal);
     let milkRoundId = input.roundId
       ? (
           await this.prisma.recordingRound.findFirst({
@@ -688,10 +698,22 @@ export class MilkService {
       });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        throw new ConflictException({
-          code: 'DUPLICATE_MILK_RECORD',
-          message: 'This animal already has a figure for that session',
+        const raced = await this.prisma.productionEntry.findFirst({
+          where: {
+            farmId: user.farmId,
+            animalId: animal.id,
+            type: 'MILK',
+            session: input.session,
+            entryDate: date,
+          },
         });
+        if (raced) {
+          const updated = await this.prisma.productionEntry.update({
+            where: { id: raced.id },
+            data: { quantity: input.litres, destination, milkerName: user.email },
+          });
+          return toMilkEntryDto(updated, input.roundId ?? null);
+        }
       }
       throw err;
     }

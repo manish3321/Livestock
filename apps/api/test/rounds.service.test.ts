@@ -1,7 +1,7 @@
 import './setup-env';
 import { randomUUID } from 'node:crypto';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { ConflictException, UnprocessableEntityException } from '@nestjs/common';
+import { UnprocessableEntityException } from '@nestjs/common';
 import { ROLE_PERMISSIONS } from '@farm/contracts';
 import type { RequestUser } from '../src/common/types';
 import { MilkService } from '../src/milk/milk.service';
@@ -350,17 +350,22 @@ describe('Phase 2 scan-to-record', () => {
     expect(finished.totalLitres).toBe(200);
   });
 
-  it('returns 409 on a second POST /milk for the same animal/date/session', async () => {
+  it('updates litres on a second POST /milk for the same animal/date/session', async () => {
     const animal = db.addAnimal({ herdNumber: 'B01' });
-    await milk.createEntry(actor, { animalId: animal.id, session: 'MORNING', litres: 8, disposal: 'SOLD' });
-    await expect(
-      milk.createEntry(actor, { animalId: animal.id, session: 'MORNING', litres: 9, disposal: 'SOLD' }),
-    ).rejects.toBeInstanceOf(ConflictException);
-    try {
-      await milk.createEntry(actor, { animalId: animal.id, session: 'MORNING', litres: 9, disposal: 'SOLD' });
-    } catch (err) {
-      expect((err as ConflictException).getResponse()).toMatchObject({ code: 'DUPLICATE_MILK_RECORD' });
-    }
+    const first = await milk.createEntry(actor, {
+      animalId: animal.id,
+      session: 'MORNING',
+      litres: 8,
+      disposal: 'SOLD',
+    });
+    const second = await milk.createEntry(actor, {
+      animalId: animal.id,
+      session: 'MORNING',
+      litres: 9,
+      disposal: 'SOLD',
+    });
+    expect(second.id).toBe(first.id);
+    expect(second.litres).toBe(9);
   });
 
   it('returns 422 MILK_WITHHOLD_ACTIVE when selling under an active withhold', async () => {
