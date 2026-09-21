@@ -2343,6 +2343,16 @@ button.back-link {
   border-color: #2d6a4f;
   box-shadow: 0 0 0 3px rgba(45, 106, 79, 0.2);
 }
+.shed-display-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: stretch;
+}
+.shed-clr {
+  min-width: 64px;
+  font-weight: 700;
+}
 .shed-pad {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

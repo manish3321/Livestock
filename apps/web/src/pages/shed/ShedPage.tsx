@@ -22,6 +22,7 @@ import {
 import { parseQrPayload } from '../../lib/qr';
 import { isShedMilkDeepLink, shedModeFromParams } from '../../lib/shed-deeplink';
 import { shedFeedback } from '../../lib/shed-feedback';
+import { matchRosterByQuery, optimisticScanFromRoster } from '../../lib/shed-scan';
 import { useScanOverlay } from '../../components/ScanAnywhere';
 import {
   cacheScan,
@@ -83,6 +84,7 @@ export function ShedPage() {
   const [scan, setScan] = useState<ScanResolveDto | null>(null);
   const [digits, setDigits] = useState('');
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [disposal, setDisposal] = useState<(typeof DISPOSALS)[number]>('SOLD');
   const [confirmRange, setConfirmRange] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -107,11 +109,12 @@ export function ShedPage() {
   const [cacheTick, setCacheTick] = useState(0);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const lastScanAt = useRef(0);
-  const saveTimer = useRef<number | null>(null);
   const cameraHostRef = useRef<HTMLDivElement | null>(null);
   const typedRef = useRef(false);
   const openedPreset = useRef(false);
   const autoStartedRef = useRef(false);
+  const openSeq = useRef(0);
+  const scanAnimalIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (farmQ.data && !roundId) {
@@ -228,44 +231,119 @@ export function ShedPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deep-link boot once per mount
   }, [milkDeepLink, activeRoundReady, roundId, farmQ.isLoading, farmQ.data, t]);
 
+  useEffect(() => {
+    const handle = window.setTimeout(() => setDebouncedSearch(search.trim()), 200);
+    return () => window.clearTimeout(handle);
+  }, [search]);
+
+  const cached = useMemo(() => readShedCache(), [cacheTick, remainingQ.data]);
+  const remaining = remainingQ.data?.remaining ?? cached.remaining;
+  const recorded = remainingQ.data?.recorded ?? cached.recorded ?? 0;
+  const expected = remainingQ.data?.expected ?? cached.expected ?? remaining.length + recorded;
+
+  const localHits = useMemo(() => matchRosterByQuery(remaining, search), [remaining, search]);
+
   const lookupQ = useQuery({
-    queryKey: ['animal-search', search],
-    queryFn: () => searchAnimals(search),
-    enabled: search.trim().length >= 1 && !scan && navigator.onLine,
+    queryKey: ['animal-search', debouncedSearch],
+    queryFn: () => searchAnimals(debouncedSearch),
+    enabled:
+      debouncedSearch.length >= 1 &&
+      !scan &&
+      navigator.onLine &&
+      localHits.length === 0,
   });
-  const lookupHits = navigator.onLine ? (lookupQ.data ?? []) : resolveCachedByNumber(search);
+  const remoteHits = navigator.onLine ? (lookupQ.data ?? []) : [];
+  const offlineHits = !navigator.onLine ? resolveCachedByNumber(search) : [];
+  const lookupHits = localHits.length > 0 ? localHits : remoteHits.length > 0 ? remoteHits : offlineHits;
+
+  const applyScanDto = useCallback((dto: ScanResolveDto) => {
+    scanAnimalIdRef.current = dto.animal.id;
+    setScan(dto);
+    typedRef.current = false;
+    setDigits(
+      dto.context.alreadyRecordedThisRound && dto.context.existingValue != null
+        ? String(dto.context.existingValue)
+        : '',
+    );
+    setConfirmRange(false);
+    setError(null);
+    setDisposal(dto.blocks.some((b) => b.kind === 'MILK_WITHHOLD') ? 'DISCARDED' : 'SOLD');
+    setDestOpen(false);
+    setCameraOpen(false);
+    setSearch('');
+  }, []);
 
   const openAnimal = useCallback(
     async (raw: string, method: ScanCreateMethod) => {
-      const cachedId = parseQrPayload(raw)?.kind === 'animal' ? parseQrPayload(raw)!.id : null;
-      const offline = cachedId ? cachedScan(cachedId) : undefined;
+      const parsed = parseQrPayload(raw);
+      const idHint = parsed?.kind === 'animal' ? parsed.id : raw;
+      const rosterHit =
+        remaining.find((a) => a.id === idHint) ??
+        matchRosterByQuery(remaining, raw)[0] ??
+        cached.remaining.find((a) => a.id === idHint) ??
+        matchRosterByQuery(cached.remaining, raw)[0];
+      const searchHit = remoteHits.find((a) => a.id === idHint);
+      const fromCache = cachedScan(idHint) ?? (rosterHit ? cachedScan(rosterHit.id) : undefined);
+
+      const seq = ++openSeq.current;
+
+      if (fromCache) {
+        applyScanDto(fromCache);
+      } else if (rosterHit) {
+        applyScanDto(optimisticScanFromRoster(rosterHit, mode));
+      } else if (searchHit) {
+        applyScanDto(
+          optimisticScanFromRoster(
+            {
+              id: searchHit.id,
+              shortNo: searchHit.shortNo,
+              name: searchHit.name,
+              species: searchHit.species,
+              penName: searchHit.penName,
+              photoUrl: searchHit.photoUrl,
+              status: searchHit.status,
+              isPregnant: false,
+              withholdActive: false,
+              usualLitres: null,
+            },
+            mode,
+          ),
+        );
+      }
+
+      const offline = fromCache && !navigator.onLine ? fromCache : undefined;
       try {
-        const dto = offline && !navigator.onLine
-          ? offline
-          : await postScan({ rawPayload: raw, method, roundId: roundId ?? undefined });
+        const dto =
+          offline ??
+          (await postScan({ rawPayload: raw, method, roundId: roundId ?? undefined }));
         cacheScan(dto);
+        if (seq !== openSeq.current) return;
         if (dto.nextAction === 'PROFILE') {
           navigate(`/animals/${dto.animal.id}`);
           return;
         }
-        setScan(dto);
-        typedRef.current = false;
-        setDigits(dto.context.alreadyRecordedThisRound && dto.context.existingValue != null
-          ? String(dto.context.existingValue)
-          : '');
-        setConfirmRange(false);
-        setError(null);
-        setDisposal(dto.blocks.some((b) => b.kind === 'MILK_WITHHOLD') ? 'DISCARDED' : 'SOLD');
-        setDestOpen(false);
-        setCameraOpen(false);
+        if (!fromCache && !rosterHit && !searchHit) {
+          applyScanDto(dto);
+        } else if (scanAnimalIdRef.current === dto.animal.id) {
+          setScan(dto);
+          if (dto.context.alreadyRecordedThisRound && dto.context.existingValue != null && !typedRef.current) {
+            setDigits(String(dto.context.existingValue));
+          }
+          if (dto.blocks.some((b) => b.kind === 'MILK_WITHHOLD')) {
+            setDisposal('DISCARDED');
+          }
+        }
       } catch (err) {
-        shedFeedback('bad');
-        setFlash('bad');
-        setTimeout(() => setFlash(null), 700);
-        if (err instanceof ApiRequestError) setError(err.error.message);
+        if (seq !== openSeq.current) return;
+        if (!fromCache && !rosterHit && !searchHit) {
+          shedFeedback('bad');
+          setFlash('bad');
+          setTimeout(() => setFlash(null), 700);
+          if (err instanceof ApiRequestError) setError(err.error.message);
+        }
       }
     },
-    [navigate, roundId],
+    [applyScanDto, cached.remaining, mode, navigate, remaining, remoteHits, roundId],
   );
 
   useEffect(() => {
@@ -393,16 +471,7 @@ export function ShedPage() {
     },
   });
 
-  useEffect(() => {
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    if (!scan || mode !== 'MILKING' || !digits || confirmRange || !typedRef.current) return;
-    saveTimer.current = window.setTimeout(() => {
-      if (Number(digits) > 0 && !save.isPending) save.mutate();
-    }, 900);
-    return () => {
-      if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    };
-  }, [digits, scan, mode, confirmRange]);
+  // Save only on explicit tap — autosave made the pad feel laggy over the network.
 
   const finish = useMutation({
     mutationFn: () =>
@@ -443,6 +512,12 @@ export function ShedPage() {
   const press = (ch: string) => {
     if (ch === 'C') {
       setDigits('');
+      setConfirmRange(false);
+      return;
+    }
+    if (ch === '⌫') {
+      typedRef.current = true;
+      setDigits((d) => d.slice(0, -1));
       setConfirmRange(false);
       return;
     }
@@ -544,10 +619,6 @@ export function ShedPage() {
     };
   }, [roundId, openAnimal, remainingQ.data?.round.status, scanOverlayOpen, cameraOpen, t]);
 
-  const cached = useMemo(() => readShedCache(), [cacheTick, remainingQ.data]);
-  const remaining = remainingQ.data?.remaining ?? cached.remaining;
-  const recorded = remainingQ.data?.recorded ?? cached.recorded ?? 0;
-  const expected = remainingQ.data?.expected ?? cached.expected ?? remaining.length + recorded;
   const withhold = scan?.blocks.find((b) => b.kind === 'MILK_WITHHOLD');
   const padOpen = scan != null && mode !== 'BROWSE';
   const roundClosed = remainingQ.data?.round.status === 'FINISHED';
@@ -559,6 +630,11 @@ export function ShedPage() {
 
   const progressPct = expected > 0 ? Math.min(100, Math.round((recorded / expected) * 100)) : 0;
   const leftCount = remaining.length;
+  const rosterView = search.trim() ? localHits : remaining;
+  const remoteOnlyHits =
+    search.trim() && localHits.length === 0
+      ? remoteHits.filter((h) => !remaining.some((r) => r.id === h.id))
+      : [];
 
   return (
     <div className={`shed ${flash === 'ok' ? 'shed-flash-ok' : ''} ${flash === 'bad' ? 'shed-flash-bad' : ''}`}>
@@ -739,7 +815,7 @@ export function ShedPage() {
             </div>
           )}
 
-          {lookupHits.map((a) => (
+          {remoteOnlyHits.map((a) => (
             <button
               key={a.id}
               type="button"
@@ -767,11 +843,11 @@ export function ShedPage() {
             <p className="shed-all-done">{t('shed.allDone')}</p>
           ) : showPhotos ? (
             <div className="shed-photos">
-              {remaining.map((a, index) => (
+              {rosterView.map((a, index) => (
                 <button
                   key={a.id}
                   type="button"
-                  className={`shed-photo${index === 0 ? ' shed-photo-next' : ''}${a.withholdActive ? ' shed-photo-hold' : ''}`}
+                  className={`shed-photo${index === 0 ? ' shed-photo-next' : ''}${'withholdActive' in a && a.withholdActive ? ' shed-photo-hold' : ''}`}
                   onClick={() => void openAnimal(a.id, 'PHOTO_PICK')}
                 >
                   {a.photoUrl ? <img src={a.photoUrl} alt="" /> : <span>{a.shortNo ?? a.tag}</span>}
@@ -780,11 +856,11 @@ export function ShedPage() {
               ))}
             </div>
           ) : (
-            remaining.map((a, index) => (
+            rosterView.map((a, index) => (
               <button
                 key={a.id}
                 type="button"
-                className={`shed-row shed-row-todo${index === 0 ? ' shed-row-next' : ''}${a.withholdActive ? ' shed-row-hold' : ''}`}
+                className={`shed-row shed-row-todo${index === 0 ? ' shed-row-next' : ''}${'withholdActive' in a && a.withholdActive ? ' shed-row-hold' : ''}`}
                 onClick={() => void openAnimal(a.id, 'LIST_TAP')}
               >
                 <span className="shed-row-stripe" aria-hidden="true" />
@@ -793,7 +869,7 @@ export function ShedPage() {
                   <strong>{a.shortNo ?? a.tag}</strong>
                   <span>
                     {a.name ?? ''}
-                    {a.withholdActive ? ` · ${t('shed.withhold')}` : ''}
+                    {'withholdActive' in a && a.withholdActive ? ` · ${t('shed.withhold')}` : ''}
                   </span>
                 </span>
                 <em className="shed-row-pen">{a.penName ?? ''}</em>
@@ -826,8 +902,13 @@ export function ShedPage() {
               <p className="shed-usual">
                 {spokenUsual ? t('shed.usual', { n: spokenUsual }) : t('shed.noUsual')}
               </p>
-              <div className="shed-display" data-placeholder={spokenUsual ?? '0.0'}>
-                {digits || <span className="shed-placeholder">{spokenUsual ?? '0.0'}</span>}
+              <div className="shed-display-row">
+                <div className="shed-display" data-placeholder={spokenUsual ?? '0.0'}>
+                  {digits || <span className="shed-placeholder">{spokenUsual ?? '0.0'}</span>}
+                </div>
+                <button type="button" className="btn secondary shed-clr" onClick={() => press('C')}>
+                  {t('shed.clear')}
+                </button>
               </div>
               <div className="shed-dest-bar">
                 <span className={`shed-dest-current shed-dest-${disposal}`}>{t(`shed.dest.${disposal}`)}</span>
@@ -854,9 +935,14 @@ export function ShedPage() {
                 </div>
               )}
               <div className="shed-pad">
-                {['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'C'].map((ch) => (
-                  <button key={ch} type="button" onClick={() => press(ch)}>
-                    {ch === 'C' ? t('shed.clear') : ch}
+                {['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'].map((ch) => (
+                  <button
+                    key={ch}
+                    type="button"
+                    onClick={() => press(ch)}
+                    aria-label={ch === '⌫' ? t('shed.backspace') : undefined}
+                  >
+                    {ch}
                   </button>
                 ))}
               </div>
@@ -864,11 +950,21 @@ export function ShedPage() {
           )}
           {mode === 'WEIGHING' && (
             <>
-              <div className="shed-display">{digits || '0.0'}</div>
+              <div className="shed-display-row">
+                <div className="shed-display">{digits || '0.0'}</div>
+                <button type="button" className="btn secondary shed-clr" onClick={() => press('C')}>
+                  {t('shed.clear')}
+                </button>
+              </div>
               <div className="shed-pad">
-                {['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'C'].map((ch) => (
-                  <button key={ch} type="button" onClick={() => press(ch)}>
-                    {ch === 'C' ? t('shed.clear') : ch}
+                {['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'].map((ch) => (
+                  <button
+                    key={ch}
+                    type="button"
+                    onClick={() => press(ch)}
+                    aria-label={ch === '⌫' ? t('shed.backspace') : undefined}
+                  >
+                    {ch}
                   </button>
                 ))}
               </div>

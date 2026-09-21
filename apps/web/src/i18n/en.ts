@@ -953,6 +953,7 @@ export const en = {
       save: 'Save',
       confirmSave: 'Yes, save this figure',
       clear: 'Clr',
+      backspace: 'Delete last digit',
       back: 'Back',
       backToList: 'Back to list',
       changeDest: 'Not for tank?',

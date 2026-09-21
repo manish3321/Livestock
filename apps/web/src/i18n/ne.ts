@@ -953,6 +953,7 @@ export const ne = {
       save: 'सेभ',
       confirmSave: 'हो, यही अंक सेभ गर्नुहोस्',
       clear: 'मेटाउ',
+      backspace: 'अन्तिम अंक मेटाउनुहोस्',
       back: 'फर्कनुहोस्',
       backToList: 'सूचीमा फर्कनुहोस्',
       changeDest: 'ट्याङ्क होइन?',
