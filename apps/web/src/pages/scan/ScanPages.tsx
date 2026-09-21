@@ -16,7 +16,7 @@ export function AnimalScanPage() {
         ← {t('nav.scan')}
       </Link>
       <p className="muted">{t('qr.deepLinkHint')}</p>
-      <button type="button" className="btn" onClick={() => navigate(`/shed?animal=${id}`)}>
+      <button type="button" className="btn" onClick={() => navigate(`/shed?animal=${id}&mode=MILKING`)}>
         {t('shed.recordNow')}
       </button>
       <ScanResultModal

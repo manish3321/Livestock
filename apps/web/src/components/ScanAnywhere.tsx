@@ -109,6 +109,7 @@ export function ScanAnywhere() {
 
   const allowedScan = !!user && modulesForRole(user.role).includes('scan');
   const onScanHub = location.pathname === '/scan' || location.pathname.startsWith('/scan/');
+  const onShed = location.pathname === '/shed';
 
   const stopScanner = useCallback(async () => {
     const scanner = scannerRef.current;
@@ -305,9 +306,9 @@ export function ScanAnywhere() {
 
   return (
     <>
-      {!onScanHub && (
+      {!onScanHub && !onShed && (
         <button
-          className={`scan-fab no-print${location.pathname === '/shed' ? ' scan-fab-shed' : ''}`}
+          className="scan-fab no-print"
           type="button"
           onClick={openScan}
           aria-label={t('qr.fabLabel')}
@@ -458,7 +459,8 @@ export function TopbarScanButton() {
   const { openScan } = useScanOverlay();
   const allowedScan = !!user && modulesForRole(user.role).includes('scan');
   const onScanHub = location.pathname === '/scan' || location.pathname.startsWith('/scan/');
-  if (!allowedScan || onScanHub) return null;
+  const onShed = location.pathname === '/shed';
+  if (!allowedScan || onScanHub || onShed) return null;
   return (
     <button className="btn ghost scan-topbar-btn no-print" type="button" onClick={openScan} aria-label={t('qr.fabLabel')}>
       <ScanIcon size={18} />

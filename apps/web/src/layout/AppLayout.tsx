@@ -235,7 +235,7 @@ function AppLayoutInner() {
             {t('nav.shed')}
           </NavLink>
         )}
-        {allowed.has('scan') && (
+        {allowed.has('scan') && location.pathname !== '/shed' && (
           <button type="button" onClick={openScan}>
             <ModuleIcon module="scan" size={20} />
             {t('nav.scan')}

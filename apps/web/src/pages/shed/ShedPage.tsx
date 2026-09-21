@@ -20,6 +20,7 @@ import {
   type ScanResolveDto,
 } from '../../api/rounds';
 import { parseQrPayload } from '../../lib/qr';
+import { isShedMilkDeepLink, shedModeFromParams } from '../../lib/shed-deeplink';
 import { shedFeedback } from '../../lib/shed-feedback';
 import { useScanOverlay } from '../../components/ScanAnywhere';
 import {
@@ -60,23 +61,25 @@ function defaultSession(morningHour: number, eveningHour: number): MilkSession {
   return 'MIDDAY';
 }
 
-/** Shed OS: mode once, camera stays up, pad is the action. */
+/** Shed OS: roster-first milking; camera is opt-in. */
 export function ShedPage() {
   const { t, i18n } = useTranslation();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { open: scanOverlayOpen } = useScanOverlay();
   const [params] = useSearchParams();
-  const modeParam = params.get('mode') as RecordingMode | null;
+  const milkDeepLink = isShedMilkDeepLink(params);
   const farmQ = useQuery({
     queryKey: ['farm-me'],
     queryFn: () =>
       api<{ morningMilkingHour: number; eveningMilkingHour: number }>('/v1/farms/me'),
   });
 
-  const [mode, setMode] = useState<RecordingMode>(modeParam && RECORDING_MODES.includes(modeParam) ? modeParam : 'MILKING');
+  const [mode, setMode] = useState<RecordingMode>(() => shedModeFromParams(params));
   const [session, setSession] = useState<MilkSession>(() => defaultSession(5, 17));
   const [roundId, setRoundId] = useState<string | null>(null);
+  const [activeRoundReady, setActiveRoundReady] = useState(false);
+  const [deepLinkBootError, setDeepLinkBootError] = useState<string | null>(null);
   const [scan, setScan] = useState<ScanResolveDto | null>(null);
   const [digits, setDigits] = useState('');
   const [search, setSearch] = useState('');
@@ -96,6 +99,9 @@ export function ShedPage() {
   const [receiptNumber, setReceiptNumber] = useState('');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [showPhotos, setShowPhotos] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [destOpen, setDestOpen] = useState(false);
   const [vaxItemId, setVaxItemId] = useState('');
   const [vaxDisease, setVaxDisease] = useState('FMD');
   const [cacheTick, setCacheTick] = useState(0);
@@ -105,10 +111,13 @@ export function ShedPage() {
   const cameraHostRef = useRef<HTMLDivElement | null>(null);
   const typedRef = useRef(false);
   const openedPreset = useRef(false);
+  const autoStartedRef = useRef(false);
 
   useEffect(() => {
-    if (farmQ.data) setSession(defaultSession(farmQ.data.morningMilkingHour, farmQ.data.eveningMilkingHour));
-  }, [farmQ.data]);
+    if (farmQ.data && !roundId) {
+      setSession(defaultSession(farmQ.data.morningMilkingHour, farmQ.data.eveningMilkingHour));
+    }
+  }, [farmQ.data, roundId]);
 
   const remainingQ = useQuery({
     queryKey: ['round-remaining', roundId],
@@ -133,17 +142,27 @@ export function ShedPage() {
   }, [remainingQ.data]);
 
   useEffect(() => {
+    let cancelled = false;
+    const markReady = () => {
+      if (!cancelled) setActiveRoundReady(true);
+    };
     const onOnline = () => void flushShedQueue().then(() => void remainingQ.refetch());
     window.addEventListener('online', onOnline);
     if (navigator.onLine) {
-      void getActiveRound().then((active) => {
-        if (active) {
-          setRoundId(active.id);
-          setMode(active.mode);
-          if (active.session) setSession(active.session);
-          rememberActiveRound(active.id, active.mode, active.session);
-        }
-      });
+      void getActiveRound()
+        .then((active) => {
+          if (cancelled) return;
+          if (active) {
+            setRoundId(active.id);
+            setMode(active.mode);
+            if (active.session) setSession(active.session);
+            rememberActiveRound(active.id, active.mode, active.session);
+          }
+        })
+        .catch(() => {
+          /* offline resume below if needed */
+        })
+        .finally(markReady);
     } else {
       const cached = readActiveRound();
       if (cached) {
@@ -151,8 +170,12 @@ export function ShedPage() {
         if (cached.mode) setMode(cached.mode as RecordingMode);
         if (cached.session) setSession(cached.session as MilkSession);
       }
+      markReady();
     }
-    return () => window.removeEventListener('online', onOnline);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('online', onOnline);
+    };
   }, []);
 
   const inventoryQ = useQuery({
@@ -174,8 +197,36 @@ export function ShedPage() {
       setRoundId(r.id);
       rememberActiveRound(r.id, r.mode, r.session);
       setError(null);
+      setDeepLinkBootError(null);
     },
   });
+
+  /** Scan → Milk already identified the animal: join/resume a milking round and open the pad. */
+  useEffect(() => {
+    if (!milkDeepLink || !activeRoundReady || roundId || autoStartedRef.current) return;
+    if (farmQ.isLoading) return;
+    autoStartedRef.current = true;
+    setMode('MILKING');
+    setDeepLinkBootError(null);
+    const bootSession = farmQ.data
+      ? defaultSession(farmQ.data.morningMilkingHour, farmQ.data.eveningMilkingHour)
+      : session;
+    setSession(bootSession);
+    void startRound({ mode: 'MILKING', session: bootSession })
+      .then((r) => {
+        setRoundId(r.id);
+        setMode(r.mode);
+        if (r.session) setSession(r.session);
+        rememberActiveRound(r.id, r.mode, r.session);
+      })
+      .catch((err) => {
+        autoStartedRef.current = false;
+        if (err instanceof ApiRequestError) setDeepLinkBootError(err.error.message);
+        else setDeepLinkBootError(t('shed.saveFailed'));
+      });
+    // session intentionally omitted — bootSession is derived once farm hours are ready
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deep-link boot once per mount
+  }, [milkDeepLink, activeRoundReady, roundId, farmQ.isLoading, farmQ.data, t]);
 
   const lookupQ = useQuery({
     queryKey: ['animal-search', search],
@@ -205,6 +256,8 @@ export function ShedPage() {
         setConfirmRange(false);
         setError(null);
         setDisposal(dto.blocks.some((b) => b.kind === 'MILK_WITHHOLD') ? 'DISCARDED' : 'SOLD');
+        setDestOpen(false);
+        setCameraOpen(false);
       } catch (err) {
         shedFeedback('bad');
         setFlash('bad');
@@ -407,40 +460,89 @@ export function ShedPage() {
   };
 
   useEffect(() => {
-    if (scanOverlayOpen) return;
+    if (scanOverlayOpen || !cameraOpen) return;
     if (!roundId || remainingQ.data?.round.status === 'FINISHED') return;
-    const el = cameraHostRef.current;
-    if (!el) return;
-    const scanner = new Html5Qrcode(el.id);
-    scannerRef.current = scanner;
-    void scanner
-      .start(
-        { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 220, height: 220 } },
-        (text) => {
-          const now = Date.now();
-          if (now - lastScanAt.current < 1200) return;
-          lastScanAt.current = now;
-          const target = parseQrPayload(text);
-          void openAnimal(target?.kind === 'animal' ? target.id : text, 'CAMERA');
-        },
-        () => undefined,
-      )
-      .then(async () => {
+
+    let cancelled = false;
+    const config = { fps: 10, qrbox: { width: 220, height: 220 } };
+    const onDecoded = (text: string) => {
+      const now = Date.now();
+      if (now - lastScanAt.current < 1200) return;
+      lastScanAt.current = now;
+      const target = parseQrPayload(text);
+      void openAnimal(target?.kind === 'animal' ? target.id : text, 'CAMERA');
+    };
+
+    const startScanner = async () => {
+      const el = cameraHostRef.current;
+      if (!el || cancelled) return;
+      setCameraError(null);
+      const scanner = new Html5Qrcode(el.id);
+      scannerRef.current = scanner;
+
+      const tryStart = async (cameraIdOrConfig: string | MediaTrackConstraints) => {
+        await scanner.start(cameraIdOrConfig, config, onDecoded, () => undefined);
+      };
+
+      try {
+        try {
+          await tryStart({ facingMode: 'environment' });
+        } catch {
+          try {
+            await tryStart({ facingMode: 'user' });
+          } catch {
+            const cams = await Html5Qrcode.getCameras();
+            const first = cams[0]?.id;
+            if (!first) throw new Error('no-camera');
+            await tryStart(first);
+          }
+        }
+        if (cancelled) {
+          await scanner.stop().catch(() => undefined);
+          return;
+        }
         try {
           await scanner.applyVideoConstraints({
             advanced: [{ torch: true }],
           } as unknown as MediaTrackConstraints);
         } catch {
-          /* torch not available */
+          /* torch not available on most devices */
         }
-      })
-      .catch(() => undefined);
-    return () => {
-      void scanner.stop().catch(() => undefined);
-      scannerRef.current = null;
+      } catch {
+        if (cancelled) return;
+        scannerRef.current = null;
+        try {
+          scanner.clear();
+        } catch {
+          /* ignore */
+        }
+        setCameraError(t('shed.cameraFailed'));
+        setCameraOpen(false);
+      }
     };
-  }, [roundId, openAnimal, remainingQ.data?.round.status, scanOverlayOpen]);
+
+    const frame = requestAnimationFrame(() => {
+      void startScanner();
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+      const scanner = scannerRef.current;
+      scannerRef.current = null;
+      if (scanner) {
+        void scanner
+          .stop()
+          .catch(() => undefined)
+          .finally(() => {
+            try {
+              scanner.clear();
+            } catch {
+              /* ignore */
+            }
+          });
+      }
+    };
+  }, [roundId, openAnimal, remainingQ.data?.round.status, scanOverlayOpen, cameraOpen, t]);
 
   const cached = useMemo(() => readShedCache(), [cacheTick, remainingQ.data]);
   const remaining = remainingQ.data?.remaining ?? cached.remaining;
@@ -455,15 +557,20 @@ export function ShedPage() {
     return n != null ? n.toFixed(1) : null;
   }, [scan]);
 
+  const progressPct = expected > 0 ? Math.min(100, Math.round((recorded / expected) * 100)) : 0;
+  const leftCount = remaining.length;
+
   return (
     <div className={`shed ${flash === 'ok' ? 'shed-flash-ok' : ''} ${flash === 'bad' ? 'shed-flash-bad' : ''}`}>
       <div className="shed-mode" data-session={session} data-mode={mode}>
-        {t(`shed.mode.${mode}`)}
-        {mode === 'MILKING' ? ` — ${t(`shed.session.${session}`)}` : ''}
+        <span>
+          {t(`shed.mode.${mode}`)}
+          {mode === 'MILKING' ? ` — ${t(`shed.session.${session}`)}` : ''}
+        </span>
         <span className="shed-count">{roundId ? `${recorded} / ${expected}` : '—'}</span>
       </div>
 
-      {!roundId && (
+      {!roundId && !milkDeepLink && (
         <div className="card shed-start">
           <h1>{t('shed.title')}</h1>
           <p className="muted">{t('shed.subtitle')}</p>
@@ -529,12 +636,63 @@ export function ShedPage() {
         </div>
       )}
 
-      {roundId && (
-        <div id="shed-camera" ref={cameraHostRef} className={padOpen ? 'shed-camera shed-camera-docked' : 'shed-camera'} />
+      {!roundId && milkDeepLink && (
+        <div className="card shed-start">
+          <h1>{t('shed.title')}</h1>
+          <p className="muted">{t('shed.openingPad')}</p>
+          {deepLinkBootError && (
+            <>
+              <p className="error">{deepLinkBootError}</p>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setDeepLinkBootError(null);
+                  autoStartedRef.current = true;
+                  const bootSession = farmQ.data
+                    ? defaultSession(farmQ.data.morningMilkingHour, farmQ.data.eveningMilkingHour)
+                    : session;
+                  void startRound({ mode: 'MILKING', session: bootSession })
+                    .then((r) => {
+                      setRoundId(r.id);
+                      setMode(r.mode);
+                      if (r.session) setSession(r.session);
+                      rememberActiveRound(r.id, r.mode, r.session);
+                    })
+                    .catch((err) => {
+                      autoStartedRef.current = false;
+                      if (err instanceof ApiRequestError) setDeepLinkBootError(err.error.message);
+                      else setDeepLinkBootError(t('shed.saveFailed'));
+                    });
+                }}
+              >
+                {t('shed.start')}
+              </button>
+            </>
+          )}
+        </div>
       )}
 
       {roundId && !padOpen && !roundClosed && !finishing && (
-        <>
+        <div className="shed-roster">
+          <div className="shed-progress" aria-label={t('shed.progressLabel', { done: recorded, total: expected })}>
+            <div className="shed-progress-track">
+              <div className="shed-progress-fill" style={{ width: `${progressPct}%` }} />
+            </div>
+            <div className="shed-progress-meta">
+              <span className="shed-chip shed-chip-done">{t('shed.doneCount', { n: recorded })}</span>
+              <span className={`shed-chip shed-chip-left${leftCount > 0 ? '' : ' shed-chip-clear'}`}>
+                {t('shed.leftCount', { n: leftCount })}
+              </span>
+            </div>
+          </div>
+
+          <div className="shed-legend" aria-hidden="true">
+            <span className="shed-legend-item shed-legend-next">{t('shed.legendNext')}</span>
+            <span className="shed-legend-item shed-legend-todo">{t('shed.legendTodo')}</span>
+            <span className="shed-legend-item shed-legend-hold">{t('shed.legendHold')}</span>
+          </div>
+
           <form className="shed-search" onSubmit={onSearch}>
             <input
               inputMode="numeric"
@@ -543,9 +701,24 @@ export function ShedPage() {
               placeholder={t('shed.typeNumber')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              aria-label={t('shed.typeNumber')}
             />
           </form>
-          <div className="shed-skip">
+
+          <div className="shed-toolbar">
+            <button
+              type="button"
+              className={cameraOpen ? 'btn' : 'btn secondary'}
+              onClick={() => {
+                setCameraError(null);
+                setCameraOpen((v) => !v);
+              }}
+            >
+              {cameraOpen ? t('shed.cameraOff') : t('shed.cameraOn')}
+            </button>
+            <button type="button" className="btn secondary" onClick={() => setShowPhotos((v) => !v)}>
+              {showPhotos ? t('shed.hidePhotos') : t('shed.photoGrid')}
+            </button>
             {lastSaved && (
               <button
                 type="button"
@@ -555,48 +728,87 @@ export function ShedPage() {
                 {t('shed.undo')}
               </button>
             )}
-            <button type="button" className="btn secondary" onClick={() => setShowPhotos((v) => !v)}>
-              {showPhotos ? t('shed.hidePhotos') : t('shed.photoGrid')}
-            </button>
           </div>
+
+          {cameraError && !cameraOpen && <p className="error shed-camera-error">{cameraError}</p>}
+
+          {cameraOpen && (
+            <div className="shed-camera-panel">
+              <p className="shed-camera-hint muted">{t('shed.cameraHint')}</p>
+              <div id="shed-camera" ref={cameraHostRef} className="shed-camera" />
+            </div>
+          )}
+
           {lookupHits.map((a) => (
-            <button key={a.id} type="button" className="shed-row" onClick={() => void openAnimal(a.id, 'MANUAL_NUMBER')}>
+            <button
+              key={a.id}
+              type="button"
+              className="shed-row shed-row-hit"
+              onClick={() => void openAnimal(a.id, 'MANUAL_NUMBER')}
+            >
               {a.photoUrl ? <img src={a.photoUrl} alt="" className="shed-thumb" /> : <span className="shed-thumb shed-thumb-empty" />}
-              <strong>{a.shortNo ?? a.tag}</strong>
-              <span>
-                {a.name ?? a.species}
-                <em> {a.species}</em>
+              <span className="shed-row-body">
+                <strong>{a.shortNo ?? a.tag}</strong>
+                <span>
+                  {a.name ?? a.species}
+                  <em> {a.species}</em>
+                </span>
               </span>
-              <em>{a.penName ?? ''}</em>
+              <em className="shed-row-pen">{a.penName ?? ''}</em>
             </button>
           ))}
-          <h2 className="shed-remaining-title">{t('shed.stillToDo')}</h2>
-          {showPhotos ? (
+
+          <h2 className="shed-remaining-title">
+            {t('shed.stillToDo')}
+            {leftCount > 0 && <span className="shed-remaining-badge">{leftCount}</span>}
+          </h2>
+
+          {leftCount === 0 ? (
+            <p className="shed-all-done">{t('shed.allDone')}</p>
+          ) : showPhotos ? (
             <div className="shed-photos">
-              {remaining.map((a) => (
-                <button key={a.id} type="button" className="shed-photo" onClick={() => void openAnimal(a.id, 'PHOTO_PICK')}>
+              {remaining.map((a, index) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  className={`shed-photo${index === 0 ? ' shed-photo-next' : ''}${a.withholdActive ? ' shed-photo-hold' : ''}`}
+                  onClick={() => void openAnimal(a.id, 'PHOTO_PICK')}
+                >
                   {a.photoUrl ? <img src={a.photoUrl} alt="" /> : <span>{a.shortNo ?? a.tag}</span>}
                   <em>{a.shortNo ?? a.tag}</em>
                 </button>
               ))}
             </div>
           ) : (
-            remaining.map((a) => (
-              <button key={a.id} type="button" className="shed-row" onClick={() => void openAnimal(a.id, 'LIST_TAP')}>
-                {a.photoUrl ? <img src={a.photoUrl} alt="" className="shed-thumb" /> : <span className="shed-thumb shed-thumb-empty" />}
-                <strong>{a.shortNo ?? a.tag}</strong>
-                <span>
-                  {a.name ?? ''}
-                  {a.withholdActive ? ` · ${t('shed.withhold')}` : ''}
+            remaining.map((a, index) => (
+              <button
+                key={a.id}
+                type="button"
+                className={`shed-row shed-row-todo${index === 0 ? ' shed-row-next' : ''}${a.withholdActive ? ' shed-row-hold' : ''}`}
+                onClick={() => void openAnimal(a.id, 'LIST_TAP')}
+              >
+                <span className="shed-row-stripe" aria-hidden="true" />
+                {a.photoUrl ? <img src={a.photoUrl} alt="" className="shed-thumb" /> : <span className="shed-thumb shed-thumb-empty">{a.shortNo ?? a.tag}</span>}
+                <span className="shed-row-body">
+                  <strong>{a.shortNo ?? a.tag}</strong>
+                  <span>
+                    {a.name ?? ''}
+                    {a.withholdActive ? ` · ${t('shed.withhold')}` : ''}
+                  </span>
                 </span>
-                <em>{a.penName ?? ''}</em>
+                <em className="shed-row-pen">{a.penName ?? ''}</em>
               </button>
             ))
           )}
-          <button type="button" className="btn secondary shed-finish" onClick={() => (remaining.length ? setFinishing(true) : finish.mutate())}>
-            {t('shed.finish')}
+
+          <button
+            type="button"
+            className={`btn shed-finish${leftCount > 0 ? ' shed-finish-warn' : ''}`}
+            onClick={() => (remaining.length ? setFinishing(true) : finish.mutate())}
+          >
+            {leftCount > 0 ? t('shed.finishWithLeft', { n: leftCount }) : t('shed.finish')}
           </button>
-        </>
+        </div>
       )}
 
       {padOpen && scan && (
@@ -617,19 +829,30 @@ export function ShedPage() {
               <div className="shed-display" data-placeholder={spokenUsual ?? '0.0'}>
                 {digits || <span className="shed-placeholder">{spokenUsual ?? '0.0'}</span>}
               </div>
-              <div className="shed-dest">
-                {DISPOSALS.map((d) => (
-                  <button
-                    key={d}
-                    type="button"
-                    disabled={!!withhold && d === 'SOLD'}
-                    className={disposal === d ? 'btn' : 'btn secondary'}
-                    onClick={() => setDisposal(d)}
-                  >
-                    {t(`shed.dest.${d}`)}
-                  </button>
-                ))}
+              <div className="shed-dest-bar">
+                <span className={`shed-dest-current shed-dest-${disposal}`}>{t(`shed.dest.${disposal}`)}</span>
+                <button type="button" className="btn secondary shed-dest-toggle" onClick={() => setDestOpen((v) => !v)}>
+                  {destOpen ? t('shed.hideDest') : t('shed.changeDest')}
+                </button>
               </div>
+              {destOpen && (
+                <div className="shed-dest">
+                  {DISPOSALS.map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      disabled={!!withhold && d === 'SOLD'}
+                      className={`shed-dest-btn shed-dest-${d}${disposal === d ? ' is-active' : ''}`}
+                      onClick={() => {
+                        setDisposal(d);
+                        setDestOpen(false);
+                      }}
+                    >
+                      {t(`shed.dest.${d}`)}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="shed-pad">
                 {['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'C'].map((ch) => (
                   <button key={ch} type="button" onClick={() => press(ch)}>
@@ -677,7 +900,7 @@ export function ShedPage() {
           )}
           <div className="shed-skip">
             <button type="button" className="btn secondary" onClick={() => setScan(null)}>
-              {t('shed.backToCamera')}
+              {t('shed.backToList')}
             </button>
           </div>
         </div>
@@ -686,8 +909,9 @@ export function ShedPage() {
       {finishing && (
         <div className="card shed-finish-sheet">
           <h2>{t('shed.unrecordedTitle', { n: remaining.length })}</h2>
+          <p className="muted">{t('shed.unrecordedHint')}</p>
           {remaining.map((a) => (
-            <div key={a.id} className="shed-finish-row">
+            <div key={a.id} className={`shed-finish-row${a.withholdActive ? ' shed-finish-hold' : ''}`}>
               <strong>{a.shortNo ?? a.tag}</strong>
               <span>{a.name}</span>
               <div className="shed-skip">
