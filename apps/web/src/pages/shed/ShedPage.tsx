@@ -27,6 +27,7 @@ import { useScanOverlay } from '../../components/ScanAnywhere';
 import {
   cacheScan,
   cachedScan,
+  clearCachedScan,
   flushShedQueue,
   readActiveRound,
   readShedCache,
@@ -283,7 +284,12 @@ export function ShedPage() {
         cached.remaining.find((a) => a.id === idHint) ??
         matchRosterByQuery(cached.remaining, raw)[0];
       const searchHit = remoteHits.find((a) => a.id === idHint);
-      const fromCache = cachedScan(idHint) ?? (rosterHit ? cachedScan(rosterHit.id) : undefined);
+      let fromCache = cachedScan(idHint) ?? (rosterHit ? cachedScan(rosterHit.id) : undefined);
+      // Still on the to-do list ⇒ not milked this round. Drop stale "already recorded" cache.
+      if (fromCache?.context.alreadyRecordedThisRound && rosterHit) {
+        clearCachedScan(fromCache.animal.id);
+        fromCache = undefined;
+      }
 
       const seq = ++openSeq.current;
 
@@ -325,7 +331,18 @@ export function ShedPage() {
         if (!fromCache && !rosterHit && !searchHit) {
           applyScanDto(dto);
         } else if (scanAnimalIdRef.current === dto.animal.id) {
-          setScan(dto);
+          setScan((prev) => {
+            if (!prev || prev.animal.id !== dto.animal.id) return dto;
+            // Keep digits the milker already typed; merge server ids/withhold/usual.
+            return {
+              ...dto,
+              context: {
+                ...dto.context,
+                // If they already typed, don't clobber with existingValue unless correcting.
+                existingEntryId: dto.context.existingEntryId ?? prev.context.existingEntryId,
+              },
+            };
+          });
           if (dto.context.alreadyRecordedThisRound && dto.context.existingValue != null && !typedRef.current) {
             setDigits(String(dto.context.existingValue));
           }
@@ -379,14 +396,16 @@ export function ShedPage() {
     onSuccess: (result) => {
       const qty = digits;
       const name = scan?.animal.name ?? scan?.animal.shortNo ?? '';
+      const animalId = scan!.animal.id;
       shedFeedback(
         'ok',
         i18n.language === 'ne' ? `${qty.replace('.', ' दशमलव ')}, ${name}` : undefined,
       );
+      const entryId = 'id' in result ? result.id : scan?.context.existingEntryId ?? null;
       setLastSaved({
-        animalId: scan!.animal.id,
+        animalId,
         litres: qty,
-        entryId: 'id' in result ? result.id : scan?.context.existingEntryId ?? null,
+        entryId,
       });
       setDigits('');
       setConfirmRange(false);
@@ -394,14 +413,28 @@ export function ShedPage() {
       setFlash('ok');
       setTimeout(() => setFlash(null), 400);
       setScan(null);
+      scanAnimalIdRef.current = null;
       const next = readShedCache();
+      const prevScan = next.scans[animalId];
+      if (prevScan && entryId) {
+        next.scans[animalId] = {
+          ...prevScan,
+          context: {
+            ...prevScan.context,
+            alreadyRecordedThisRound: true,
+            existingValue: Number(qty),
+            existingEntryId: entryId,
+          },
+        };
+      }
       writeShedCache({
         ...next,
-        remaining: next.remaining.filter((a) => a.id !== scan!.animal.id),
+        remaining: next.remaining.filter((a) => a.id !== animalId),
         recorded: (next.recorded ?? 0) + 1,
       });
       setCacheTick((n) => n + 1);
       void remainingQ.refetch();
+      void qc.invalidateQueries({ queryKey: ['round-remaining', roundId] });
     },
     onError: (err) => {
       if ((err as { code?: string }).code === 'YIELD_OUT_OF_RANGE') {
@@ -414,6 +447,20 @@ export function ShedPage() {
       setTimeout(() => setFlash(null), 700);
       if (err instanceof ApiRequestError) {
         if (err.error.code === 'DUPLICATE_MILK_RECORD') {
+          const details = err.error.details as { id?: string; litres?: number } | undefined;
+          if (details?.id && scan) {
+            setScan({
+              ...scan,
+              context: {
+                ...scan.context,
+                alreadyRecordedThisRound: true,
+                existingEntryId: details.id,
+                existingValue: details.litres ?? scan.context.existingValue,
+              },
+            });
+            setError(t('shed.alreadyRecordedValue', { n: details.litres ?? digits }));
+            return;
+          }
           setError(t('shed.alreadyRecorded'));
         } else {
           setError(err.error.message);
