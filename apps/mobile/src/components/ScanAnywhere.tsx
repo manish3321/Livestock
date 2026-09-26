@@ -24,6 +24,7 @@ import { useFarm } from '../state/FarmProvider';
 import { useAccess } from '../hooks/useAccess';
 import { useLocale } from '../locale/LocaleProvider';
 import { parseQrPayload, type QrTarget } from '../lib/qr';
+import { searchAnimalsLocal } from '../lib/animal-search';
 import { color } from '../theme/tokens';
 import { AnimalActionGrid } from './AnimalActionGrid';
 import { Button, Chip, ErrorState, LoadingState, Stat, Txt, inputStyle, useTypeface } from './ui';
@@ -70,7 +71,8 @@ interface PickedAnimal {
 
 export function ScanAnywhere() {
   const { t } = useLocale();
-  const { user, api } = useFarm();
+  const { user, api, store, revision } = useFarm();
+  void revision;
   const insets = useSafeAreaInsets();
   const face = useTypeface();
   const { open, closeScan } = useScanOverlay();
@@ -85,6 +87,7 @@ export function ScanAnywhere() {
   const [batchTarget, setBatchTarget] = useState<QrTarget | null>(null);
   const handlingRef = useRef(false);
   const scanned = useRef(false);
+  const searchReq = useRef(0);
 
   const allowedScan = !!user && modulesForRole(user.role).includes('scan');
 
@@ -120,11 +123,12 @@ export function ScanAnywhere() {
         name: detail.name,
         species: detail.species,
       });
+      setStep('actions');
     } catch {
-      setAnimal({ id, tag: id.slice(0, 8), name: null, species: '' });
+      setLookupError(t('qr.notFound'));
+      setStep('identify');
     }
-    setStep('actions');
-  }, [api]);
+  }, [api, t]);
 
   const resolvePayload = useCallback(
     async (raw: string) => {
@@ -178,24 +182,46 @@ export function ScanAnywhere() {
     const q = query.trim();
     if (q.length < 1) {
       setHits([]);
+      setLookingUp(false);
       return;
     }
+    const local = searchAnimalsLocal(store, q, 8).map(
+      (a): AnimalSearchHitDto => ({
+        id: a.id,
+        tag: a.tag,
+        name: a.name ?? null,
+        species: a.species ?? '',
+        shortNo: a.shortNo ?? null,
+        penName: a.penName ?? null,
+        photoUrl: null,
+        status: 'ACTIVE',
+      }),
+    );
+    setHits(local);
+    setLookupError(null);
+    setLookingUp(true);
+    const id = ++searchReq.current;
     const handle = setTimeout(() => {
-      setLookingUp(true);
       void api
         .get<AnimalSearchHitDto[]>(`/v1/animals/search?q=${encodeURIComponent(q)}`)
         .then((rows) => {
+          if (id !== searchReq.current) return;
           const list = Array.isArray(rows) ? rows : [];
-          setHits(list);
-          setLookupError(list.length === 0 ? t('qr.notFound') : null);
+          setHits(list.length > 0 ? list : local);
+          if (list.length === 0 && local.length === 0) setLookupError(t('qr.notFound'));
         })
         .catch((err: unknown) => {
-          setLookupError(err instanceof Error ? err.message : t('qr.notFound'));
+          if (id !== searchReq.current) return;
+          if (local.length === 0) {
+            setLookupError(err instanceof Error ? err.message : t('qr.notFound'));
+          }
         })
-        .finally(() => setLookingUp(false));
-    }, 280);
+        .finally(() => {
+          if (id === searchReq.current) setLookingUp(false);
+        });
+    }, 120);
     return () => clearTimeout(handle);
-  }, [api, identifyMode, open, query, t]);
+  }, [api, identifyMode, open, query, store, t]);
 
   if (!allowedScan) return null;
 
@@ -204,14 +230,18 @@ export function ScanAnywhere() {
       <Modal visible={open} animationType="slide" transparent onRequestClose={close}>
         <View style={styles.backdrop}>
           <Pressable style={StyleSheet.absoluteFill} onPress={close} />
-          <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+          <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]} pointerEvents="box-none">
             <View style={styles.sheetHeader}>
               <Txt weight="semibold" style={styles.sheetTitle}>
                 {step === 'actions' ? t('qr.whatNext') : t('qr.identifyTitle')}
               </Txt>
               <Button label={t('common.close')} variant="secondary" onPress={close} />
             </View>
-            <ScrollView keyboardShouldPersistTaps="handled" style={styles.sheetBody}>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              style={styles.sheetBody}
+              nestedScrollEnabled
+            >
               {step === 'identify' ? (
                 <>
                   <Txt muted style={{ marginBottom: 12 }}>
@@ -263,43 +293,49 @@ export function ScanAnywhere() {
                         placeholderTextColor={color.textMuted}
                         value={query}
                         onChangeText={setQuery}
+                        autoCorrect={false}
                       />
-                      <Button
-                        label={lookingUp ? t('qr.searching') : t('qr.lookupAnimal')}
-                        disabled={lookingUp || !query.trim()}
-                        onPress={() => void resolvePayload(query.trim())}
-                      />
+                      {lookingUp && query.trim() && hits.length === 0 ? (
+                        <Txt muted>{t('qr.searching')}</Txt>
+                      ) : null}
+                      {hits.length > 0 ? (
+                        <View style={{ gap: 8 }}>
+                          <Txt weight="semibold">{t('qr.pickAnimal')}</Txt>
+                          {hits.map((hit) => (
+                            <Pressable
+                              key={hit.id}
+                              style={styles.hit}
+                              onPress={() =>
+                                void pickAnimal(hit.id, {
+                                  id: hit.id,
+                                  tag: hit.tag,
+                                  name: hit.name,
+                                  species: hit.species,
+                                })
+                              }
+                            >
+                              <Txt weight="display" style={{ fontSize: 17 }}>
+                                {hit.tag}
+                              </Txt>
+                              <Txt muted>
+                                {hit.name?.trim() || SPECIES_LABEL[hit.species as Species] || hit.species}
+                                {hit.penName ? ` · ${hit.penName}` : ''}
+                              </Txt>
+                            </Pressable>
+                          ))}
+                        </View>
+                      ) : null}
+                      {query.trim() && hits.length === 0 && !lookingUp ? (
+                        <Button
+                          label={t('qr.lookupAnimal')}
+                          variant="ghost"
+                          onPress={() => void resolvePayload(query.trim())}
+                        />
+                      ) : null}
                     </View>
                   )}
                   {lookupError ? (
                     <Txt style={{ color: color.danger, marginTop: 8 }}>{lookupError}</Txt>
-                  ) : null}
-                  {hits.length > 0 ? (
-                    <View style={{ marginTop: 12, gap: 8 }}>
-                      <Txt weight="semibold">{t('qr.pickAnimal')}</Txt>
-                      {hits.map((hit) => (
-                        <Pressable
-                          key={hit.id}
-                          style={styles.hit}
-                          onPress={() =>
-                            void pickAnimal(hit.id, {
-                              id: hit.id,
-                              tag: hit.tag,
-                              name: hit.name,
-                              species: hit.species,
-                            })
-                          }
-                        >
-                          <Txt weight="display" style={{ fontSize: 17 }}>
-                            {hit.tag}
-                          </Txt>
-                          <Txt muted>
-                            {hit.name?.trim() || SPECIES_LABEL[hit.species as Species] || hit.species}
-                            {hit.penName ? ` · ${hit.penName}` : ''}
-                          </Txt>
-                        </Pressable>
-                      ))}
-                    </View>
                   ) : null}
                 </>
               ) : animal ? (

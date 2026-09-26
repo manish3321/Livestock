@@ -75,23 +75,28 @@ export function BatchDetailScreen() {
   const isFish = data?.kind === 'FISH';
 
   const load = useCallback(async () => {
+    const id = route.params.id;
     setLoading(true);
     try {
-      const row = await api.get<Batch>(`/v1/batches/${route.params.id}`);
+      const row = await api.get<Batch>(`/v1/batches/${id}`);
       setData(row);
-      setModuleCache(store, cacheKey, row);
+      setModuleCache(store, `batch:${id}`, row);
       persist();
       setError(null);
       void api
-        .get<BatchEconomicsDto>(`/v1/batches/${route.params.id}/economics`)
+        .get<BatchEconomicsDto>(`/v1/batches/${id}/economics`)
         .then(setEconomics)
         .catch(() => setEconomics(null));
     } catch {
-      if (!data) setError('Could not load batch');
+      setData((prev) => prev ?? getModuleCache(store, `batch:${route.params.id}`) ?? null);
+      setError((prev) => {
+        const cached = getModuleCache(store, `batch:${route.params.id}`);
+        return cached ? prev : 'Could not load batch';
+      });
     } finally {
       setLoading(false);
     }
-  }, [api, cacheKey, data, persist, route.params.id, store]);
+  }, [api, persist, route.params.id, store]);
 
   const loadHistory = useCallback(async () => {
     const id = route.params.id;
@@ -144,9 +149,15 @@ export function BatchDetailScreen() {
   }, [api, route.params.id]);
 
   useEffect(() => {
+    const id = route.params.id;
+    const cached = getModuleCache<Batch>(store, `batch:${id}`);
+    setData(cached);
+    setEconomics(null);
+    setHistory([]);
+    setError(null);
+    setLoading(!cached);
     void load();
-    // load once when id changes
-  }, [route.params.id]);
+  }, [load, route.params.id, store]);
 
   useEffect(() => {
     if (tab === 'history' || tab === 'overview') void loadHistory();

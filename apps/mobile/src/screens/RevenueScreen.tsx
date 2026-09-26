@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { FlatList, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, FlatList, ScrollView, StyleSheet, View } from 'react-native';
+import type { RouteProp } from '@react-navigation/native';
+import { useRoute } from '@react-navigation/native';
 import {
   REVENUE_SOURCES,
   formatNPR,
@@ -26,6 +28,7 @@ import { toQuery } from '../api/query';
 import { useAccess } from '../hooks/useAccess';
 import { useFarm } from '../state/FarmProvider';
 import { getModuleCache, setModuleCache } from '../offline/module-cache';
+import type { RootStackParamList } from '../navigation/types';
 
 type Rev = {
   id: string;
@@ -37,6 +40,7 @@ type Rev = {
 };
 
 export function RevenueScreen() {
+  const route = useRoute<RouteProp<RootStackParamList, 'Revenue'>>();
   const { api, store, persist } = useFarm();
   const { can } = useAccess();
   const { t } = useLocale();
@@ -45,14 +49,14 @@ export function RevenueScreen() {
   const [loading, setLoading] = useState(true);
   const [fromCache, setFromCache] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(Boolean(route.params?.animalId));
   const [source, setSource] = useState<RevenueSource>('MILK');
   const [quantity, setQuantity] = useState('');
   const [unit, setUnit] = useState('L');
   const [rate, setRate] = useState('');
   const [buyerName, setBuyerName] = useState('');
   const [buyerContact, setBuyerContact] = useState('');
-  const [animalId, setAnimalId] = useState('');
+  const [animalId, setAnimalId] = useState(route.params?.animalId ?? '');
   const [herdBatchId, setHerdBatchId] = useState('');
   const [paymentStatus, setPaymentStatus] = useState<'PENDING' | 'PAID' | 'PARTIAL'>('PENDING');
   const [qualityBonus, setQualityBonus] = useState('');
@@ -87,11 +91,18 @@ export function RevenueScreen() {
     } finally {
       setLoading(false);
     }
-  }, [api, persist, store]);
+  }, [api, persist, store, t]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (route.params?.animalId) {
+      setAnimalId(route.params.animalId);
+      setShowForm(true);
+    }
+  }, [route.params?.animalId]);
 
   const create = async () => {
     setBusy(true);
@@ -125,20 +136,35 @@ export function RevenueScreen() {
   };
 
   const markPaid = async (id: string) => {
-    try {
-      await api.patch(`/v1/revenue/${id}`, { paymentStatus: 'PAID' });
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Update failed');
-    }
+    Alert.alert(t('revenue.markPaid', { defaultValue: 'Mark paid?' }), undefined, [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('common.save'),
+        onPress: () => {
+          void (async () => {
+            try {
+              await api.patch(`/v1/revenue/${id}`, { paymentStatus: 'PAID' });
+              await load();
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'Update failed');
+            }
+          })();
+        },
+      },
+    ]);
   };
 
   const recordMilkPayment = async () => {
+    const qty = Number(payQty);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      setError(t('revenue.quantity'));
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       await api.post('/v1/milk/payments', {
-        quantityLiters: Number(payQty),
+        quantityLiters: qty,
         pricePerLiter: Number(payPrice) || effPrice || undefined,
         paidAt: new Date(),
       });
@@ -151,6 +177,36 @@ export function RevenueScreen() {
       setBusy(false);
     }
   };
+
+  const paymentFooter =
+    canWrite && !showForm ? (
+      <View style={styles.pad}>
+        <SectionTitle>{t('revenue.coopPayment')}</SectionTitle>
+        <Muted>{t('revenue.coopPaymentHelp')}</Muted>
+        <Field
+          label={t('revenue.quantity')}
+          value={payQty}
+          onChangeText={setPayQty}
+          keyboardType="decimal-pad"
+        />
+        <Field
+          label={t('revenue.rate')}
+          value={payPrice}
+          onChangeText={setPayPrice}
+          keyboardType="decimal-pad"
+        />
+        {effPrice != null ? (
+          <Muted>
+            {t('profit.effective')}: {formatNPR(effPrice)}
+          </Muted>
+        ) : null}
+        <PrimaryButton
+          label={t('revenue.savePayment')}
+          disabled={busy}
+          onPress={() => void recordMilkPayment()}
+        />
+      </View>
+    ) : null;
 
   return (
     <AppShell module="revenue">
@@ -205,9 +261,12 @@ export function RevenueScreen() {
         <>
           {loading && items.length === 0 ? <LoadingBlock /> : null}
           <FlatList
+            style={{ flex: 1 }}
             data={items}
             keyExtractor={(r) => r.id}
+            contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}
             ListEmptyComponent={!loading ? <EmptyState /> : null}
+            ListFooterComponent={paymentFooter}
             renderItem={({ item }) => (
               <ListRow
                 title={`${item.source ?? t('revenue.add')} · ${formatNPR(item.amount ?? 0)}`}
@@ -221,30 +280,6 @@ export function RevenueScreen() {
               />
             )}
           />
-          {canWrite ? (
-            <View style={styles.pad}>
-              <SectionTitle>{t('revenue.coopPayment')}</SectionTitle>
-              <Muted>{t('revenue.coopPaymentHelp')}</Muted>
-              <Field
-                label={t('revenue.quantity')}
-                value={payQty}
-                onChangeText={setPayQty}
-                keyboardType="decimal-pad"
-              />
-              <Field
-                label={t('revenue.rate')}
-                value={payPrice}
-                onChangeText={setPayPrice}
-                keyboardType="decimal-pad"
-              />
-              {effPrice != null ? <Muted>{t('profit.effective')}: {formatNPR(effPrice)}</Muted> : null}
-              <PrimaryButton
-                label={t('revenue.savePayment')}
-                disabled={busy}
-                onPress={() => void recordMilkPayment()}
-              />
-            </View>
-          ) : null}
         </>
       )}
     </AppShell>

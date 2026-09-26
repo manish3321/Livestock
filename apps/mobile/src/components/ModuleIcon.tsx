@@ -90,13 +90,21 @@ export function ModuleIcon({
     case 'scan':
       return (
         <Svg {...props}>
-          <Path
-            {...stroke}
-            stroke={strokeColor}
-            d="M9 6.5h6a2 2 0 0 1 2 2v8.4l-5 2.6-5-2.6V8.5a2 2 0 0 1 2-2Z"
-          />
-          <Circle {...stroke} stroke={strokeColor} cx="12" cy="10.2" r="1.15" />
-          <Path {...stroke} stroke={strokeColor} d="M10 13.6h4M10 16h2.8" />
+          {/* Viewfinder corners */}
+          <Path {...stroke} stroke={strokeColor} strokeWidth={2} d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8" />
+          <Path {...stroke} stroke={strokeColor} strokeWidth={2} d="M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8" />
+          <Path {...stroke} stroke={strokeColor} strokeWidth={2} d="M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16" />
+          <Path {...stroke} stroke={strokeColor} strokeWidth={2} d="M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16" />
+          {/* QR modules */}
+          <Rect x="7" y="7" width="4" height="4" rx="0.6" fill={strokeColor} />
+          <Rect x="13" y="7" width="4" height="4" rx="0.6" fill={strokeColor} />
+          <Rect x="7" y="13" width="4" height="4" rx="0.6" fill={strokeColor} />
+          <Rect x="12.2" y="12.2" width="2.2" height="2.2" fill={strokeColor} />
+          <Rect x="15.5" y="12.2" width="1.6" height="1.6" fill={strokeColor} />
+          <Rect x="12.2" y="15.5" width="1.6" height="1.6" fill={strokeColor} />
+          <Rect x="15" y="15" width="2.5" height="2.5" rx="0.4" fill={strokeColor} />
+          {/* Scan beam */}
+          <Path {...stroke} stroke={strokeColor} strokeWidth={1.6} d="M6 12h12" opacity={0.85} />
         </Svg>
       );
     case 'expenses':

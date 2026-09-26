@@ -51,9 +51,13 @@ describe('finishLocalRound', () => {
       session: 'MORNING',
       offlineOnly: false,
     });
-    finishLocalRound(online);
+    finishLocalRound(online, [{ animalId: 'a1', reason: 'NOT_MILKED' }]);
     expect(online.round?.status).toBe('FINISHED');
-    expect(online.outbox.some((o) => o.rest?.kind === 'round-finish')).toBe(true);
+    const finishItem = online.outbox.find((o) => o.rest?.kind === 'round-finish');
+    expect(finishItem?.rest).toMatchObject({
+      kind: 'round-finish',
+      body: { skips: [{ animalId: 'a1', reason: 'NOT_MILKED' }] },
+    });
 
     const offline = createStore();
     startLocalRound(offline, {

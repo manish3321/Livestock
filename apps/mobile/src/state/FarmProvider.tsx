@@ -14,24 +14,79 @@ import { createStore, type FarmStore } from '../core/store';
 import { ensureTagBlocks, hydrateFromNetwork, runSync } from '../core/sync-engine';
 import type { NotificationEngine } from '../core/notify';
 import { createNotifeeEngine, MemoryNotificationEngine } from '../native/notifee-engine';
-import { apiBaseUrl } from '../api/config';
+import {
+  apiBaseUrlCandidates,
+  noteApiSuccess,
+  noteWorkingOrigin,
+  recentApiSuccess,
+} from '../api/config';
 import { createHttpFarmApi, type HttpFarmApi } from '../api/http-farm-api';
 import { clearTokens, loadOrCreateDeviceId, loadTokens, loginPlatform } from '../api/secure-session';
 import { loadPersistedStore, persistStore } from '../persistence/sqlite';
 import { cacheAnimalPhotos } from '../photos/cache';
 import { flushModuleOutbox, prefetchAllModules } from '../offline/module-cache';
 
-/** Reachability for the Nest API (LAN/emulator), not "public internet". */
-async function probeApiReachable(): Promise<boolean> {
+async function probeOneOrigin(origin: string): Promise<boolean> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 4000);
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 4000);
-    const res = await fetch(`${apiBaseUrl()}/health/live`, { method: 'GET', signal: ctrl.signal });
-    clearTimeout(timer);
-    return Boolean(res.status) && res.status >= 200 && res.ok;
+    const res = await fetch(`${origin}/health/live?_=${Date.now()}`, {
+      method: 'GET',
+      signal: ctrl.signal,
+      headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
+    });
+    // Any real HTTP status means the API host is reachable (even 5xx).
+    return typeof res.status === 'number' && res.status > 0;
   } catch {
     return false;
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+/** Reachability for the Nest API (LAN/emulator), not "public internet". */
+async function probeApiReachable(): Promise<boolean> {
+  // Recent successful API traffic means we are online even if a probe times out.
+  if (recentApiSuccess(20_000)) return true;
+  for (const origin of apiBaseUrlCandidates()) {
+    if (await probeOneOrigin(origin)) {
+      noteWorkingOrigin(origin);
+      noteApiSuccess();
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Require three failed probes before flipping offline (stops NetInfo/emulator flap). */
+function createReachabilityTracker(onChange: (online: boolean) => void) {
+  let online = true;
+  let fails = 0;
+  let inFlight: Promise<boolean> | null = null;
+
+  const probe = async (): Promise<boolean> => {
+    if (inFlight) return inFlight;
+    inFlight = probeApiReachable().finally(() => {
+      inFlight = null;
+    });
+    const ok = await inFlight;
+    if (ok) {
+      fails = 0;
+      if (!online) {
+        online = true;
+        onChange(true);
+      }
+      return true;
+    }
+    fails += 1;
+    if (fails >= 3 && online) {
+      online = false;
+      onChange(false);
+    }
+    return false;
+  };
+
+  return { probe, get online() { return online; } };
 }
 
 type FarmContextValue = {
@@ -67,6 +122,11 @@ export function FarmProvider({ children }: { children: ReactNode }) {
   const [syncing, setSyncing] = useState(false);
   const [revision, setRevision] = useState(0);
   const wasOffline = useRef(false);
+  const reachabilityRef = useRef(
+    createReachabilityTracker((next) => {
+      setOnline(next);
+    }),
+  );
 
   const bump = useCallback(() => setRevision((n) => n + 1), []);
   const persist = useCallback(() => {
@@ -122,9 +182,8 @@ export function FarmProvider({ children }: { children: ReactNode }) {
       setOnline(true);
       persist();
     } catch {
-      // Data errors ≠ offline; only mark offline if the API itself is unreachable.
-      const reachable = await probeApiReachable();
-      setOnline(reachable);
+      // Data errors ≠ offline; only mark offline after stable probe failures.
+      await reachabilityRef.current.probe();
     }
   }, [api, persist]);
 
@@ -139,8 +198,7 @@ export function FarmProvider({ children }: { children: ReactNode }) {
       persist();
       return result.conflicts;
     } catch {
-      const reachable = await probeApiReachable();
-      setOnline(reachable);
+      await reachabilityRef.current.probe();
       persist();
       return storeRef.current.conflicts.length;
     } finally {
@@ -179,8 +237,8 @@ export function FarmProvider({ children }: { children: ReactNode }) {
           }
         } catch {
           if (!cancelled) {
-            const reachable = await probeApiReachable();
-            if (!cancelled) setOnline(reachable);
+            await reachabilityRef.current.probe();
+            await reachabilityRef.current.probe();
           }
         }
       }
@@ -192,33 +250,24 @@ export function FarmProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    const applyLink = async (state: { isConnected: boolean | null }) => {
-      // Emulators often report isInternetReachable=false even when 10.0.2.2 works.
-      // Only trust the link flag; confirm with the farm API health endpoint.
-      if (state.isConnected === false) {
-        if (!cancelled) {
-          setOnline(false);
-          wasOffline.current = true;
-        }
-        return;
-      }
-      const reachable = await probeApiReachable();
+    const check = async () => {
+      // Always probe the farm API. NetInfo isConnected flickers on emulators and
+      // must not force Offline by itself.
+      const reachable = await reachabilityRef.current.probe();
       if (cancelled) return;
-      setOnline(reachable);
       if (reachable && wasOffline.current && storeRef.current.accessToken) {
         void syncNow().then(() => hydrate());
       }
-      wasOffline.current = !reachable;
+      wasOffline.current = !reachabilityRef.current.online;
     };
 
-    void NetInfo.fetch().then((state) => applyLink(state));
-    const unsub = NetInfo.addEventListener((state) => {
-      void applyLink(state);
+    void check();
+    const unsub = NetInfo.addEventListener(() => {
+      void check();
     });
-    // Re-probe periodically — emulator NetInfo is flaky and API restarts are common.
     const poll = setInterval(() => {
-      void NetInfo.fetch().then((state) => applyLink(state));
-    }, 12_000);
+      void check();
+    }, 30_000);
     return () => {
       cancelled = true;
       unsub();
@@ -240,8 +289,8 @@ export function FarmProvider({ children }: { children: ReactNode }) {
         void registerPushDevice();
         setOnline(true);
       } catch {
-        const reachable = await probeApiReachable();
-        setOnline(reachable);
+        await reachabilityRef.current.probe();
+        await reachabilityRef.current.probe();
       }
       persist();
     },

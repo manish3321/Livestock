@@ -65,14 +65,17 @@ export function startLocalRound(
   }
 }
 
-export function finishLocalRound(store: FarmStore): void {
+export function finishLocalRound(
+  store: FarmStore,
+  skips: Array<{ animalId: string; reason: string }> = [],
+): void {
   if (!store.round || store.round.status !== 'ACTIVE') return;
   store.round.status = 'FINISHED';
   if (!store.round.offlineOnly) {
     store.outbox.push({
       id: randomId(),
       state: 'pending',
-      rest: { kind: 'round-finish', id: store.round.id, body: { skips: [] } },
+      rest: { kind: 'round-finish', id: store.round.id, body: { skips } },
     });
   }
 }

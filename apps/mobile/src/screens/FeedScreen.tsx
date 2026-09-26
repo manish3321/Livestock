@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { FlatList, ScrollView, StyleSheet, View } from 'react-native';
+import type { RouteProp } from '@react-navigation/native';
+import { useRoute } from '@react-navigation/native';
 import type { FeedCreate, PageResult } from '@farm/contracts';
 import { AppShell } from '../components/AppShell';
 import { AnimalIdSearch } from '../components/AnimalIdSearch';
@@ -21,6 +23,7 @@ import { toQuery } from '../api/query';
 import { useAccess } from '../hooks/useAccess';
 import { useFarm } from '../state/FarmProvider';
 import { getModuleCache, setModuleCache } from '../offline/module-cache';
+import type { RootStackParamList } from '../navigation/types';
 
 type Feed = {
   id: string;
@@ -32,6 +35,7 @@ type Feed = {
 };
 
 export function FeedScreen() {
+  const route = useRoute<RouteProp<RootStackParamList, 'Feed'>>();
   const { api, store, persist } = useFarm();
   const { can } = useAccess();
   const { t } = useLocale();
@@ -40,10 +44,10 @@ export function FeedScreen() {
   const [loading, setLoading] = useState(true);
   const [fromCache, setFromCache] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(Boolean(route.params?.animalId));
   const [feedType, setFeedType] = useState('Concentrate');
   const [quantityKg, setQuantityKg] = useState('');
-  const [animalId, setAnimalId] = useState('');
+  const [animalId, setAnimalId] = useState(route.params?.animalId ?? '');
   const [herdBatchId, setHerdBatchId] = useState('');
   const [costPerKg, setCostPerKg] = useState('');
   const [condition, setCondition] = useState<'FRESH' | 'FERMENTED' | 'DRY' | ''>('');
@@ -74,11 +78,18 @@ export function FeedScreen() {
     } finally {
       setLoading(false);
     }
-  }, [api, persist, store]);
+  }, [api, persist, store, t]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (route.params?.animalId) {
+      setAnimalId(route.params.animalId);
+      setShowForm(true);
+    }
+  }, [route.params?.animalId]);
 
   const create = async () => {
     setBusy(true);
@@ -169,9 +180,14 @@ export function FeedScreen() {
           ) : null}
           {loading && items.length === 0 ? <LoadingBlock /> : null}
           <FlatList
+            style={styles.list}
             data={items}
             keyExtractor={(f) => f.id}
+            contentContainerStyle={styles.listContent}
             ListEmptyComponent={!loading ? <EmptyState /> : null}
+            initialNumToRender={12}
+            windowSize={7}
+            removeClippedSubviews
             renderItem={({ item }) => (
               <ListRow
                 title={`${item.feedType ?? t('nav.feed')} · ${item.quantityKg ?? 0} kg`}
@@ -188,4 +204,6 @@ export function FeedScreen() {
 
 const styles = StyleSheet.create({
   pad: { paddingHorizontal: 16, paddingBottom: 24 },
+  list: { flex: 1 },
+  listContent: { paddingHorizontal: 16, paddingBottom: 48 },
 });

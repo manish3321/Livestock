@@ -122,7 +122,7 @@ export function LoginScreen() {
             <Button
               label={busy ? t('common.loading') : t('login.submit')}
               block
-              disabled={busy}
+              disabled={busy || !email.trim() || !password}
               onPress={() => void onSubmit()}
             />
           </View>

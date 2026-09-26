@@ -20,6 +20,7 @@ import type {
 } from '@farm/contracts';
 import { ANIMAL_STATUS_LABEL, SPECIES_LABEL } from '@farm/contracts';
 import { AppShell } from '../components/AppShell';
+import { AnimalQrCard } from '../components/AnimalQrCard';
 import { Field, FormActions } from '../components/forms';
 import {
   Button,
@@ -55,9 +56,14 @@ export function AnimalDetailScreen() {
   const { t } = useLocale();
   const id = route.params?.id ?? '';
   const cacheKey = `animal:${id}`;
+  const paramTab = route.params?.tab;
+  const initialTab: Tab =
+    paramTab && (TABS as readonly string[]).includes(paramTab) ? (paramTab as Tab) : 'overview';
 
-  const [tab, setTab] = useState<Tab>('overview');
-  const [mode, setMode] = useState<'records' | 'add'>('records');
+  const [tab, setTab] = useState<Tab>(initialTab);
+  const [mode, setMode] = useState<'records' | 'add'>(
+    route.params?.mode === 'add' ? 'add' : 'records',
+  );
   const [data, setData] = useState<AnimalDetailDto | null>(() => getModuleCache(store, cacheKey));
   const [economics, setEconomics] = useState<AnimalEconomicsDto | null>(null);
   const [milkStats, setMilkStats] = useState<AnimalProductionStatsDto | null>(null);
@@ -110,25 +116,46 @@ export function AnimalDetailScreen() {
   };
 
   const load = useCallback(async () => {
+    if (!id) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const row = await api.get<AnimalDetailDto>(`/v1/animals/${id}`);
       setData(row);
-      setModuleCache(store, cacheKey, row);
+      setModuleCache(store, `animal:${id}`, row);
       persist();
       setError(null);
       void api.get<AnimalEconomicsDto>(`/v1/animals/${id}/economics`).then(setEconomics).catch(() => null);
     } catch {
-      if (!data) setError('Could not load animal');
+      setData((prev) => prev ?? getModuleCache(store, `animal:${id}`) ?? null);
+      setError((prev) => {
+        const cached = getModuleCache(store, `animal:${id}`);
+        return cached ? prev : 'Could not load animal';
+      });
     } finally {
       setLoading(false);
     }
-  }, [api, cacheKey, data, id, persist, store]);
+  }, [api, id, persist, store]);
 
   useEffect(() => {
+    setData(getModuleCache(store, `animal:${id}`));
+    setEconomics(null);
+    setMilkStats(null);
+    setHealthRows([]);
+    setHeatRows([]);
+    setError(null);
+    setLoading(true);
     void load();
-    // load once when id changes
-  }, [id]);
+  }, [id, load, store]);
+
+  useEffect(() => {
+    const nextTab = route.params?.tab;
+    if (nextTab && (TABS as readonly string[]).includes(nextTab)) setTab(nextTab as Tab);
+    if (route.params?.mode === 'add') setMode('add');
+  }, [route.params?.mode, route.params?.tab]);
 
   useEffect(() => {
     if (!data) return;
@@ -187,10 +214,15 @@ export function AnimalDetailScreen() {
     setError(null);
     try {
       if (tab === 'milk') {
+        const qty = Number(litres);
+        if (!Number.isFinite(qty) || qty <= 0) {
+          setError('Enter litres greater than 0');
+          return;
+        }
         await api.post('/v1/production', {
           type: 'MILK',
           entryDate: new Date(),
-          quantity: Number(litres),
+          quantity: qty,
           unit: 'L',
           animalId: id,
         });
@@ -213,8 +245,13 @@ export function AnimalDetailScreen() {
         });
         setHeatNotes('');
       } else if (tab === 'weight') {
+        const kg = Number(weightKg);
+        if (!Number.isFinite(kg) || kg <= 0) {
+          setError('Enter a valid weight');
+          return;
+        }
         await api.post(`/v1/animals/${id}/weights`, {
-          weightKg: Number(weightKg),
+          weightKg: kg,
           recordedAt: new Date(),
         });
         setWeightKg('');
@@ -302,6 +339,12 @@ export function AnimalDetailScreen() {
               ) : null}
             </View>
           </View>
+
+          <AnimalQrCard
+            animalId={data.id}
+            title={data.herdNumber ?? data.tag}
+            subtitle={data.name?.trim() || SPECIES_LABEL[data.species]}
+          />
 
           <Muted>
             {data.species} · {data.status} · {data.breed}

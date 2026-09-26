@@ -85,12 +85,11 @@ export function DashboardScreen() {
   );
 
   const urgentCount =
-    (data?.alerts.healthOverdue.length ?? 0) + (data?.alerts.inventoryCritical.length ?? 0);
-  const vaccineDue = data?.alerts.vaccineToday?.length ?? 0;
+    (data?.alerts?.healthOverdue?.length ?? 0) + (data?.alerts?.inventoryCritical?.length ?? 0);
+  const vaccineDue = data?.alerts?.vaccineToday?.length ?? 0;
   const hour = new Date().getHours();
   const shiftKey = hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : 'Evening';
-  const shiftEn = t(`dashboard.shift${shiftKey}`);
-  const shiftNp = t(`dashboard.shiftNp${shiftKey}`);
+  const shiftLabel = t(`dashboard.shift${shiftKey}`);
   const firstName = user?.name?.split(' ')[0] ?? '';
 
   return (
@@ -102,7 +101,7 @@ export function DashboardScreen() {
           <View style={styles.greetCard}>
             <View style={styles.shiftPill}>
               <Txt weight="semibold" style={styles.shiftPillText}>
-                {shiftNp} / {shiftEn}
+                {shiftLabel}
               </Txt>
             </View>
             <View style={styles.greetRow}>
@@ -150,7 +149,7 @@ export function DashboardScreen() {
 
           <View style={styles.sectionHeadRow}>
             <Txt weight="display" style={styles.sectionTitle}>
-              {t('dashboard.shedShortcutsNp')} / {t('dashboard.shedShortcuts')}
+              {t('dashboard.shedShortcuts')}
             </Txt>
             <Txt muted style={styles.sectionHint}>
               {t('dashboard.shedShortcutsHint')}
@@ -167,7 +166,7 @@ export function DashboardScreen() {
               </View>
               <View style={{ flex: 1 }}>
                 <Txt weight="bold" style={styles.shortcutTitleOn}>
-                  {t('dashboard.shortcutShed')} / {t('nav.shed')}
+                  {t('dashboard.shortcutShed')}
                 </Txt>
                 <Txt style={styles.shortcutSubOn}>{t('dashboard.shortcutShedSub')}</Txt>
               </View>
@@ -243,34 +242,46 @@ export function DashboardScreen() {
             )}
           </View>
 
-          <View style={[styles.sectionHeadRow, { marginTop: 8 }]}>
+          <Pressable
+            style={[styles.sectionHeadRow, { marginTop: 8 }]}
+            onPress={() => navigation.navigate('Production')}
+            accessibilityRole="button"
+          >
             <Txt weight="display" style={styles.sectionTitle}>
-              {t('dashboard.productionCensusNp')} / {t('dashboard.productionCensus')}
+              {t('dashboard.productionCensus')}
             </Txt>
             <Txt weight="bold" style={styles.yesterdayTag}>
               {t('dashboard.yesterdayTag')}
             </Txt>
-          </View>
+          </Pressable>
           {data.yesterdayProduction ? (
             <View style={styles.bento}>
-              <View style={styles.milkHero}>
+              <Pressable
+                style={styles.milkHero}
+                onPress={() => navigation.navigate('Production')}
+                accessibilityRole="button"
+              >
                 <View style={styles.milkIcon}>
                   <ModuleIcon module="production" size={28} color={color.brand} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Txt muted style={styles.milkLabel}>
-                    {t('dashboard.dailyMilkNp')} / {t('dashboard.dailyMilk')}
+                    {t('dashboard.dailyMilk')}
                   </Txt>
                   <Txt style={styles.milkValue}>
                     {data.yesterdayProduction.milkLiters}{' '}
                     <Txt style={styles.milkUnit}>L</Txt>
                   </Txt>
                 </View>
-              </View>
+              </Pressable>
               <View style={styles.bentoRow}>
-                <View style={styles.bentoHalf}>
+                <Pressable
+                  style={styles.bentoHalf}
+                  onPress={() => navigation.navigate('Groups')}
+                  accessibilityRole="button"
+                >
                   <Txt muted style={styles.bentoLabel}>
-                    {t('dashboard.poultryNp')} / {t('dashboard.poultry')}
+                    {t('dashboard.poultry')}
                   </Txt>
                   <Txt style={styles.bentoValue}>
                     {data.yesterdayProduction.eggCount}{' '}
@@ -278,10 +289,14 @@ export function DashboardScreen() {
                       eggs
                     </Txt>
                   </Txt>
-                </View>
-                <View style={styles.bentoHalf}>
+                </Pressable>
+                <Pressable
+                  style={styles.bentoHalf}
+                  onPress={() => navigation.navigate('Fish')}
+                  accessibilityRole="button"
+                >
                   <Txt muted style={styles.bentoLabel}>
-                    {t('dashboard.pondNp')} / {t('dashboard.pond')}
+                    {t('dashboard.pond')}
                   </Txt>
                   <Txt style={styles.bentoValue}>
                     {data.yesterdayProduction.fishKg}{' '}
@@ -289,7 +304,7 @@ export function DashboardScreen() {
                       kg
                     </Txt>
                   </Txt>
-                </View>
+                </Pressable>
               </View>
             </View>
           ) : null}
@@ -297,7 +312,18 @@ export function DashboardScreen() {
           {(data.speciesDistribution ?? []).length > 0 ? (
             <View style={styles.census}>
               {(data.speciesDistribution ?? []).slice(0, 4).map((row, i) => (
-                <View key={row.species} style={styles.censusItem}>
+                <Pressable
+                  key={row.species}
+                  style={styles.censusItem}
+                  onPress={() => {
+                    const kind = row.species.split(':')[0];
+                    if (kind === 'FISH') navigation.navigate('Fish');
+                    else if (kind === 'POULTRY') navigation.navigate('Groups');
+                    else if (kind === 'LIVESTOCK') navigation.navigate('Animals');
+                    else navigation.navigate('Batches');
+                  }}
+                  accessibilityRole="button"
+                >
                   {i > 0 ? <View style={styles.censusRule} /> : null}
                   <View style={{ alignItems: 'center', flex: 1 }}>
                     <Txt weight="bold" style={styles.censusNum}>
@@ -307,47 +333,66 @@ export function DashboardScreen() {
                       {batchDistributionLabel(row.species)}
                     </Txt>
                   </View>
-                </View>
+                </Pressable>
               ))}
             </View>
           ) : null}
 
           {showFinance ? (
             <View style={styles.financeCard}>
-              <Txt weight="bold" style={styles.financeHead}>
-                {t('dashboard.dailyFinancialsNp')} / {t('dashboard.dailyFinancials')}
-              </Txt>
+              <Pressable onPress={() => navigation.navigate('Pnl')} accessibilityRole="button">
+                <Txt weight="bold" style={styles.financeHead}>
+                  {t('dashboard.dailyFinancials')}
+                </Txt>
+              </Pressable>
               <View style={styles.financeGrid}>
-                <View style={styles.financeCell}>
+                <Pressable
+                  style={styles.financeCell}
+                  onPress={() => navigation.navigate('Revenue')}
+                  accessibilityRole="button"
+                >
                   <Txt muted style={styles.financeLabel}>
                     {t('dashboard.revenue')}
                   </Txt>
                   <Txt style={styles.financeValue}>{formatNPR(data.revenueTotal ?? 0)}</Txt>
-                </View>
-                <View style={styles.financeCell}>
+                </Pressable>
+                <Pressable
+                  style={styles.financeCell}
+                  onPress={() => navigation.navigate('Expenses')}
+                  accessibilityRole="button"
+                >
                   <Txt muted style={styles.financeLabel}>
                     {t('dashboard.expenses')}
                   </Txt>
                   <Txt style={[styles.financeValue, { color: color.emberStrong }]}>
                     {formatNPR(data.expenseTotal ?? 0)}
                   </Txt>
-                </View>
+                </Pressable>
               </View>
             </View>
           ) : null}
 
-          <View style={[styles.sectionHeadRow, { marginTop: 4 }]}>
+          <Pressable
+            style={[styles.sectionHeadRow, { marginTop: 4 }]}
+            onPress={() => navigation.navigate('Inbox')}
+            accessibilityRole="button"
+          >
             <Txt weight="display" style={styles.sectionTitle}>
-              {t('dashboard.actionRequiredNp')} / {t('dashboard.actionRequired')}
+              {t('dashboard.actionRequired')}
             </Txt>
             {urgentCount > 0 ? (
               <Txt weight="bold" style={{ color: color.ember, fontSize: 11 }}>
                 {t('dashboard.urgentCount', { count: urgentCount })}
               </Txt>
             ) : null}
-          </View>
-          {(data.alerts.dueCalving ?? []).slice(0, 2).map((item) => (
-            <View key={item.id} style={styles.taskCard}>
+          </Pressable>
+          {(data.alerts?.dueCalving ?? []).slice(0, 2).map((item) => (
+            <Pressable
+              key={item.id}
+              style={styles.taskCard}
+              onPress={() => navigation.navigate('Breeding')}
+              accessibilityRole="button"
+            >
               <View style={[styles.taskRail, { backgroundColor: color.terracottaSoft }]} />
               <EarTagBadge code={item.title.slice(0, 10)} size="sm" />
               <View style={{ flex: 1, marginLeft: 8 }}>
@@ -358,10 +403,15 @@ export function DashboardScreen() {
                   {item.detail ?? (item.dueAt ? formatDate(item.dueAt) : '')}
                 </Txt>
               </View>
-            </View>
+            </Pressable>
           ))}
-          {(data.alerts.healthOverdue ?? []).slice(0, 2).map((item) => (
-            <View key={item.id} style={styles.taskCard}>
+          {(data.alerts?.healthOverdue ?? []).slice(0, 2).map((item) => (
+            <Pressable
+              key={item.id}
+              style={styles.taskCard}
+              onPress={() => navigation.navigate('Health')}
+              accessibilityRole="button"
+            >
               <View style={[styles.taskRail, { backgroundColor: color.danger }]} />
               <View style={{ flex: 1, marginLeft: 8 }}>
                 <Txt weight="semibold" style={{ fontSize: 13 }}>
@@ -371,10 +421,15 @@ export function DashboardScreen() {
                   {item.detail ?? (item.dueAt ? formatDate(item.dueAt) : '')}
                 </Txt>
               </View>
-            </View>
+            </Pressable>
           ))}
-          {(data.alerts.inventoryCritical ?? []).slice(0, 1).map((item) => (
-            <View key={item.id} style={styles.taskCard}>
+          {(data.alerts?.inventoryCritical ?? []).slice(0, 1).map((item) => (
+            <Pressable
+              key={item.id}
+              style={styles.taskCard}
+              onPress={() => navigation.navigate('Inventory')}
+              accessibilityRole="button"
+            >
               <View style={[styles.taskRail, { backgroundColor: color.emberStrong }]} />
               <View style={{ flex: 1, marginLeft: 8 }}>
                 <Txt weight="semibold" style={{ fontSize: 13 }}>
@@ -384,14 +439,16 @@ export function DashboardScreen() {
                   {item.detail ?? ''}
                 </Txt>
               </View>
-            </View>
+            </Pressable>
           ))}
 
           {commercial ? (
             <View style={{ marginTop: 8, marginBottom: 8 }}>
-              <Txt weight="display" style={styles.sectionTitle}>
-                {t('dashboard.shedLedgerNp')} / {t('dashboard.shedLedger')}
-              </Txt>
+              <Pressable onPress={() => navigation.navigate('DailySheet')} accessibilityRole="button">
+                <Txt weight="display" style={styles.sectionTitle}>
+                  {t('dashboard.shedLedger')}
+                </Txt>
+              </Pressable>
               <View style={styles.ledger}>
                 {(data.recentActivity ?? []).length === 0 ? (
                   <Txt muted style={{ padding: 12 }}>
@@ -399,7 +456,12 @@ export function DashboardScreen() {
                   </Txt>
                 ) : (
                   (data.recentActivity ?? []).slice(0, 8).map((item) => (
-                    <View key={item.id} style={styles.ledgerRow}>
+                    <Pressable
+                      key={item.id}
+                      style={styles.ledgerRow}
+                      onPress={() => navigation.navigate('DailySheet')}
+                      accessibilityRole="button"
+                    >
                       <View style={styles.ledgerDot}>
                         <ModuleIcon module="dashboard" size={14} color={color.brand} />
                       </View>
@@ -412,7 +474,7 @@ export function DashboardScreen() {
                           {formatDateTime(item.createdAt)}
                         </Txt>
                       </View>
-                    </View>
+                    </Pressable>
                   ))
                 )}
               </View>
@@ -420,14 +482,16 @@ export function DashboardScreen() {
           ) : null}
 
           {commercial && showFinance && (data.financeTrend?.length ?? 0) > 0 ? (
-            <Card style={{ marginTop: 8, marginBottom: 16 }}>
-              <SectionHead title={t('dashboard.financeTrend')} hint={t('dashboard.financeTrendHint')} />
-              <FinanceTrendChart
-                data={data.financeTrend!}
-                revenue={t('dashboard.revenue')}
-                expenses={t('dashboard.expenses')}
-              />
-            </Card>
+            <Pressable onPress={() => navigation.navigate('Pnl')} accessibilityRole="button">
+              <Card style={{ marginTop: 8, marginBottom: 16 }}>
+                <SectionHead title={t('dashboard.financeTrend')} hint={t('dashboard.financeTrendHint')} />
+                <FinanceTrendChart
+                  data={data.financeTrend!}
+                  revenue={t('dashboard.revenue')}
+                  expenses={t('dashboard.expenses')}
+                />
+              </Card>
+            </Pressable>
           ) : null}
         </ScreenScroll>
       ) : null}

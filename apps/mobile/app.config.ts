@@ -21,6 +21,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   android: {
     package: 'np.evoqed.farm.shed',
     permissions: ['CAMERA', 'VIBRATE', 'POST_NOTIFICATIONS', 'RECEIVE_BOOT_COMPLETED'],
+    // Dev API is http:// on LAN / 10.0.2.2 — required outside Expo Go.
+    usesCleartextTraffic: true,
   },
   plugins: [
     [

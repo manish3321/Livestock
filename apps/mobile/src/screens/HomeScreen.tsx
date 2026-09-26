@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -70,7 +70,11 @@ export function ShedScreen() {
     setStarting(true);
     try {
       const round = await api.activeRound();
-      if (!round) return;
+      if (!round) {
+        setServerActiveId(null);
+        setError(t('shed.roundGone', { defaultValue: 'That round is no longer active' }));
+        return;
+      }
       startLocalRound(store, {
         id: round.id,
         mode: round.mode as RecordingMode,

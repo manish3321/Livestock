@@ -20,7 +20,7 @@ export type RootStackParamList = {
   Fish: undefined;
   Scan: undefined;
   Health: { animalId?: string; type?: string } | undefined;
-  Breeding: { form?: string; animalId?: string } | undefined;
+  Breeding: { form?: string; animalId?: string; breedingId?: string } | undefined;
   Production: undefined;
   Feed: { animalId?: string } | undefined;
   Inventory: undefined;

@@ -16,8 +16,9 @@ async function bootstrap(): Promise<void> {
     .build();
   SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, config));
 
-  await app.listen(port);
-  new Logger('Bootstrap').log(`API listening on port ${port} (${env.NODE_ENV})`);
+  // Bind all interfaces so Expo Go on a phone/emulator can reach the API on LAN.
+  await app.listen(port, '0.0.0.0');
+  new Logger('Bootstrap').log(`API listening on 0.0.0.0:${port} (${env.NODE_ENV})`);
 }
 
 void bootstrap();

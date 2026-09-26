@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,6 +15,7 @@ import { useAccess } from '../hooks/useAccess';
 import { useLocale } from '../locale/LocaleProvider';
 import { livestockModuleOrder, navGroups, navigableModules, MODULE_ROUTE } from '../navigation/modules';
 import type { RootStackParamList } from '../navigation/types';
+import { apiPlatformHint } from '../api/config';
 import { color } from '../theme/tokens';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -34,6 +35,7 @@ export function AppShell({
   children,
   hideTabs,
   title,
+  showBack,
 }: {
   title?: string;
   module?: ModuleKey;
@@ -121,21 +123,42 @@ export function AppShell({
             ? t('native.syncing')
             : online
               ? t('native.onlineBanner')
-              : t('native.offlineBanner')
+              : `${t('native.offlineBanner')} · ${apiPlatformHint()}`
         }
       />
       <View style={styles.body}>
-        {heading ? (
+        {showBack || heading ? (
           <View style={styles.shellTitle}>
-            <Txt weight="display" style={styles.shellTitleText}>
-              {heading}
-            </Txt>
+            {showBack ? (
+              <Pressable
+                onPress={() => {
+                  if (navigation.canGoBack()) navigation.goBack();
+                  else navigation.navigate('Dashboard');
+                }}
+                hitSlop={8}
+              >
+                <Txt style={styles.backLink}>← {t('common.back', { defaultValue: 'Back' })}</Txt>
+              </Pressable>
+            ) : null}
+            {heading ? (
+              <Txt weight="display" style={styles.shellTitleText}>
+                {heading}
+              </Txt>
+            ) : null}
           </View>
         ) : null}
         {children}
       </View>
       {showTabs ? (
-        <BottomTabBar active={activeTab} allowed={allowed} onPress={onTab} />
+        <BottomTabBar
+          active={activeTab}
+          allowed={allowed}
+          onPress={onTab}
+          onScan={() => {
+            setMoreOpen(false);
+            navigation.navigate('Scan');
+          }}
+        />
       ) : null}
       {user ? (
         <MoreDrawer
@@ -165,7 +188,8 @@ export function AppShell({
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: color.surfaceSubtle },
-  body: { flex: 1 },
-  shellTitle: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
+  body: { flex: 1, minHeight: 0 },
+  shellTitle: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4, gap: 4 },
   shellTitleText: { fontSize: 24, letterSpacing: -0.3 },
+  backLink: { fontSize: 14, color: color.brand, marginBottom: 2 },
 });

@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Kharka Mobile — Work Summary · 20 Sep 2026</title>
+  <style>
+    @page { margin: 18mm 16mm; size: A4; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      color: #1a2e22;
+      line-height: 1.45;
+      font-size: 10.5pt;
+      margin: 0;
+    }
+    h1 {
+      font-size: 20pt;
+      margin: 0 0 4px;
+      letter-spacing: -0.02em;
+      color: #14532d;
+    }
+    h2 {
+      font-size: 12.5pt;
+      margin: 22px 0 8px;
+      padding-bottom: 4px;
+      border-bottom: 1.5px solid #c5d9cb;
+      color: #166534;
+    }
+    h3 {
+      font-size: 10.5pt;
+      margin: 14px 0 6px;
+      color: #1a2e22;
+    }
+    .meta {
+      color: #4b6354;
+      font-size: 9.5pt;
+      margin-bottom: 18px;
+    }
+    .banner {
+      background: #e8f5ec;
+      border: 1.5px solid #a7d4b5;
+      border-radius: 6px;
+      padding: 12px 14px;
+      margin-bottom: 8px;
+    }
+    ul { margin: 6px 0 10px; padding-left: 1.15em; }
+    li { margin-bottom: 4px; }
+    .tag {
+      display: inline-block;
+      font-size: 8pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 2px 7px;
+      border-radius: 4px;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .fix { background: #dcfce7; color: #14532d; }
+    .bug { background: #fee2e2; color: #991b1b; }
+    .feat { background: #dbeafe; color: #1e3a8a; }
+    .db { background: #fef3c7; color: #92400e; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9.5pt;
+      margin: 8px 0 12px;
+    }
+    th, td {
+      border: 1px solid #c5d9cb;
+      padding: 6px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #e8f5ec; color: #14532d; }
+    .footer {
+      margin-top: 28px;
+      padding-top: 10px;
+      border-top: 1px solid #c5d9cb;
+      font-size: 8.5pt;
+      color: #4b6354;
+    }
+    code {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 9pt;
+      background: #f0f7f2;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Kharka Farm OS — Mobile work summary</h1>
+  <p class="meta">
+    Project: Livestock monorepo · App: <code>apps/mobile</code> (Expo / React Native)<br />
+    Date: Sunday, 20 September 2026 · Branch context: feature work on <code>app</code> / local mobile parity
+  </p>
+
+  <div class="banner">
+    <strong>Today’s goal:</strong> Stabilize and harden the native mobile app — fix runtime API/task errors,
+    improve scan &amp; search UX, audit every screen for real bugs, and ship concrete fixes across
+    shed rounds, inbox deep-links, animals, breeding, health, revenue, and related modules.
+  </div>
+
+  <h2>1. Database &amp; API — task enum crash</h2>
+  <p>
+    <span class="tag db">Database</span>
+    Nest API was spamming <code>GET /v1/tasks</code> failures:
+    <em>Value 'ANESTRUS_VET' not found in enum 'TaskType'</em>.
+  </p>
+  <ul>
+    <li>Inspected Postgres <code>TaskType</code> enum vs Prisma schema.</li>
+    <li>Remapped legacy rows: <code>ANESTRUS_VET</code>, <code>ANESTRUS_MINERAL</code>, <code>ANESTRUS_DECISION</code>,
+      and other orphan labels → current schema values (e.g. <code>SILENT_HEAT_CHECK</code>, <code>REPEAT_BREEDER</code>).</li>
+    <li>Added migration <code>20260920143000_remap_legacy_task_types</code> and a one-off remap script.</li>
+    <li>Verified <code>prisma.task.findMany()</code> and smoke-tested mobile-facing endpoints (all 200).</li>
+  </ul>
+
+  <h2>2. Scan &amp; search UX</h2>
+  <ul>
+    <li><span class="tag feat">Feature</span> <strong>Scan hub</strong> — live animal/batch suggestions while typing (280ms debounce), not only on “Find”.</li>
+    <li><span class="tag fix">Fix</span> UUID / QR payloads resolve via API instead of inventing a fake short tag.</li>
+    <li><span class="tag feat">Feature</span> <strong>AnimalIdSearch</strong> — same live typeahead + clear network vs empty-state messaging.</li>
+    <li><span class="tag fix">Fix</span> Scan overlay no longer advances with a bogus tag when detail fetch fails.</li>
+    <li><span class="tag feat">UI</span> QR <strong>scan FAB icon</strong> redesigned: viewfinder corners + QR modules + scan beam (was ID-card glyph).</li>
+  </ul>
+
+  <h2>3. Inbox deep-links &amp; module routing</h2>
+  <p>
+    Task <code>actionPath</code> values like <code>/breeding?form=heat&amp;animalId=…</code> were ignored on mobile
+    (opened Breeding/Health with no tab or animal).
+  </p>
+  <ul>
+    <li>Added <code>lib/action-path.ts</code> + unit tests.</li>
+    <li>Wired Inbox open-task → parsed stack destinations.</li>
+    <li>Breeding / Health / Feed / Revenue honor route params (<code>form</code>, <code>type</code>, <code>animalId</code>, <code>breedingId</code>).</li>
+    <li>Breeding PD / calving / colostrum: selecting a record switches tab and shows selection; required animal checks on save.</li>
+  </ul>
+
+  <h2>4. Shed rounds &amp; animal detail (critical bugs)</h2>
+  <table>
+    <thead>
+      <tr><th>Issue</th><th>Fix</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Health-check / marker rounds fell through to milk save</td>
+        <td>Mode-specific UI + <code>saveHealthLocal</code>; unsupported modes blocked</td>
+      </tr>
+      <tr>
+        <td>Successful save always showed “offline”</td>
+        <td>Clear error on success</td>
+      </tr>
+      <tr>
+        <td>Undo visible in all modes but only undid milk</td>
+        <td>Undo only for milking</td>
+      </tr>
+      <tr>
+        <td>Resume round failed silently</td>
+        <td>Clear server id + user-facing error</td>
+      </tr>
+      <tr>
+        <td>Animal detail kept previous animal on id change</td>
+        <td>Reset cache/state and reload</td>
+      </tr>
+      <tr>
+        <td><code>showBack</code> on AppShell ignored</td>
+        <td>Back control implemented</td>
+      </tr>
+      <tr>
+        <td>Empty milk/weight submitted as 0</td>
+        <td>Client-side numeric validation</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>5. Second-pass audit fixes (remaining screens)</h2>
+  <p>From the remaining-screens audit follow-up:</p>
+  <ul>
+    <li><span class="tag bug">Crash</span> Dashboard <code>data?.alerts.healthOverdue</code> → safe <code>alerts?</code> chaining.</li>
+    <li><span class="tag bug">Data</span> Expenses only enqueue offline on network/5xx — not on validation 4xx.</li>
+    <li><span class="tag bug">UX</span> Batch detail resets when route <code>id</code> changes.</li>
+    <li><span class="tag bug">UX</span> Revenue coop payment moved to FlatList footer; mark-paid requires confirm.</li>
+    <li><span class="tag bug">UX</span> Tank delivery: receipt upload failure reported separately after delivery save.</li>
+    <li>Tasks module-cache <code>dueBefore</code> computed at prefetch time (not frozen at import).</li>
+  </ul>
+
+  <h2>6. Verification</h2>
+  <ul>
+    <li>Mobile <code>pnpm typecheck</code> — clean.</li>
+    <li>Mobile unit tests — 20/20 passed (including new action-path tests).</li>
+    <li>API smoke script — login + dashboard, tasks, animals, search, batches, breeding, health, production, feed, inventory, revenue, expenses, rounds — all OK.</li>
+  </ul>
+
+  <h2>7. Key files touched (representative)</h2>
+  <ul>
+    <li><code>apps/mobile/src/components/ModuleIcon.tsx</code> — new QR scan icon</li>
+    <li><code>apps/mobile/src/screens/ScanHubScreen.tsx</code>, <code>AnimalIdSearch.tsx</code>, <code>ScanAnywhere.tsx</code></li>
+    <li><code>apps/mobile/src/lib/action-path.ts</code>, <code>InboxScreen.tsx</code>, <code>BreedingScreen.tsx</code>, <code>HealthScreen.tsx</code></li>
+    <li><code>apps/mobile/src/screens/RoundScreen.tsx</code>, <code>HomeScreen.tsx</code>, <code>AnimalDetailScreen.tsx</code>, <code>AppShell.tsx</code></li>
+    <li><code>DashboardScreen.tsx</code>, <code>ExpensesScreen.tsx</code>, <code>BatchDetailScreen.tsx</code>, <code>RevenueScreen.tsx</code>, <code>TankDeliveryScreen.tsx</code></li>
+    <li><code>apps/api/prisma/migrations/20260920143000_remap_legacy_task_types/</code></li>
+  </ul>
+
+  <h2>8. Suggested next steps (not done today)</h2>
+  <ul>
+    <li>Offline queue for animal <em>edit</em>, inbox snooze/dismiss.</li>
+    <li>PnL / reports cache keys per period; numeric validation pass on Production/Feed/Inventory forms.</li>
+    <li>Conflicts screen richer compare UI; print error handling on Daily sheet / Tags.</li>
+    <li>Device QA pass on emulator + physical phone with <code>EXPO_PUBLIC_API_URL</code>.</li>
+  </ul>
+
+  <div class="footer">
+    Generated for local handoff · Kharka / Livestock Farm OS · 20 Sep 2026<br />
+    This document summarizes agent + developer work in the Cursor session on the mobile app hardening pass.
+  </div>
+</body>
+</html>

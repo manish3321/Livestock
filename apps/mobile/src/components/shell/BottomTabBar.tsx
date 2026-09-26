@@ -13,10 +13,13 @@ export function BottomTabBar({
   active,
   allowed,
   onPress,
+  onScan,
 }: {
   active: TabKey | null;
   allowed: Set<ModuleKey>;
   onPress: (key: TabKey) => void;
+  /** Prefer stack navigation — Modal overlay is unreliable under native-stack. */
+  onScan?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const { t } = useLocale();
@@ -24,34 +27,34 @@ export function BottomTabBar({
   const { openScan } = useScanOverlay();
   const showScan = allowed.has('scan');
 
+  const openScanner = () => {
+    if (onScan) onScan();
+    else openScan();
+  };
+
   const tabs: Array<{
     key: TabKey;
     module?: ModuleKey;
     label: string;
-    companion: string;
   }> = [
     {
       key: 'dashboard',
       module: 'dashboard',
       label: t('nav.dashboard'),
-      companion: t('nav.tabCompanion.dashboard'),
     },
     {
       key: 'shed',
       module: 'shed',
       label: t('nav.shed'),
-      companion: t('nav.tabCompanion.shed'),
     },
     {
       key: 'inbox',
       module: 'inbox',
       label: t('nav.inbox'),
-      companion: t('nav.tabCompanion.inbox'),
     },
     {
       key: 'more',
       label: t('nav.more'),
-      companion: t('nav.tabCompanion.more'),
     },
   ];
   const visible = tabs.filter((tab) => tab.key === 'more' || (tab.module && allowed.has(tab.module)));
@@ -69,7 +72,7 @@ export function BottomTabBar({
         style={[styles.item, on && styles.itemOn]}
         accessibilityRole="button"
         accessibilityState={{ selected: on }}
-        accessibilityLabel={`${tab.companion} | ${tab.label}`}
+        accessibilityLabel={tab.label}
       >
         {tab.module ? (
           <ModuleIcon module={tab.module} size={22} color={tint} />
@@ -83,7 +86,7 @@ export function BottomTabBar({
             on && styles.labelOn,
           ]}
         >
-          {tab.companion} | {tab.label}
+          {tab.label}
         </Text>
       </Pressable>
     );
@@ -95,7 +98,7 @@ export function BottomTabBar({
       {showScan ? (
         <View style={styles.fabSlot}>
           <Pressable
-            onPress={openScan}
+            onPress={openScanner}
             style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
             accessibilityRole="button"
             accessibilityLabel={t('nav.scan')}
@@ -103,7 +106,7 @@ export function BottomTabBar({
             <ModuleIcon module="scan" size={26} color="#fff" />
           </Pressable>
           <Text style={[styles.fabCaption, { fontFamily: fonts.bodyBold }]}>
-            {t('nav.tabCompanion.scan')}
+            {t('nav.scan')}
           </Text>
         </View>
       ) : (

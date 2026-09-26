@@ -18,7 +18,7 @@ import type {
   TokenPair,
 } from '@farm/contracts';
 import type { FarmApi } from '../core/sync-engine';
-import { apiBaseUrl } from './config';
+import { apiBaseUrl, noteApiSuccess, noteWorkingOrigin } from './config';
 import { clearTokens, loginPlatform, saveTokens } from './secure-session';
 
 export class ApiError extends Error {
@@ -165,6 +165,8 @@ export function createHttpFarmApi(options: {
       const errBody = await parseJson(res);
       throw new ApiError(`HTTP_${res.status}`, res.status, errBody);
     }
+    noteApiSuccess();
+    noteWorkingOrigin(base());
     if (res.status === 204) return undefined as T;
     return (await parseJson(res)) as T;
   };
@@ -272,11 +274,8 @@ export function createHttpFarmApi(options: {
       return request('PATCH', `/v1/tasks/${id}/complete`, body);
     },
     listOpenTasks() {
-      const dueBefore = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-      return request<PageResult<TaskDto>>(
-        'GET',
-        `/v1/tasks?page=1&pageSize=100&dueBefore=${encodeURIComponent(dueBefore)}`,
-      );
+      // Match web Inbox: open tasks only (PENDING|SNOOZED), urgency order from API.
+      return request<PageResult<TaskDto>>('GET', '/v1/tasks?page=1&pageSize=80');
     },
     get<T = unknown>(path: string) {
       return request<T>('GET', path);
@@ -336,6 +335,8 @@ export function createHttpFarmApi(options: {
           const errBody = await parseJson(res);
           throw new ApiError(`HTTP_${res.status}`, res.status, errBody);
         }
+        noteApiSuccess();
+        noteWorkingOrigin(base());
         if (res.status === 204) return undefined as T;
         return (await parseJson(res)) as T;
       };

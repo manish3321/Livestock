@@ -83,6 +83,14 @@ export function TankDeliveryScreen({ navigation, route }: Props) {
     }
   };
 
+  const mimeForUri = (uri: string) => {
+    const lower = uri.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.heic') || lower.endsWith('.heif')) return 'image/heic';
+    return 'image/jpeg';
+  };
+
   const saveDelivery = async () => {
     const litres = Number(litresSent);
     if (!Number.isFinite(litres) || litres <= 0) {
@@ -97,12 +105,23 @@ export function TankDeliveryScreen({ navigation, route }: Props) {
       };
       await api.post(`/v1/milk/rounds/${milkRoundId}/delivery`, body);
       if (receiptUri) {
-        const name = receiptUri.split('/').pop() ?? 'receipt.jpg';
-        await api.uploadFile(`/v1/milk/rounds/${milkRoundId}/delivery/receipt`, 'file', {
-          uri: receiptUri,
-          name,
-          type: 'image/jpeg',
-        });
+        try {
+          const name = receiptUri.split('/').pop() ?? 'receipt.jpg';
+          await api.uploadFile(`/v1/milk/rounds/${milkRoundId}/delivery/receipt`, 'file', {
+            uri: receiptUri,
+            name,
+            type: mimeForUri(receiptUri),
+          });
+        } catch (uploadErr) {
+          await load();
+          Alert.alert(
+            t('shed.saveDelivery'),
+            uploadErr instanceof Error
+              ? `Delivery saved, but receipt upload failed: ${uploadErr.message}`
+              : 'Delivery saved, but receipt upload failed. Try again.',
+          );
+          return;
+        }
       }
       await load();
       Alert.alert(t('shed.saveDelivery'));

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useState } from 'react';
 import {
   FlatList,
   Pressable,
@@ -258,6 +258,22 @@ export function AnimalsScreen() {
     </View>
   );
 
+  const onToggleRow = useCallback((id: string) => {
+    setExpanded((cur) => (cur === id ? null : id));
+  }, []);
+
+  const renderAnimal = useCallback(
+    ({ item: row }: { item: AnimalDto }) => (
+      <HerdRow
+        row={row}
+        showSpecies={!species}
+        open={expanded === row.id}
+        onToggle={onToggleRow}
+      />
+    ),
+    [expanded, onToggleRow, species],
+  );
+
   return (
     <AppShell module="animals">
       <View style={styles.root}>
@@ -266,19 +282,17 @@ export function AnimalsScreen() {
         ) : (
           <FlatList
             data={items}
-            keyExtractor={(row) => row.id}
+            keyExtractor={animalKey}
             style={styles.list}
             contentContainerStyle={styles.listContent}
             ListHeaderComponent={listHeader}
             ListEmptyComponent={!loading ? <EmptyState /> : null}
-            renderItem={({ item: row }) => (
-              <HerdRow
-                row={row}
-                showSpecies={!species}
-                open={expanded === row.id}
-                onToggle={() => setExpanded(expanded === row.id ? null : row.id)}
-              />
-            )}
+            renderItem={renderAnimal}
+            initialNumToRender={12}
+            maxToRenderPerBatch={8}
+            windowSize={7}
+            removeClippedSubviews
+            updateCellsBatchingPeriod={50}
           />
         )}
         {canWrite ? (
@@ -297,7 +311,11 @@ export function AnimalsScreen() {
   );
 }
 
-function HerdRow({
+function animalKey(row: AnimalDto) {
+  return row.id;
+}
+
+const HerdRow = memo(function HerdRow({
   row,
   showSpecies,
   open,
@@ -306,7 +324,7 @@ function HerdRow({
   row: AnimalDto;
   showSpecies: boolean;
   open: boolean;
-  onToggle: () => void;
+  onToggle: (id: string) => void;
 }) {
   const { t } = useLocale();
   const label = row.herdNumber ?? row.tag;
@@ -314,7 +332,11 @@ function HerdRow({
 
   return (
     <View style={[styles.herdRow, open && styles.herdOpen]}>
-      <Pressable onPress={onToggle} style={styles.herdToggle} accessibilityRole="button">
+      <Pressable
+        onPress={() => onToggle(row.id)}
+        style={styles.herdToggle}
+        accessibilityRole="button"
+      >
         <Txt weight="display" style={styles.herdId}>
           {label}
         </Txt>
@@ -354,7 +376,7 @@ function HerdRow({
       ) : null}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   root: { flex: 1 },

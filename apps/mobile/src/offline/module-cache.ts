@@ -20,9 +20,14 @@ export const MODULE_CACHE_PATHS = {
   reports: '/v1/reports/farm-overview',
   audit: '/v1/audit?page=1&pageSize=50',
   members: '/v1/farms/me/members',
-  tasks: `/v1/tasks?page=1&pageSize=100&dueBefore=${encodeURIComponent(new Date(Date.now() + 30 * 864e5).toISOString())}`,
   cohort: '/v1/markers/cohort',
 } as const;
+
+function tasksCachePath(): string {
+  return `/v1/tasks?page=1&pageSize=100&dueBefore=${encodeURIComponent(
+    new Date(Date.now() + 30 * 864e5).toISOString(),
+  )}`;
+}
 
 export function setModuleCache(store: FarmStore, key: string, payload: unknown): void {
   store.moduleCache[key] = { fetchedAt: new Date().toISOString(), payload };
@@ -34,7 +39,10 @@ export function getModuleCache<T>(store: FarmStore, key: string): T | null {
 }
 
 export async function prefetchAllModules(store: FarmStore, api: HttpFarmApi): Promise<void> {
-  const entries = Object.entries(MODULE_CACHE_PATHS);
+  const entries: Array<[string, string]> = [
+    ...Object.entries(MODULE_CACHE_PATHS),
+    ['tasks', tasksCachePath()],
+  ];
   await Promise.all(
     entries.map(async ([key, path]) => {
       try {

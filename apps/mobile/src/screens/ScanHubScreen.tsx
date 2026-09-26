@@ -1,5 +1,5 @@
-import { useCallback, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { PageResult } from '@farm/contracts';
@@ -10,6 +10,7 @@ import { toQuery } from '../api/query';
 import { useFarm } from '../state/FarmProvider';
 import { useLocale } from '../locale/LocaleProvider';
 import { parseQrPayload } from '../lib/qr';
+import { searchAnimalsLocal } from '../lib/animal-search';
 import type { RootStackParamList } from '../navigation/types';
 import { color } from '../theme/tokens';
 
@@ -17,9 +18,13 @@ type SearchHit =
   | { kind: 'animal'; id: string; tag?: string; name?: string | null }
   | { kind: 'batch'; id: string; name: string; category?: string };
 
+type AnimalSuggestion = { id: string; tag: string; name?: string | null };
+type BatchSuggestion = { id: string; name: string; category?: string };
+
 export function ScanHubScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { api } = useFarm();
+  const { api, store, revision } = useFarm();
+  void revision;
   const { t } = useLocale();
   const face = useTypeface();
   const [permission, requestPermission] = useCameraPermissions();
@@ -27,8 +32,13 @@ export function ScanHubScreen() {
   const [batchQuery, setBatchQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [hit, setHit] = useState<SearchHit | null>(null);
+  const [animalHits, setAnimalHits] = useState<AnimalSuggestion[]>([]);
+  const [batchHits, setBatchHits] = useState<BatchSuggestion[]>([]);
+  const [lookingAnimals, setLookingAnimals] = useState(false);
+  const [lookingBatches, setLookingBatches] = useState(false);
   const [scanning, setScanning] = useState(true);
   const scanned = useRef(false);
+  const animalReq = useRef(0);
 
   const lookup = useCallback(
     async (q: string, kind?: 'animal' | 'batch') => {
@@ -38,7 +48,14 @@ export function ScanHubScreen() {
       try {
         if (parsed?.kind === 'animal' || (!kind && parsed?.kind !== 'batch' && /^[a-f0-9-]{36}$/i.test(q.trim()))) {
           const id = parsed?.kind === 'animal' ? parsed.id : q.trim();
-          setHit({ kind: 'animal', id, tag: id.slice(0, 8) });
+          try {
+            const detail = await api.get<{ id: string; tag: string; name?: string | null }>(
+              `/v1/animals/${id}`,
+            );
+            setHit({ kind: 'animal', id: detail.id, tag: detail.tag, name: detail.name });
+          } catch {
+            setError(t('qr.notFound'));
+          }
           return;
         }
         if (parsed?.kind === 'batch' || kind === 'batch') {
@@ -52,6 +69,7 @@ export function ScanHubScreen() {
             `/v1/animals/search?q=${encodeURIComponent(q.trim())}`,
           );
           const list = Array.isArray(animals) ? animals : [];
+          setAnimalHits(list.slice(0, 8));
           if (list[0]) {
             setHit({ kind: 'animal', id: list[0].id, tag: list[0].tag, name: list[0].name });
             return;
@@ -60,6 +78,7 @@ export function ScanHubScreen() {
         const batches = await api.get<PageResult<{ id: string; name: string; category?: string }>>(
           `/v1/batches${toQuery({ page: 1, pageSize: 5, q: q.trim() })}`,
         );
+        setBatchHits(batches.items.slice(0, 8));
         if (batches.items[0]) {
           setHit({
             kind: 'batch',
@@ -76,6 +95,81 @@ export function ScanHubScreen() {
     },
     [api, t],
   );
+
+  useEffect(() => {
+    const q = tagQuery.trim();
+    if (q.length < 1) {
+      setAnimalHits([]);
+      setLookingAnimals(false);
+      return;
+    }
+    const local = searchAnimalsLocal(store, q, 8).map((a) => ({
+      id: a.id,
+      tag: a.tag,
+      name: a.name,
+    }));
+    setAnimalHits(local);
+    setError(null);
+    setLookingAnimals(true);
+    const id = ++animalReq.current;
+    const handle = setTimeout(() => {
+      void api
+        .get<AnimalSuggestion[]>(`/v1/animals/search?q=${encodeURIComponent(q)}`)
+        .then((rows) => {
+          if (id !== animalReq.current) return;
+          const list = Array.isArray(rows) ? rows.slice(0, 8) : [];
+          setAnimalHits(list.length > 0 ? list : local);
+          if (list.length === 0 && local.length === 0) setError(t('qr.notFound'));
+        })
+        .catch((err: unknown) => {
+          if (id !== animalReq.current) return;
+          if (local.length === 0) {
+            setAnimalHits([]);
+            setError(err instanceof Error ? err.message : t('qr.notFound'));
+          }
+        })
+        .finally(() => {
+          if (id === animalReq.current) setLookingAnimals(false);
+        });
+    }, 120);
+    return () => {
+      clearTimeout(handle);
+    };
+  }, [api, store, t, tagQuery]);
+
+  useEffect(() => {
+    const q = batchQuery.trim();
+    if (q.length < 1) {
+      setBatchHits([]);
+      setLookingBatches(false);
+      return;
+    }
+    let cancelled = false;
+    setLookingBatches(true);
+    setError(null);
+    const handle = setTimeout(() => {
+      void api
+        .get<PageResult<BatchSuggestion>>(`/v1/batches${toQuery({ page: 1, pageSize: 8, q })}`)
+        .then((page) => {
+          if (cancelled) return;
+          const list = page.items.slice(0, 8);
+          setBatchHits(list);
+          if (list.length === 0) setError(t('qr.notFound'));
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return;
+          setBatchHits([]);
+          setError(err instanceof Error ? err.message : t('qr.notFound'));
+        })
+        .finally(() => {
+          if (!cancelled) setLookingBatches(false);
+        });
+    }, 280);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [api, batchQuery, t]);
 
   const onBarcode = ({ data }: { data: string }) => {
     if (!scanning || scanned.current) return;
@@ -135,15 +229,77 @@ export function ScanHubScreen() {
             placeholder={t('qr.animalTagPlaceholder')}
             placeholderTextColor={color.textMuted}
             autoCapitalize="characters"
+            onSubmitEditing={() => void lookup(tagQuery, 'animal')}
           />
-          <Button label={t('qr.lookupAnimal')} variant="secondary" onPress={() => void lookup(tagQuery, 'animal')} />
+          {lookingAnimals && tagQuery.trim() && animalHits.length === 0 ? (
+            <Txt muted style={{ marginBottom: 6 }}>
+              Searching…
+            </Txt>
+          ) : null}
+          {animalHits.length > 0 ? (
+            <Txt weight="semibold" style={{ marginBottom: 6, fontSize: 13 }}>
+              {t('qr.pickAnimal')}
+            </Txt>
+          ) : null}
+          {animalHits.map((row) => (
+            <Pressable
+              key={row.id}
+              style={styles.suggestion}
+              onPress={() => {
+                setTagQuery(row.tag);
+                setAnimalHits([]);
+                setHit({ kind: 'animal', id: row.id, tag: row.tag, name: row.name });
+                setError(null);
+              }}
+            >
+              <Txt weight="semibold">
+                {row.tag}
+                {row.name ? ` · ${row.name}` : ''}
+              </Txt>
+            </Pressable>
+          ))}
+          {tagQuery.trim() && animalHits.length === 0 && !lookingAnimals ? (
+            <Button
+              label={t('qr.lookupAnimal')}
+              variant="ghost"
+              onPress={() => void lookup(tagQuery, 'animal')}
+            />
+          ) : null}
           <TextInput
             style={[inputStyle(face), { marginTop: 12, marginBottom: 8 }]}
             value={batchQuery}
             onChangeText={setBatchQuery}
             placeholder={t('qr.batchNamePlaceholder')}
             placeholderTextColor={color.textMuted}
+            onSubmitEditing={() => void lookup(batchQuery, 'batch')}
           />
+          {lookingBatches && batchQuery.trim() ? (
+            <Txt muted style={{ marginBottom: 6 }}>
+              …
+            </Txt>
+          ) : null}
+          {batchHits.map((row) => (
+            <Pressable
+              key={row.id}
+              style={styles.suggestion}
+              onPress={() => {
+                setBatchQuery(row.name);
+                setBatchHits([]);
+                setHit({
+                  kind: 'batch',
+                  id: row.id,
+                  name: row.name,
+                  category: row.category,
+                });
+                setError(null);
+              }}
+            >
+              <Txt weight="semibold">
+                {row.name}
+                {row.category ? ` · ${row.category}` : ''}
+              </Txt>
+            </Pressable>
+          ))}
           <Button label={t('qr.lookupBatch')} variant="secondary" onPress={() => void lookup(batchQuery, 'batch')} />
         </Card>
         {hit?.kind === 'animal' ? (
@@ -197,4 +353,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   hitTitle: { fontSize: 18 },
+  suggestion: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: color.border,
+    borderRadius: 6,
+    backgroundColor: color.surface,
+  },
 });

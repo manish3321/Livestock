@@ -171,9 +171,14 @@ export function ProductionScreen() {
         <>
           {loading && items.length === 0 ? <LoadingBlock /> : null}
           <FlatList
+            style={styles.list}
             data={items}
             keyExtractor={(p) => p.id}
+            contentContainerStyle={styles.listContent}
             ListEmptyComponent={!loading ? <EmptyState /> : null}
+            initialNumToRender={12}
+            windowSize={7}
+            removeClippedSubviews
             renderItem={({ item }) => (
               <ListRow
                 title={`${item.type ?? t('production.add')} · ${item.quantity ?? 0} ${item.unit ?? ''}`}
@@ -190,4 +195,6 @@ export function ProductionScreen() {
 
 const styles = StyleSheet.create({
   pad: { paddingHorizontal: 16, paddingBottom: 24 },
+  list: { flex: 1 },
+  listContent: { paddingHorizontal: 16, paddingBottom: 48 },
 });

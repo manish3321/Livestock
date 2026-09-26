@@ -119,14 +119,18 @@ export function ExpensesScreen() {
       setPanel('list');
       await load();
     } catch (err) {
-      enqueueExpense(store, {
-        ...body,
-        expenseDate: new Date().toISOString(),
-      });
-      persist();
-      void syncNow();
-      if (err instanceof ApiError && err.status === 0) setError(t('native.offline'));
-      else setError(err instanceof Error ? err.message : t('login.serverUnreachable'));
+      const offline = err instanceof ApiError && (err.status === 0 || err.status >= 500);
+      if (offline) {
+        enqueueExpense(store, {
+          ...body,
+          expenseDate: new Date().toISOString(),
+        });
+        persist();
+        void syncNow();
+        setError(t('native.offline'));
+      } else {
+        setError(err instanceof Error ? err.message : t('login.serverUnreachable'));
+      }
     }
   };
 

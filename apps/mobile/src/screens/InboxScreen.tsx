@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { TaskDismissReason, TaskDto } from '@farm/contracts';
+import type { PageResult, TaskDismissReason, TaskDto } from '@farm/contracts';
 import { formatDateTime } from '@farm/contracts';
 import { enqueueTaskComplete } from '../core/scan-round';
 import { AppShell } from '../components/AppShell';
@@ -20,6 +20,7 @@ import {
 import { useLocale } from '../locale/LocaleProvider';
 import { useFarm } from '../state/FarmProvider';
 import { ApiError } from '../api/http-farm-api';
+import { destFromActionPath } from '../lib/action-path';
 import type { RootStackParamList } from '../navigation/types';
 import { color, radius, space } from '../theme/tokens';
 
@@ -31,31 +32,30 @@ const DISMISS: TaskDismissReason[] = [
   'OTHER',
 ];
 
-function routeFromActionPath(
-  path: string | undefined,
-): { name: keyof RootStackParamList; params?: object } | null {
-  if (!path) return null;
-  const animal = path.match(/\/animals\/([a-f0-9-]{36})/i);
-  if (animal?.[1]) return { name: 'AnimalDetail', params: { id: animal[1] } };
-  const batch = path.match(/\/batches\/([a-f0-9-]{36})/i);
-  if (batch?.[1]) return { name: 'BatchDetail', params: { id: batch[1] } };
-  if (path.includes('/shed')) return { name: 'Shed' };
-  if (path.includes('/health')) return { name: 'Health' };
-  if (path.includes('/breeding')) return { name: 'Breeding' };
-  if (path.includes('/inbox')) return null;
-  if (path.includes('/scan')) return { name: 'Scan' };
-  if (path.includes('/expenses')) return { name: 'Expenses' };
-  if (path.includes('/inventory')) return { name: 'Inventory' };
-  return null;
+type Tab = 'active' | 'done';
+
+function priorityStyle(priority: TaskDto['priority']) {
+  switch (priority) {
+    case 'CRITICAL':
+      return styles.prioCritical;
+    case 'HIGH':
+      return styles.prioHigh;
+    case 'LOW':
+      return styles.prioLow;
+    default:
+      return styles.prioNormal;
+  }
 }
 
 export function InboxScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { api, store, persist, syncNow, revision } = useFarm();
+  const { api, store, persist, syncNow, revision, user } = useFarm();
   const { t, locale } = useLocale();
   const [tasks, setTasks] = useState<TaskDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<Tab>('active');
+  const [mineOnly, setMineOnly] = useState(false);
   const [dismissId, setDismissId] = useState<string | null>(null);
   const [muteOffer, setMuteOffer] = useState<TaskDto | null>(null);
   void revision;
@@ -63,27 +63,42 @@ export function InboxScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const page = await api.listOpenTasks();
-      setTasks(page.items.filter((task) => task.status === 'PENDING' || task.status === 'SNOOZED'));
+      if (tab === 'active') {
+        const page = await api.listOpenTasks();
+        setTasks(page.items.filter((task) => task.status === 'PENDING' || task.status === 'SNOOZED'));
+      } else {
+        const [done, dismissed] = await Promise.all([
+          api.get<PageResult<TaskDto>>('/v1/tasks?page=1&pageSize=80&status=DONE'),
+          api.get<PageResult<TaskDto>>('/v1/tasks?page=1&pageSize=80&status=DISMISSED'),
+        ]);
+        setTasks([...done.items, ...dismissed.items]);
+      }
       setError(null);
     } catch {
-      setTasks(
-        [...store.tasks.values()].filter(
-          (task) => task.status === 'PENDING' || task.status === 'SNOOZED',
-        ) as TaskDto[],
-      );
+      const cached = [...store.tasks.values()] as TaskDto[];
+      if (tab === 'active') {
+        setTasks(cached.filter((task) => task.status === 'PENDING' || task.status === 'SNOOZED'));
+      } else {
+        setTasks(cached.filter((task) => task.status === 'DONE' || task.status === 'DISMISSED'));
+      }
+      setError(t('native.offline'));
     } finally {
       setLoading(false);
     }
-  }, [api, store.tasks]);
+  }, [api, store.tasks, t, tab]);
 
   useEffect(() => {
     void load();
   }, [load, revision]);
 
+  const items = useMemo(() => {
+    if (!mineOnly || !user?.id) return tasks;
+    return tasks.filter((task) => task.assignedToId === user.id);
+  }, [mineOnly, tasks, user?.id]);
+
   const openTask = (task: TaskDto) => {
     const dest =
-      routeFromActionPath(task.actionPath) ??
+      destFromActionPath(task.actionPath) ??
       (task.animalId
         ? { name: 'AnimalDetail' as const, params: { id: task.animalId } }
         : task.batchId
@@ -143,6 +158,42 @@ export function InboxScreen() {
   return (
     <AppShell module="inbox">
       <PageHeader title={t('inbox.title')} subtitle={t('inbox.subtitle')} />
+
+      <View style={styles.tabs} accessibilityRole="tablist">
+        <Pressable
+          accessibilityRole="tab"
+          accessibilityState={{ selected: tab === 'active' }}
+          onPress={() => setTab('active')}
+          style={[styles.tab, tab === 'active' && styles.tabOn]}
+        >
+          <Txt weight="semibold" style={tab === 'active' ? styles.tabTextOn : styles.tabText}>
+            {t('inbox.tabActive')}
+          </Txt>
+        </Pressable>
+        <Pressable
+          accessibilityRole="tab"
+          accessibilityState={{ selected: tab === 'done' }}
+          onPress={() => setTab('done')}
+          style={[styles.tab, tab === 'done' && styles.tabOn]}
+        >
+          <Txt weight="semibold" style={tab === 'done' ? styles.tabTextOn : styles.tabText}>
+            {t('inbox.tabCompleted')}
+          </Txt>
+        </Pressable>
+      </View>
+
+      <Pressable
+        onPress={() => setMineOnly((v) => !v)}
+        style={styles.filter}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: mineOnly }}
+      >
+        <View style={[styles.check, mineOnly && styles.checkOn]}>
+          {mineOnly ? <Txt style={styles.checkMark}>✓</Txt> : null}
+        </View>
+        <Txt style={styles.filterLabel}>{t('inbox.mineOnly')}</Txt>
+      </Pressable>
+
       {error ? <ErrorText message={error} /> : null}
       {muteOffer ? (
         <Card style={styles.mute}>
@@ -153,21 +204,20 @@ export function InboxScreen() {
           </ChipRow>
         </Card>
       ) : null}
-      {loading && tasks.length === 0 ? <LoadingState /> : null}
+      {loading && items.length === 0 ? <LoadingState /> : null}
       <FlatList
-        data={tasks}
+        style={styles.listFlex}
+        data={items}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         ListEmptyComponent={!loading ? <EmptyState message={t('inbox.empty')} /> : null}
+        initialNumToRender={10}
+        maxToRenderPerBatch={6}
+        windowSize={7}
+        removeClippedSubviews
         renderItem={({ item }) => (
-          <View
-            style={[
-              styles.card,
-              item.priority === 'CRITICAL' && styles.urgent,
-              item.priority === 'HIGH' && styles.high,
-            ]}
-          >
-            <Pressable onPress={() => openTask(item)}>
+          <View style={[styles.card, priorityStyle(item.priority)]}>
+            <Pressable onPress={() => openTask(item)} style={styles.main}>
               <Txt weight="semibold" style={styles.title}>
                 {locale === 'ne' ? item.titleNp || item.titleEn : item.titleEn}
               </Txt>
@@ -176,33 +226,41 @@ export function InboxScreen() {
                 {formatDateTime(item.dueAt, locale)}
               </Muted>
             </Pressable>
-            <ChipRow>
-              <Button label={t('inbox.do')} onPress={() => openTask(item)} />
-              {scanRequired(item) ? (
-                <Muted>{t('inbox.scanRequired')}</Muted>
-              ) : (
-                <Button label={t('inbox.done')} variant="ghost" onPress={() => void complete(item)} />
-              )}
-              <Button label="+1h" variant="ghost" onPress={() => void snooze(item, '1h')} />
-              <Button label="+1d" variant="ghost" onPress={() => void snooze(item, '1d')} />
-              <Button label="+1w" variant="ghost" onPress={() => void snooze(item, '1w')} />
-              <Button
-                label={t('inbox.dismiss')}
-                variant="ghost"
-                onPress={() => setDismissId(dismissId === item.id ? null : item.id)}
-              />
-            </ChipRow>
-            {dismissId === item.id ? (
-              <View style={styles.dismiss}>
-                {DISMISS.map((reason) => (
+            {tab === 'active' ? (
+              <>
+                <View style={styles.actions}>
+                  <Button label={t('inbox.do')} variant="secondary" onPress={() => openTask(item)} />
+                  {scanRequired(item) ? (
+                    <Muted>{t('inbox.scanRequired')}</Muted>
+                  ) : (
+                    <Button
+                      label={t('inbox.done')}
+                      variant="secondary"
+                      onPress={() => void complete(item)}
+                    />
+                  )}
+                  <Button label="+1h" variant="secondary" onPress={() => void snooze(item, '1h')} />
+                  <Button label="+1d" variant="secondary" onPress={() => void snooze(item, '1d')} />
+                  <Button label="+1w" variant="secondary" onPress={() => void snooze(item, '1w')} />
                   <Button
-                    key={reason}
+                    label={t('inbox.dismiss')}
                     variant="secondary"
-                    label={t(`inbox.reason.${reason}`)}
-                    onPress={() => void dismissWith(item, reason)}
+                    onPress={() => setDismissId(dismissId === item.id ? null : item.id)}
                   />
-                ))}
-              </View>
+                </View>
+                {dismissId === item.id ? (
+                  <View style={styles.dismiss}>
+                    {DISMISS.map((reason) => (
+                      <Button
+                        key={reason}
+                        variant="ghost"
+                        label={t(`inbox.reason.${reason}`)}
+                        onPress={() => void dismissWith(item, reason)}
+                      />
+                    ))}
+                  </View>
+                ) : null}
+              </>
             ) : null}
           </View>
         )}
@@ -212,20 +270,76 @@ export function InboxScreen() {
 }
 
 const styles = StyleSheet.create({
-  list: { paddingHorizontal: 16, paddingBottom: 48 },
+  listFlex: { flex: 1 },
+  list: { paddingHorizontal: 16, paddingBottom: 48, flexGrow: 1 },
+  tabs: {
+    flexDirection: 'row',
+    alignSelf: 'flex-start',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 4,
+    borderRadius: 12,
+    backgroundColor: color.surfaceMuted,
+    gap: 4,
+  },
+  tab: {
+    minHeight: 40,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabOn: {
+    backgroundColor: color.surface,
+  },
+  tabText: { color: color.textMuted, fontSize: 14 },
+  tabTextOn: { color: color.textPrimary, fontSize: 14 },
+  filter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginHorizontal: 16,
+    marginBottom: 12,
+  },
+  check: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: color.border,
+    backgroundColor: color.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkOn: {
+    backgroundColor: color.brand,
+    borderColor: color.brandStrong,
+  },
+  checkMark: { color: color.surface, fontSize: 13, fontWeight: '700' },
+  filterLabel: { fontSize: 14, color: color.textPrimary, flex: 1 },
   mute: { marginHorizontal: 16, marginBottom: 12 },
   card: {
     backgroundColor: color.surface,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: color.border,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     padding: space.lg,
-    marginBottom: space.sm,
+    marginBottom: space.md,
     gap: space.sm,
     overflow: 'hidden',
+    borderLeftWidth: 5,
   },
-  urgent: { borderLeftWidth: 4, borderLeftColor: color.danger },
-  high: { borderLeftWidth: 4, borderLeftColor: color.warning },
-  title: { fontSize: 16 },
-  dismiss: { gap: 8 },
+  prioCritical: { borderLeftColor: color.danger },
+  prioHigh: { borderLeftColor: color.ember },
+  prioNormal: { borderLeftColor: color.brandStrong },
+  prioLow: { borderLeftColor: color.textMuted },
+  main: { gap: 6 },
+  title: { fontSize: 16, color: color.textPrimary },
+  actions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
+  },
+  dismiss: { gap: 8, marginTop: 4 },
 });
