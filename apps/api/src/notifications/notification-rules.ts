@@ -40,6 +40,8 @@ export const TRIGGER_CATALOGUE: Record<
   RETAG_REQUIRED: { urgency: 'HIGH', sms: false },
   TREATMENT_FOLLOWUP: { urgency: 'HIGH', sms: false },
   REPEAT_BREEDER: { urgency: 'HIGH', sms: false },
+  EXPENSE_APPROVAL: { urgency: 'HIGH', sms: false },
+  UNPAID_REVENUE: { urgency: 'NORMAL', sms: false },
 };
 
 /**
@@ -268,6 +270,8 @@ const CLIP_BY_TYPE: Record<string, string> = {
   RETAG_REQUIRED: 'retag',
   TREATMENT_FOLLOWUP: 'follow-up',
   REPEAT_BREEDER: 'repeat-breeder',
+  EXPENSE_APPROVAL: 'expense-approval',
+  UNPAID_REVENUE: 'unpaid-revenue',
 };
 
 export function voiceClipsFor(input: {

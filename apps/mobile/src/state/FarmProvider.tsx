@@ -108,9 +108,14 @@ type FarmContextValue = {
 
 const FarmContext = createContext<FarmContextValue | null>(null);
 
-/** Push tokens need a native/EAS build + Expo account; skip in Expo Go. */
+/** Push tokens need notification permission; works in Expo Go (Expo token) and EAS (FCM/APNs). */
 async function tryGetFcmToken(): Promise<string | undefined> {
-  return undefined;
+  try {
+    const { getPushToken } = await import('../native/push-token');
+    return await getPushToken();
+  } catch {
+    return undefined;
+  }
 }
 
 export function FarmProvider({ children }: { children: ReactNode }) {

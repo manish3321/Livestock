@@ -50,6 +50,7 @@ export class NightlyJob {
     await this.withholdEndTasks(farmId, now);
     await this.stockTasks(farmId, now);
     await this.missingMilkTasks(farmId, now);
+    await this.financeTasks(farmId, now);
     if (this.profit) {
       await this.profit.generateDailyMetrics(farmId, now);
     }
@@ -334,6 +335,49 @@ export class NightlyJob {
         priority: 'LOW',
         sourceRefType: 'milkDay',
         sourceRefId: null,
+      });
+    }
+  }
+
+  /** Pending expense approvals + unpaid / partial revenue → Inbox + push. */
+  private async financeTasks(farmId: string, now: Date): Promise<void> {
+    const expenses = await this.prisma.expense.findMany({
+      where: {
+        farmId,
+        status: { in: ['PENDING', 'ESCALATED'] },
+      },
+      take: 100,
+    });
+    for (const e of expenses) {
+      await ensureTask(this.prisma, {
+        farmId,
+        type: 'EXPENSE_APPROVAL',
+        titleEn: `Expense approval: ${e.category} (${e.amount})`,
+        titleNp: `खर्च स्वीकृत: ${e.category} (${e.amount})`,
+        dueAt: now,
+        priority: 'HIGH',
+        sourceRefType: 'Expense',
+        sourceRefId: e.id,
+      });
+    }
+
+    const revenues = await this.prisma.revenue.findMany({
+      where: {
+        farmId,
+        paymentStatus: { in: ['PENDING', 'PARTIAL'] },
+      },
+      take: 100,
+    });
+    for (const r of revenues) {
+      await ensureTask(this.prisma, {
+        farmId,
+        type: 'UNPAID_REVENUE',
+        titleEn: `Unpaid revenue: ${r.source} (${r.amount})`,
+        titleNp: `आम्दानी बाँकी: ${r.source} (${r.amount})`,
+        dueAt: now,
+        priority: 'NORMAL',
+        sourceRefType: 'Revenue',
+        sourceRefId: r.id,
       });
     }
   }

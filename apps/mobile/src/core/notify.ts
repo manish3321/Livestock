@@ -1,6 +1,45 @@
 import type { CachedTask, FarmStore } from './store';
 
-const LOCAL_ALERT_TYPES = new Set(['COLOSTRUM_FEED', 'VACCINATION_DUE']);
+const LOCAL_ALERT_TYPES = new Set([
+  'COLOSTRUM_FEED',
+  'CALVING_WATCH',
+  'VET_URGENT',
+  'VACCINATION_DUE',
+  'MEDICATION_DOSE',
+  'SERVICE_WINDOW',
+  'HEAT_WATCH',
+  'STOCK_REORDER',
+  'EXPENSE_APPROVAL',
+  'UNPAID_REVENUE',
+]);
+
+function alertBody(type: string, locale: 'en' | 'ne'): string {
+  const en: Record<string, string> = {
+    COLOSTRUM_FEED: 'Feed colostrum now',
+    CALVING_WATCH: 'Calving watch — check the animal',
+    VET_URGENT: 'Urgent veterinary attention needed',
+    VACCINATION_DUE: 'Vaccinate today',
+    MEDICATION_DOSE: 'Medication dose due',
+    SERVICE_WINDOW: 'Breeding window is open',
+    HEAT_WATCH: 'Watch for heat',
+    STOCK_REORDER: 'Stock is low — reorder',
+    EXPENSE_APPROVAL: 'Expense waiting for approval',
+    UNPAID_REVENUE: 'Payment still outstanding',
+  };
+  const ne: Record<string, string> = {
+    COLOSTRUM_FEED: 'पहुँलो दूध खुवाउनुहोस्',
+    CALVING_WATCH: 'ब्याउने समय — जाँच गर्नुहोस्',
+    VET_URGENT: 'जरुरी पशुचिकित्सक चाहिन्छ',
+    VACCINATION_DUE: 'खोप दिनुहोस्',
+    MEDICATION_DOSE: 'औषधि खुवाउने समय',
+    SERVICE_WINDOW: 'सेवा गर्ने समय खुला छ',
+    HEAT_WATCH: 'गर्मी हेर्नुहोस्',
+    STOCK_REORDER: 'स्टक कम — अर्डर गर्नुहोस्',
+    EXPENSE_APPROVAL: 'खर्च स्वीकृत बाँकी',
+    UNPAID_REVENUE: 'भुक्तानी बाँकी',
+  };
+  return (locale === 'ne' ? ne : en)[type] ?? (locale === 'ne' ? 'काम बाँकी' : 'Task due');
+}
 
 export interface LocalAlert {
   id: string;
@@ -29,7 +68,7 @@ export function alertsFromTasks(tasks: CachedTask[], now = new Date(), locale: '
       taskId: task.id,
       type: task.type,
       title: locale === 'ne' ? task.titleNp : task.titleEn,
-      body: task.type === 'COLOSTRUM_FEED' ? (locale === 'ne' ? 'पहुँलो दूध खुवाउनुहोस्' : 'Feed colostrum now') : locale === 'ne' ? 'खोप दिनुहोस्' : 'Vaccinate today',
+      body: alertBody(task.type, locale),
       fireAt,
     });
   }

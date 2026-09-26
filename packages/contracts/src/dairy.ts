@@ -84,6 +84,8 @@ export const TASK_TYPES = [
   'REMOVE_MARKER',
   'RETAG_REQUIRED',
   'TREATMENT_FOLLOWUP',
+  'EXPENSE_APPROVAL',
+  'UNPAID_REVENUE',
 ] as const;
 export type TaskType = (typeof TASK_TYPES)[number];
 

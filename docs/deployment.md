@@ -1,44 +1,75 @@
-# Deployment (DigitalOcean VPS)
+# Deployment (Vercel — API + web)
 
-Target: a single droplet (2 GB RAM is enough to start) running Docker Compose — PostgreSQL, MongoDB (GridFS for receipts), the API, and nginx serving the web build. Estimated cost matches the brief (NPR 3,000–5,000/month).
+This monorepo deploys **web and Nest API together** on one Vercel project. No Docker.
+
+- Web: static files from `apps/web/dist`
+- API: serverless function at `/api/[...path]`
+- Routes: `/v1/*` and `/health/*` go to the API; everything else is the SPA
+- Nest `@Cron` does **not** run on Vercel — use GitHub Actions (`notification-dispatch.yml`) for push/SMS dispatch
 
 ## One-time setup
 
-```bash
-# On the droplet (Ubuntu 24.04)
-apt update && apt install -y docker.io docker-compose-v2 git
-git clone <repo> /opt/farm && cd /opt/farm
+1. Create a project at [vercel.com](https://vercel.com) linked to this Git repo (root = repo root).
+2. Framework preset: **Other**. Build command and install already come from `vercel.json`:
+   - Install: `pnpm install`
+   - Build: `pnpm run build:vercel`
+3. In Vercel → **Settings → Environment Variables**, add (Production + Preview):
 
-# Secrets
-cat > .env <<'EOF'
-JWT_SECRET=<64 random chars>          # openssl rand -base64 48
-CORS_ORIGIN=https://farm.example.com
-STORAGE_DRIVER=mongodb
-MONGODB_URI=mongodb://mongo:27017/farm
-MONGODB_BUCKET=farm-files
-EOF
+| Name | Notes |
+|------|--------|
+| `DATABASE_URL` | Supabase pooler URL (`?pgbouncer=true`) |
+| `DIRECT_URL` | Supabase direct URL (port 5432) for Prisma |
+| `JWT_SECRET` | ≥32 chars, same as local if you want shared sessions |
+| `CORS_ORIGIN` | Your Vercel URL, e.g. `https://your-app.vercel.app` (`.vercel.app` hosts are also allowed in code) |
+| `STORAGE_DRIVER` | `local` or `mongodb` / `r2` as needed |
+| `FCM_SERVICE_ACCOUNT_JSON` | One-line Firebase service-account JSON |
+| `NOTIFICATION_CRON_SECRET` | Random string; same value in GitHub Actions secret |
+| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM_NUMBER` | Optional CRITICAL SMS |
+| `SMS_MONTHLY_CAP` | Optional, default 40 |
+
+4. Deploy (push to `main` if Git integration is on, or):
+
+```bash
+npx vercel login
+npx vercel link
+npx vercel --prod
 ```
 
-## Deploy / update
+5. Confirm API is up:
 
-```bash
-cd /opt/farm && git pull
-docker compose build api web
-docker compose up -d
-docker compose exec api npx prisma db seed   # first deploy only
+```text
+https://YOUR_PROJECT.vercel.app/health/live
+https://YOUR_PROJECT.vercel.app/v1/...
 ```
 
-The API container runs `prisma migrate deploy` on start, so schema changes apply automatically. Health checks: `GET /health/live` and `GET /health/ready`.
+## Point mobile at Vercel
 
-## TLS
+In `apps/mobile/.env` (and EAS `preview` / `production` env):
 
-Put the droplet behind a DigitalOcean load balancer with a managed certificate, or run Caddy/certbot in front of the `web` container (ports 80/443 → web:80).
+```env
+EXPO_PUBLIC_API_URL=https://YOUR_PROJECT.vercel.app
+```
 
-## Production hardening checklist
+No trailing slash. Paths already include `/v1/...`.
 
-- [ ] `JWT_SECRET` is unique and 48+ bytes; never the example value
-- [ ] Postgres port 5432 is not exposed publicly (remove the `ports` mapping from `db` in production)
-- [ ] `SEED_PASSWORD` changed and seed users' passwords rotated after first login
-- [ ] Daily `pg_dump` cron to DigitalOcean Spaces or MongoDB dump of GridFS
-- [ ] `STORAGE_DRIVER=mongodb` with `MONGODB_URI` for uploads/exports
-- [ ] `FCM_SERVICE_ACCOUNT_JSON` set when push notifications ship
+## Notification cron (required on Vercel)
+
+1. Set `NOTIFICATION_CRON_SECRET` in Vercel env (and locally).
+2. GitHub repo → **Settings → Secrets and variables → Actions**:
+   - Secret `API_BASE_URL` = `https://YOUR_PROJECT.vercel.app`
+   - Secret `NOTIFICATION_CRON_SECRET` = same as Vercel
+   - Variable `ENABLE_NOTIFICATION_CRON` = `true`
+3. Workflow `.github/workflows/notification-dispatch.yml` POSTs every 5 minutes to `/v1/notifications/dispatch`.
+
+## Migrations
+
+Vercel does not run Prisma migrate on boot. From your machine (with `DATABASE_URL` / `DIRECT_URL` in `apps/api/.env`):
+
+```bash
+pnpm --filter @farm/api db:migrate
+```
+
+## Health checks
+
+- `GET /health/live`
+- `GET /health/ready`

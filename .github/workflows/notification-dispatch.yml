@@ -1,0 +1,29 @@
+# Hits the long-lived API when ScheduleModule is skipped (e.g. Vercel serverless).
+# Secrets: API_BASE_URL (https://api.example.com), NOTIFICATION_CRON_SECRET
+name: Notification dispatch
+
+on:
+  schedule:
+    # Every 5 minutes (UTC). Nest local cron uses Asia/Kathmandu; this is the off-host fallback.
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    if: ${{ vars.ENABLE_NOTIFICATION_CRON == 'true' }}
+    steps:
+      - name: POST /v1/notifications/dispatch
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          NOTIFICATION_CRON_SECRET: ${{ secrets.NOTIFICATION_CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${API_BASE_URL:-}" ] || [ -z "${NOTIFICATION_CRON_SECRET:-}" ]; then
+            echo "Missing API_BASE_URL or NOTIFICATION_CRON_SECRET secrets"
+            exit 1
+          fi
+          curl -fsS -X POST "${API_BASE_URL%/}/v1/notifications/dispatch" \
+            -H "Content-Type: application/json" \
+            -H "x-cron-secret: ${NOTIFICATION_CRON_SECRET}" \
+            -d "{\"secret\":\"${NOTIFICATION_CRON_SECRET}\"}"

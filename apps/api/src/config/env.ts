@@ -18,6 +18,10 @@ const envSchema = z.object({
   R2_PUBLIC_BASE_URL: z.string().optional().default(''),
   FCM_SERVICE_ACCOUNT_JSON: z.string().optional().default(''),
   SMS_MONTHLY_CAP: z.coerce.number().int().min(0).default(40),
+  TWILIO_ACCOUNT_SID: z.string().optional().default(''),
+  TWILIO_AUTH_TOKEN: z.string().optional().default(''),
+  TWILIO_FROM_NUMBER: z.string().optional().default(''),
+  NOTIFICATION_CRON_SECRET: z.string().optional().default(''),
 }).superRefine((data, ctx) => {
   if (data.STORAGE_DRIVER === 'mongodb' && !data.MONGODB_URI) {
     ctx.addIssue({

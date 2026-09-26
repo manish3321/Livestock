@@ -52,6 +52,8 @@ const ACTION_PATH: Record<TaskType, string> = {
   REMOVE_MARKER: '/shed?mode=MARKER_PLACEMENT',
   RETAG_REQUIRED: '/animals',
   TREATMENT_FOLLOWUP: '/health?type=TREATMENT',
+  EXPENSE_APPROVAL: '/expenses',
+  UNPAID_REVENUE: '/revenue',
 };
 
 const SCAN_ONLY_TASKS = new Set<TaskType>(['APPLY_MARKER', 'REMOVE_MARKER']);

@@ -37,11 +37,25 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         photosPermission: 'Allow access to photos for animal and receipt images.',
       },
     ],
+    [
+      'expo-notifications',
+      {
+        icon: './assets/icon.png',
+        color: '#1B4332',
+        sounds: [],
+      },
+    ],
     'expo-secure-store',
     'expo-sqlite',
     'expo-font',
   ],
   extra: {
     apiUrl: process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4001',
+    eas: {
+      projectId: process.env.EAS_PROJECT_ID ?? undefined,
+    },
+  },
+  notification: {
+    color: '#1B4332',
   },
 });

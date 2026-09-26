@@ -26,7 +26,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api.example.com"
+        "EXPO_PUBLIC_API_URL": "https://YOUR_PROJECT.vercel.app"
       }
     },
     "production": {
@@ -34,6 +34,9 @@
       "ios": {},
       "android": {
         "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://YOUR_PROJECT.vercel.app"
       }
     }
   },
