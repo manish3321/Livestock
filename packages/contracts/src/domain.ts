@@ -63,6 +63,48 @@ export const ANIMAL_STATUS_LABEL: Record<AnimalStatus, string> = {
  */
 export const ANIMAL_EXIT_STATUSES = ['CULLED', 'SOLD', 'DEAD'] as const;
 
+/** Derived reproductive stage. Never entered by hand — first matching rule wins. */
+export const REPRO_STAGES = [
+  'CALF',
+  'HEIFER_READY',
+  'VOLUNTARY_WAIT',
+  'AWAITING_HEAT',
+  'IN_HEAT',
+  'SERVED_UNCONFIRMED',
+  'PREGNANCY_CHECK_DUE',
+  'PREGNANT_EARLY',
+  'PREGNANT_DRYOFF_DUE',
+  'DRY_PREGNANT',
+  'CALVING_IMMINENT',
+  'FRESH',
+  'ANESTRUS_SUSPECTED',
+  'REPEAT_BREEDER',
+  'UNDER_PROTOCOL',
+  'DO_NOT_BREED',
+  'NOT_BREEDING',
+] as const;
+export type ReproStage = (typeof REPRO_STAGES)[number];
+
+export const REPRO_STAGE_LABEL: Record<ReproStage, string> = {
+  CALF: 'Calf',
+  HEIFER_READY: 'Heifer ready',
+  VOLUNTARY_WAIT: 'Voluntary wait',
+  AWAITING_HEAT: 'Awaiting heat',
+  IN_HEAT: 'In heat',
+  SERVED_UNCONFIRMED: 'Served, unconfirmed',
+  PREGNANCY_CHECK_DUE: 'Pregnancy check due',
+  PREGNANT_EARLY: 'Pregnant',
+  PREGNANT_DRYOFF_DUE: 'Dry-off due',
+  DRY_PREGNANT: 'Dry, pregnant',
+  CALVING_IMMINENT: 'Calving imminent',
+  FRESH: 'Fresh',
+  ANESTRUS_SUSPECTED: 'Anestrus suspected',
+  REPEAT_BREEDER: 'Repeat breeder',
+  UNDER_PROTOCOL: 'Under protocol',
+  DO_NOT_BREED: 'Do not breed',
+  NOT_BREEDING: 'Not breeding',
+};
+
 export const GENDERS = ['FEMALE', 'MALE'] as const;
 export type Gender = (typeof GENDERS)[number];
 
@@ -127,6 +169,8 @@ const animalBaseSchema = z.object({
   breedComposition: breedCompositionSchema.optional(),
   /** When true, animal can be used as a breeding parent. */
   breedingStock: z.boolean().optional(),
+  doNotBreed: z.boolean().optional(),
+  doNotBreedReason: z.string().max(500).optional(),
   shed: z.string().max(80).optional(),
   damId: z.string().uuid().optional(),
   sireId: z.string().uuid().optional(),
@@ -233,6 +277,10 @@ export interface AnimalDto {
   isFreemartinSuspect: boolean;
   breedComposition: BreedComposition | null;
   breedingStock: boolean;
+  doNotBreed: boolean;
+  doNotBreedReason: string | null;
+  reproStage: ReproStage;
+  reproStageSince: string | null;
   shed: string | null;
   photoUrl: string | null;
   damId: string | null;
@@ -403,6 +451,7 @@ export interface SpeciesConfigDto {
   pregnancyCheckEarliestDays: number;
   targetCalvingIntervalDays: number;
   dryOffDaysBeforeCalving: number;
+  gestationVarianceDays: number;
   minWeightFirstServiceKg: number;
   serviceWindowStartHours: number;
   serviceWindowEndHours: number;
@@ -422,6 +471,7 @@ export const speciesConfigUpdateSchema = z.object({
   pregnancyCheckEarliestDays: z.number().int().min(1).max(200).optional(),
   targetCalvingIntervalDays: z.number().int().min(1).max(900).optional(),
   dryOffDaysBeforeCalving: z.number().int().min(0).max(200).optional(),
+  gestationVarianceDays: z.number().int().min(0).max(30).optional(),
   minWeightFirstServiceKg: z.number().int().min(1).max(1500).optional(),
   serviceWindowStartHours: z.number().int().min(0).max(48).optional(),
   serviceWindowEndHours: z.number().int().min(0).max(72).optional(),

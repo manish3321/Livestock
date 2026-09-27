@@ -9,9 +9,11 @@ import { createFeed, getFeedFcr, listFeed, type FeedLogDto } from '../../api/fee
 import { listInventory } from '../../api/inventory';
 import { useAuth } from '../../auth/auth-context';
 import { DataTable, type Column } from '../../components/DataTable';
+import { FieldError } from '../../components/FieldError';
 import { ErrorState, LoadingState } from '../../components/PageState';
 import { StatusChip } from '../../components/StatusChip';
 import { useFarmMode } from '../../hooks/useFarmMode';
+import { inRange, notFuture, required, useFieldErrors } from '../../lib/form-errors';
 
 const CONDITIONS = ['FRESH', 'FERMENTED', 'DRY'] as const;
 
@@ -27,7 +29,7 @@ export function FeedPage() {
     accepted: true,
     occurredAt: new Date(),
   });
-  const [error, setError] = useState<string | null>(null);
+  const { errors: fieldErrors, validate, clearField, fieldProps } = useFieldErrors('feed');
 
   useEffect(() => {
     const animalId = searchParams.get('animalId') ?? undefined;
@@ -73,11 +75,9 @@ export function FeedPage() {
       }),
     onSuccess: () => {
       setShowForm(false);
-      setError(null);
       setForm({ feedType: '', accepted: true, occurredAt: new Date() });
       void qc.invalidateQueries({ queryKey: ['feed'] });
     },
-    onError: (err: Error) => setError(err.message),
   });
 
   const columns = useMemo<Column<FeedLogDto>[]>(
@@ -119,11 +119,14 @@ export function FeedPage() {
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!form.feedType?.trim() || !form.quantityKg || Number(form.quantityKg) <= 0) {
-      setError(t('feed.requiredFields'));
-      return;
-    }
-    save.mutate();
+    const ok = validate({
+      feedType: required(form.feedType, t('common.requiredField')),
+      quantityKg:
+        required(form.quantityKg == null ? '' : String(form.quantityKg), t('common.requiredField')) ||
+        inRange(String(form.quantityKg ?? ''), 0.01, 100_000, t('common.numberRange', { min: 0.01, max: 100000 })),
+      occurredAt: notFuture(form.occurredAt ?? null, t('common.futureDate')),
+    });
+    if (ok) save.mutate();
   };
 
   return (
@@ -182,30 +185,34 @@ export function FeedPage() {
         <form className="card form-card" onSubmit={onSubmit} style={{ marginBottom: 24 }}>
           <div className="form-grid">
             <div className="field">
-              <label htmlFor="feed-type">{t('feed.feedType')}</label>
+              <label htmlFor="feed-feedType">{t('feed.feedType')}</label>
               <input
-                id="feed-type"
-                required
+                {...fieldProps('feedType')}
                 value={form.feedType ?? ''}
-                onChange={(e) => setForm((p) => ({ ...p, feedType: e.target.value }))}
+                onChange={(e) => {
+                  clearField('feedType');
+                  setForm((p) => ({ ...p, feedType: e.target.value }));
+                }}
               />
+              <FieldError id="feed-feedType-error" message={fieldErrors.feedType} />
             </div>
             <div className="field">
-              <label htmlFor="feed-qty">{t('feed.quantityKg')}</label>
+              <label htmlFor="feed-quantityKg">{t('feed.quantityKg')}</label>
               <input
-                id="feed-qty"
+                {...fieldProps('quantityKg')}
                 type="number"
                 min="0.01"
                 step="0.01"
-                required
                 value={form.quantityKg ?? ''}
-                onChange={(e) =>
+                onChange={(e) => {
+                  clearField('quantityKg');
                   setForm((p) => ({
                     ...p,
                     quantityKg: e.target.value ? Number(e.target.value) : undefined,
-                  }))
-                }
+                  }));
+                }}
               />
+              <FieldError id="feed-quantityKg-error" message={fieldErrors.quantityKg} />
             </div>
             <div className="field">
               <label htmlFor="feed-cost">{t('feed.costPerKg')}</label>
@@ -309,25 +316,26 @@ export function FeedPage() {
               </select>
             </div>
             <div className="field">
-              <label htmlFor="feed-date">{t('common.date')}</label>
+              <label htmlFor="feed-occurredAt">{t('common.date')}</label>
               <input
-                id="feed-date"
+                {...fieldProps('occurredAt')}
                 type="date"
-                required
                 value={toDateInput(form.occurredAt)}
-                onChange={(e) =>
+                onChange={(e) => {
+                  clearField('occurredAt');
                   setForm((p) => ({
                     ...p,
                     occurredAt: e.target.value ? new Date(e.target.value) : new Date(),
-                  }))
-                }
+                  }));
+                }}
               />
+              <FieldError id="feed-occurredAt-error" message={fieldErrors.occurredAt} />
             </div>
           </div>
-          {error && <p className="error-text">{error}</p>}
+          {Object.keys(fieldErrors).length > 0 && <p className="form-summary-error">{t('common.fixErrors')}</p>}
           <div className="page-actions">
-            <button className="btn" type="submit" disabled={save.isPending}>
-              {t('common.save')}
+            <button className="btn" type="submit" disabled={save.isPending} aria-busy={save.isPending}>
+              {save.isPending ? t('common.saving') : t('common.save')}
             </button>
           </div>
         </form>

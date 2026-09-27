@@ -41,6 +41,17 @@ export function createHealthRecord(body: HealthCreate): Promise<HealthRecordDto>
   return api('/v1/health-records', { method: 'POST', body: JSON.stringify(body) });
 }
 
+export function updateHealthRecord(
+  id: string,
+  body: Partial<HealthCreate>,
+): Promise<HealthRecordDto> {
+  return api(`/v1/health-records/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export function deleteHealthRecord(id: string): Promise<void> {
+  return api(`/v1/health-records/${id}`, { method: 'DELETE' });
+}
+
 export function groupVaccinate(body: import('@farm/contracts').GroupVaccinate) {
   return api<{ created: number; blocked: string[] }>('/v1/health-records/group-vaccinate', {
     method: 'POST',

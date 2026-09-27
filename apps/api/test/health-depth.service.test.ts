@@ -76,6 +76,20 @@ describe('Phase 8 health depth', () => {
         tasks.push(row);
         return row;
       },
+      findFirst: async ({ where }: any) =>
+        tasks.find((t) => {
+          if (where.farmId && t.farmId !== where.farmId) return false;
+          if (where.animalId && t.animalId !== where.animalId) return false;
+          if (where.type && t.type !== where.type) return false;
+          if (where.status?.in && !where.status.in.includes(t.status)) return false;
+          if (where.sourceRefId && t.sourceRefId !== where.sourceRefId) return false;
+          return true;
+        }) ?? null,
+      update: async ({ where, data }: any) => {
+        const row = tasks.find((t) => t.id === where.id);
+        if (row) Object.assign(row, data);
+        return row;
+      },
     },
     dailyMetric: {
       findFirst: async () => ({ rolling7Mean: 8 }),

@@ -1,4 +1,5 @@
 import type { MilkEntryCreate, MilkEntryDto, ScanCreate, ScanResolveDto } from '@farm/contracts';
+import { ApiRequestError } from '../api/client';
 import { patchMilk, postMilk, postScan } from '../api/rounds';
 
 const QUEUE_KEY = 'farm.shed.queue';
@@ -94,6 +95,13 @@ export function cacheScan(dto: ScanResolveDto): void {
   writeShedCache(cache);
 }
 
+export function clearCachedScan(animalId: string): void {
+  const cache = readShedCache();
+  if (!(animalId in cache.scans)) return;
+  delete cache.scans[animalId];
+  writeShedCache(cache);
+}
+
 export function cachedScan(animalId: string): ScanResolveDto | undefined {
   return readShedCache().scans[animalId];
 }
@@ -122,6 +130,26 @@ export async function saveMilkOnlineOrQueue(
   try {
     return await postMilk(body);
   } catch (err) {
+    // Instant pad open often saves before /scans returns existingEntryId — retry as edit.
+    if (err instanceof ApiRequestError && err.error.code === 'DUPLICATE_MILK_RECORD') {
+      const details = err.error.details as { id?: string } | undefined;
+      if (details?.id) {
+        try {
+          return await patchMilk(details.id, { litres: body.litres, reason: 'shed-correction' });
+        } catch (patchErr) {
+          if (!navigator.onLine || patchErr instanceof TypeError) {
+            enqueueShedOp({
+              kind: 'milk-patch',
+              id: details.id,
+              litres: body.litres,
+              reason: 'shed-correction',
+            });
+            return { queued: true };
+          }
+          throw patchErr;
+        }
+      }
+    }
     if (!navigator.onLine || err instanceof TypeError) {
       enqueueShedOp({ kind: 'milk', body });
       return { queued: true };

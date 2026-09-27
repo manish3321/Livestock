@@ -146,6 +146,10 @@ await writeFile(
       handler: 'index.js',
       launcherType: 'Nodejs',
       shouldAddHelpers: false,
+      // Same AWS region as Supabase (ap-northeast-2). Default iad1 made every DB round-trip slow.
+      regions: ['icn1'],
+      maxDuration: 30,
+      memory: 1024,
     },
     null,
     2,

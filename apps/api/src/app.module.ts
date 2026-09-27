@@ -44,8 +44,10 @@ function cronSupport(): { imports: DynamicModule[]; providers: Provider[] } {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { NightlyJob } = require('./jobs/nightly.job') as typeof import('./jobs/nightly.job');
   // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { HourlyJob } = require('./jobs/hourly.job') as typeof import('./jobs/hourly.job');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { NotificationCronJob } = require('./notifications/notification-cron.job') as typeof import('./notifications/notification-cron.job');
-  return { imports: [ScheduleModule.forRoot()], providers: [NightlyJob, NotificationCronJob] };
+  return { imports: [ScheduleModule.forRoot()], providers: [NightlyJob, HourlyJob, NotificationCronJob] };
 }
 
 const cron = cronSupport();

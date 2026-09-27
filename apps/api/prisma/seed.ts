@@ -23,6 +23,7 @@ import {
   SexRestriction,
 } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { SYSTEM_REMINDER_RULES } from '../src/breeding/reminder-catalog';
 
 const prisma = new PrismaClient();
 
@@ -35,38 +36,240 @@ const USERS: Array<{ email: string; name: string; role: Role }> = [
   { email: 'worker@farm.local', name: 'Farm Worker', role: Role.WORKER },
 ];
 
-const ANIMALS: Array<{
+function daysAgo(n: number): Date {
+  const d = new Date();
+  d.setHours(6, 0, 0, 0);
+  d.setDate(d.getDate() - n);
+  return d;
+}
+
+function daysFromNow(n: number): Date {
+  const d = new Date();
+  d.setHours(6, 0, 0, 0);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+
+type SeedAnimal = {
   tag: string;
+  herdNumber: string;
   name: string;
   species: Species;
   breed: string;
   gender: Gender;
-  color?: string;
-  status?: AnimalStatus;
-  source?: AnimalSource;
-  weightKg?: number;
-}> = [
-  {
-    tag: 'BUF001',
-    name: 'Kalimati',
-    species: Species.BUFFALO,
-    breed: 'Murrah',
-    gender: Gender.FEMALE,
-    color: 'Black',
-    source: AnimalSource.PURCHASED,
-    weightKg: 480,
-  },
-  {
-    tag: 'COW002',
-    name: 'Shanti',
-    species: Species.COW,
-    breed: 'Holstein',
-    gender: Gender.FEMALE,
-    color: 'Black & White',
-    source: AnimalSource.PURCHASED,
-    weightKg: 420,
-  },
+  color: string;
+  status: AnimalStatus;
+  source: AnimalSource;
+  weightKg: number;
+  seqNo: number;
+  dateOfBirth: Date;
+  dobIsEstimated: boolean;
+  ageAtAcquisitionMonths: number;
+  sellerName?: string;
+  purchaseDate?: Date;
+  purchaseCost?: number;
+  distinguishingMarks: string;
+  notes: string;
+  breedingStock: boolean;
+  lactationNumber: number;
+  lactationStartDate?: Date;
+  expectedLactationDays: number;
+  isPregnant: boolean;
+  expectedCalvingDate?: Date;
+  pregnancyConfirmedDate?: Date;
+  breedComposition: Record<string, number>;
+};
+
+const BUFFALO_NAMES = [
+  'Kalimati',
+  'Kali',
+  'Ganga',
+  'Sita',
+  'Maya',
+  'Laxmi',
+  'Parbati',
+  'Jamuna',
+  'Radha',
+  'Gauri',
+  'Bhawani',
+  'Nanda',
+  'Kamala',
+  'Durga',
+  'Tara',
+  'Sunita',
+  'Rupa',
+  'Hira',
+  'Bahadur',
+  'Sher',
+  'Kopila',
+  'Sukumaya',
+] as const;
+
+const COW_NAMES = [
+  'Kamdhenu',
+  'Shanti',
+  'Lakshmi',
+  'Rani',
+  'Purnima',
+  'Asha',
+  'Nirmala',
+  'Champa',
+  'Malati',
+  'Kalpana',
+  'Sushila',
+  'Indira',
+  'Sarita',
+  'Bina',
+  'Mina',
+  'Puja',
+  'Rekha',
+  'Gita',
+  'Raja',
+  'Bijay',
+  'Tulsi',
+  'Ambika',
+] as const;
+
+const BULL_NAMES = new Set(['Bahadur', 'Sher', 'Raja', 'Bijay']);
+
+const MARKS = [
+  'White star on forehead',
+  'Notch in left ear',
+  'White socks on hind legs',
+  'Scar on right shoulder',
+  'Broken horn tip',
+  'Pink muzzle',
 ];
+
+function femaleCycle(n: number, lactationDays: number): Pick<
+  SeedAnimal,
+  | 'status'
+  | 'lactationNumber'
+  | 'lactationStartDate'
+  | 'expectedLactationDays'
+  | 'isPregnant'
+  | 'expectedCalvingDate'
+  | 'pregnancyConfirmedDate'
+> {
+  const slot = (n - 1) % 6;
+  if (slot === 1) {
+    return {
+      status: AnimalStatus.LACTATING,
+      lactationNumber: 2,
+      lactationStartDate: daysAgo(18),
+      expectedLactationDays: lactationDays,
+      isPregnant: false,
+    };
+  }
+  if (slot === 2) {
+    return {
+      status: AnimalStatus.LACTATING,
+      lactationNumber: 3,
+      lactationStartDate: daysAgo(140),
+      expectedLactationDays: lactationDays,
+      isPregnant: true,
+      expectedCalvingDate: daysFromNow(50),
+      pregnancyConfirmedDate: daysAgo(90),
+    };
+  }
+  if (slot === 3) {
+    return {
+      status: AnimalStatus.DRY,
+      lactationNumber: 4,
+      lactationStartDate: daysAgo(220),
+      expectedLactationDays: lactationDays,
+      isPregnant: true,
+      expectedCalvingDate: daysFromNow(25),
+      pregnancyConfirmedDate: daysAgo(120),
+    };
+  }
+  if (slot === 4) {
+    return {
+      status: AnimalStatus.HEIFER,
+      lactationNumber: 0,
+      expectedLactationDays: lactationDays,
+      isPregnant: false,
+    };
+  }
+  if (slot === 5) {
+    return {
+      status: AnimalStatus.LACTATING,
+      lactationNumber: 3,
+      lactationStartDate: daysAgo(180),
+      expectedLactationDays: lactationDays,
+      isPregnant: false,
+    };
+  }
+  return {
+    status: AnimalStatus.LACTATING,
+    lactationNumber: 2,
+    lactationStartDate: daysAgo(90),
+    expectedLactationDays: lactationDays,
+    isPregnant: false,
+  };
+}
+
+function herdOf(
+  species: Species,
+  names: readonly string[],
+  numbers: number[],
+  prefix: string,
+  letter: string,
+  breed: string,
+  color: (n: number, male: boolean) => string,
+  composition: Record<string, number>,
+  lactationDays: number,
+  baseWeight: number,
+): SeedAnimal[] {
+  return names.map((name, idx) => {
+    const n = numbers[idx]!;
+    const male = BULL_NAMES.has(name);
+    const purchased = n % 3 !== 0;
+    const cycle = male
+      ? {
+          status: AnimalStatus.ACTIVE,
+          lactationNumber: 0,
+          expectedLactationDays: lactationDays,
+          isPregnant: false,
+        }
+      : femaleCycle(n, lactationDays);
+    return {
+      tag: `${prefix}${String(n).padStart(3, '0')}`,
+      herdNumber: `${letter}${String(n).padStart(2, '0')}`,
+      name,
+      species,
+      breed,
+      gender: male ? Gender.MALE : Gender.FEMALE,
+      color: color(n, male),
+      source: purchased ? AnimalSource.PURCHASED : AnimalSource.BORN,
+      weightKg: male ? baseWeight + 80 : baseWeight + (n % 5) * 8,
+      seqNo: n,
+      dateOfBirth: daysAgo((male ? 5 : cycle.lactationNumber === 0 ? 2 : 6) * 365 + n * 7),
+      dobIsEstimated: purchased,
+      ageAtAcquisitionMonths: purchased ? 24 + (n % 12) : 0,
+      sellerName: purchased ? 'Chitwan livestock trader' : undefined,
+      purchaseDate: purchased ? daysAgo(200 + n * 3) : undefined,
+      purchaseCost: purchased ? (male ? 180000 : 120000 + n * 1500) : undefined,
+      distinguishingMarks: MARKS[idx % MARKS.length]!,
+      notes: 'Seed herd — every registration field filled.',
+      breedingStock: true,
+      breedComposition: composition,
+      ...cycle,
+    };
+  });
+}
+
+function pickNames(all: readonly string[], used: Set<string>, count: number): string[] {
+  return all.filter((name) => !used.has(name)).slice(0, count);
+}
+
+function takeFreeNumbers(used: Set<number>, count: number): number[] {
+  const out: number[] = [];
+  for (let n = 1; out.length < count; n += 1) {
+    if (!used.has(n)) out.push(n);
+  }
+  return out;
+}
 
 async function main(): Promise<void> {
   const farm = await prisma.farm.upsert({
@@ -140,26 +343,164 @@ async function main(): Promise<void> {
     data: { effectivePriceNpr: 48.36 },
   });
 
+  const pens = [
+    { name: 'Shed 1', sortOrder: 1 },
+    { name: 'Shed 2', sortOrder: 2 },
+    { name: 'Shed 3', sortOrder: 3 },
+  ];
+  const penIds: string[] = [];
+  for (const pen of pens) {
+    const row = await prisma.pen.upsert({
+      where: { farmId_name: { farmId: farm.id, name: pen.name } },
+      update: { sortOrder: pen.sortOrder },
+      create: { farmId: farm.id, name: pen.name, sortOrder: pen.sortOrder },
+    });
+    penIds.push(row.id);
+  }
+
+  const existingAnimals = await prisma.animal.findMany({
+    where: { farmId: farm.id, deletedAt: null },
+    select: { tag: true, herdNumber: true, species: true, name: true },
+  });
+  const usedBuffalo = new Set<number>();
+  const usedCow = new Set<number>();
+  const usedTags = new Set(existingAnimals.map((row) => row.tag));
+  const usedNames = new Set(
+    existingAnimals.map((row) => row.name).filter((name): name is string => Boolean(name)),
+  );
+  for (const row of existingAnimals) {
+    const parsed = row.herdNumber?.match(/^([BC])(\d+)$/);
+    const n = parsed?.[2] ? Number(parsed[2]) : NaN;
+    if (!Number.isInteger(n)) continue;
+    if (parsed?.[1] === 'B' || row.species === Species.BUFFALO) usedBuffalo.add(n);
+    if (parsed?.[1] === 'C' || row.species === Species.COW) usedCow.add(n);
+  }
+
+  const buffaloNames = pickNames(BUFFALO_NAMES, usedNames, 20);
+  const cowNames = pickNames(COW_NAMES, usedNames, 20);
+  const ANIMALS: SeedAnimal[] = [
+    ...herdOf(
+      Species.BUFFALO,
+      buffaloNames,
+      takeFreeNumbers(usedBuffalo, buffaloNames.length),
+      'BUF',
+      'B',
+      'Murrah',
+      () => 'Black',
+      { murrah: 0.75, local: 0.25 },
+      242,
+      470,
+    ),
+    ...herdOf(
+      Species.COW,
+      cowNames,
+      takeFreeNumbers(usedCow, cowNames.length),
+      'COW',
+      'C',
+      'Jersey cross',
+      (n, male) => (male ? 'Brown' : n % 2 === 0 ? 'Black & White' : 'Brown'),
+      { jersey: 0.5, local: 0.5 },
+      286,
+      390,
+    ),
+  ].filter((row) => !usedTags.has(row.tag));
+
+  let animalIndex = existingAnimals.length;
   for (const a of ANIMALS) {
+    const penId = penIds[animalIndex % penIds.length];
+    const shed = pens[animalIndex % pens.length]?.name;
     const animal = await prisma.animal.upsert({
       where: { farmId_tag: { farmId: farm.id, tag: a.tag } },
       update: {
         name: a.name,
+        herdNumber: a.herdNumber,
+        breed: a.breed,
+        gender: a.gender,
+        color: a.color,
         source: a.source,
-        status: a.status ?? AnimalStatus.LACTATING,
+        status: a.status,
+        breedingStock: a.breedingStock,
+        dateOfBirth: a.dateOfBirth,
+        dobIsEstimated: a.dobIsEstimated,
+        ageAtAcquisitionMonths: a.ageAtAcquisitionMonths,
+        sellerName: a.sellerName,
+        purchaseDate: a.purchaseDate,
+        purchaseCost: a.purchaseCost,
+        distinguishingMarks: a.distinguishingMarks,
+        notes: a.notes,
+        lactationNumber: a.lactationNumber,
+        lactationStartDate: a.lactationStartDate,
+        expectedLactationDays: a.expectedLactationDays,
+        isPregnant: a.isPregnant,
+        expectedCalvingDate: a.expectedCalvingDate,
+        pregnancyConfirmedDate: a.pregnancyConfirmedDate,
+        breedComposition: a.breedComposition,
+        penId,
+        seqNo: a.seqNo,
+        shed,
       },
       create: {
         farmId: farm.id,
         tag: a.tag,
+        herdNumber: a.herdNumber,
         name: a.name,
         species: a.species,
         breed: a.breed,
         gender: a.gender,
         color: a.color,
         source: a.source,
-        status: a.status ?? AnimalStatus.LACTATING,
+        status: a.status,
+        breedingStock: a.breedingStock,
+        dateOfBirth: a.dateOfBirth,
+        dobIsEstimated: a.dobIsEstimated,
+        ageAtAcquisitionMonths: a.ageAtAcquisitionMonths,
+        sellerName: a.sellerName,
+        purchaseDate: a.purchaseDate,
+        purchaseCost: a.purchaseCost,
+        distinguishingMarks: a.distinguishingMarks,
+        notes: a.notes,
+        lactationNumber: a.lactationNumber,
+        lactationStartDate: a.lactationStartDate,
+        expectedLactationDays: a.expectedLactationDays,
+        isPregnant: a.isPregnant,
+        expectedCalvingDate: a.expectedCalvingDate,
+        pregnancyConfirmedDate: a.pregnancyConfirmedDate,
+        breedComposition: a.breedComposition,
+        penId,
+        seqNo: a.seqNo,
+        shed,
       },
     });
+
+    const issued = await prisma.animalTag.findFirst({
+      where: { animalId: animal.id, reason: 'ISSUED' },
+    });
+    if (!issued) {
+      await prisma.animalTag.create({
+        data: {
+          farmId: farm.id,
+          animalId: animal.id,
+          herdNumber: a.herdNumber,
+          fullTag: a.tag,
+          reason: 'ISSUED',
+        },
+      });
+    }
+
+    const history = await prisma.animalStatusHistory.findFirst({
+      where: { animalId: animal.id },
+    });
+    if (!history) {
+      await prisma.animalStatusHistory.create({
+        data: {
+          farmId: farm.id,
+          animalId: animal.id,
+          fromStatus: null,
+          toStatus: a.status,
+          reason: 'Registered',
+        },
+      });
+    }
 
     if (a.weightKg !== undefined) {
       const existing = await prisma.weightRecord.findFirst({
@@ -176,6 +517,26 @@ async function main(): Promise<void> {
         });
       }
     }
+    animalIndex += 1;
+  }
+
+  for (const species of [Species.BUFFALO, Species.COW] as const) {
+    const letter = species === Species.BUFFALO ? 'B' : 'C';
+    const numbered = await prisma.animal.findMany({
+      where: { farmId: farm.id, species, deletedAt: null, herdNumber: { not: null } },
+      select: { herdNumber: true },
+    });
+    let max = 0;
+    for (const row of numbered) {
+      const n = Number(row.herdNumber?.slice(letter.length));
+      if (Number.isInteger(n) && n > max) max = n;
+    }
+    const nextNumber = max + 1;
+    await prisma.herdNumberSequence.upsert({
+      where: { farmId_species: { farmId: farm.id, species } },
+      update: { nextNumber, reservedThrough: Math.max(max, 0) },
+      create: { farmId: farm.id, species, nextNumber, reservedThrough: Math.max(max, 0) },
+    });
   }
 
   // ---- Herd batches (primary count tracking) ----
@@ -370,6 +731,7 @@ async function main(): Promise<void> {
       pregnancyCheckEarliestDays: 45,
       targetCalvingIntervalDays: 425,
       dryOffDaysBeforeCalving: 60,
+      gestationVarianceDays: 10,
       minWeightFirstServiceKg: 300,
       serviceWindowStartHours: 12,
       serviceWindowEndHours: 18,
@@ -389,6 +751,7 @@ async function main(): Promise<void> {
       pregnancyCheckEarliestDays: 35,
       targetCalvingIntervalDays: 380,
       dryOffDaysBeforeCalving: 60,
+      gestationVarianceDays: 7,
       minWeightFirstServiceKg: 250,
       serviceWindowStartHours: 12,
       serviceWindowEndHours: 18,
@@ -408,6 +771,7 @@ async function main(): Promise<void> {
       pregnancyCheckEarliestDays: 30,
       targetCalvingIntervalDays: 180,
       dryOffDaysBeforeCalving: 0,
+      gestationVarianceDays: 3,
       minWeightFirstServiceKg: 120,
       serviceWindowStartHours: 12,
       serviceWindowEndHours: 18,
@@ -427,6 +791,7 @@ async function main(): Promise<void> {
       pregnancyCheckEarliestDays: 35,
       targetCalvingIntervalDays: 240,
       dryOffDaysBeforeCalving: 30,
+      gestationVarianceDays: 3,
       minWeightFirstServiceKg: 25,
       serviceWindowStartHours: 12,
       serviceWindowEndHours: 18,
@@ -443,6 +808,40 @@ async function main(): Promise<void> {
       update: config,
       create: config,
     });
+  }
+
+  for (const rule of SYSTEM_REMINDER_RULES) {
+    const data = {
+      taskType: rule.taskType,
+      triggerStage: rule.triggerStage ?? null,
+      triggerEvent: rule.triggerEvent ?? null,
+      species: rule.species ?? [],
+      offsetDays: rule.offsetDays ?? 0,
+      offsetHours: rule.offsetHours ?? 0,
+      fireAtHour: rule.fireAtHour ?? null,
+      repeatEveryDays: rule.repeatEveryDays ?? null,
+      repeatUntilStage: rule.repeatUntilStage ?? null,
+      maxRepeats: rule.maxRepeats ?? null,
+      priority: rule.priority,
+      channels: [...rule.channels],
+      escalateAfterMinutes: rule.escalateAfterMinutes ?? null,
+      escalateToRole: rule.escalateToRole ?? null,
+      titleEn: rule.titleEn,
+      titleNp: rule.titleNp,
+      bodyEn: rule.bodyEn ?? null,
+      bodyNp: rule.bodyNp ?? null,
+      actionKeys: rule.actionKeys ?? [],
+      active: true,
+      isSystemDefault: true,
+    };
+    const existing = await prisma.reminderRule.findFirst({
+      where: { code: rule.code, farmId: null },
+    });
+    if (existing) {
+      await prisma.reminderRule.update({ where: { id: existing.id }, data });
+    } else {
+      await prisma.reminderRule.create({ data: { ...data, code: rule.code, farmId: null } });
+    }
   }
 
   const dairy = [Species.BUFFALO, Species.COW];
@@ -780,7 +1179,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `Seeded farm "${farm.name}" with users, individual animals, herd batches, expenses, revenue, inventory, health, production.`,
+    `Seeded farm "${farm.name}" with users, ${ANIMALS.length} new tagged animals, herd batches, expenses, revenue, inventory, health, production.`,
   );
   console.log(`Login password for all seeded users: ${SEED_PASSWORD}`);
 }

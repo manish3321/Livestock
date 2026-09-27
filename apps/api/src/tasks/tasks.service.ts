@@ -20,7 +20,7 @@ import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/types';
 import { NotificationDispatchService } from '../notifications/notification-dispatch.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { offerMute } from '../notifications/notification-rules';
+import { MUTE_WINDOW_DAYS, offerMute } from '../notifications/notification-rules';
 
 const SNOOZE_MS: Record<TaskSnooze['preset'], number> = {
   '1h': 60 * 60 * 1000,
@@ -40,6 +40,16 @@ const ACTION_PATH: Record<TaskType, string> = {
   DRY_OFF: '/animals',
   POSTPARTUM_CHECK: '/health?type=CHECKUP',
   REPEAT_BREEDER: '/breeding?form=service',
+  SYNC_INJECTION: '/breeding',
+  SYNC_AI: '/breeding?form=service',
+  ANESTRUS_MINERAL: '/breeding',
+  ANESTRUS_VET: '/breeding',
+  ANESTRUS_DECISION: '/breeding',
+  FEED_TRANSITION: '/feed',
+  PROTOCOL_BROKEN: '/breeding',
+  CALF_HEALTH_CHECK: '/health?type=CHECKUP',
+  CYCLING_UNBRED: '/breeding?form=service',
+  PD_STALLED: '/breeding?form=pd',
   VET_URGENT: '/health?type=TREATMENT',
   MILK_WITHHOLD_END: '/shed',
   STOCK_REORDER: '/inventory',
@@ -192,15 +202,17 @@ export class TasksService {
       requestId,
     });
     await this.notifications?.acknowledge(user.farmId, id);
+    const since = new Date(Date.now() - MUTE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
     const dismissals = await this.prisma.task.count({
       where: {
         farmId: user.farmId,
         type: task.type,
         status: 'DISMISSED',
         completedById: user.id,
+        completedAt: { gte: since },
       },
     });
-    return toDto(row, { offerMute: offerMute(dismissals) });
+    return toDto(row, { offerMute: offerMute(dismissals, task.priority) });
   }
 
   async reassign(

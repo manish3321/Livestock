@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import type { TaskDismissReason, TaskDto } from '@farm/contracts';
 import { completeTask, dismissTask, listTasks, muteTaskType, snoozeTask } from '../../api/tasks';
 import { ErrorState, LoadingState } from '../../components/PageState';
+import { cacheTasksForOffline, enqueueReminderOp, readCachedTasks } from '../../lib/reminder-offline';
 
 const DISMISS: TaskDismissReason[] = [
   'NOT_NEEDED',
@@ -23,7 +24,14 @@ export function InboxPage() {
   const [dismissId, setDismissId] = useState<string | null>(null);
   const [muteOffer, setMuteOffer] = useState<TaskDto | null>(null);
 
-  const query = useQuery({ queryKey: ['tasks'], queryFn: listTasks });
+  const query = useQuery({
+    queryKey: ['tasks'],
+    queryFn: async () => {
+      const page = await listTasks();
+      cacheTasksForOffline(page.items);
+      return page;
+    },
+  });
 
   const complete = useMutation({
     mutationFn: (id: string) => completeTask(id),
@@ -51,19 +59,21 @@ export function InboxPage() {
     onSuccess: () => setMuteOffer(null),
   });
 
+  const cached = readCachedTasks();
+  const source = query.data?.items ?? cached;
+
   const items = useMemo(() => {
-    const all = query.data?.items ?? [];
     const filtered = mineOnly
-      ? all.filter((task) => Boolean(task.assignedToId))
-      : all;
+      ? source.filter((task) => Boolean(task.assignedToId))
+      : source;
     if (tab === 'done') {
       return filtered.filter((task) => task.status === 'DONE' || task.status === 'DISMISSED');
     }
     return filtered.filter((task) => task.status === 'PENDING' || task.status === 'SNOOZED');
-  }, [mineOnly, query.data?.items, tab]);
+  }, [mineOnly, source, tab]);
 
-  if (query.isLoading) return <LoadingState />;
-  if (query.isError) return <ErrorState onRetry={() => query.refetch()} />;
+  if (query.isLoading && cached.length === 0) return <LoadingState />;
+  if (query.isError && cached.length === 0) return <ErrorState onRetry={() => query.refetch()} />;
 
   const openForm = (task: TaskDto) => {
     navigate(task.actionPath);
@@ -110,7 +120,7 @@ export function InboxPage() {
 
       {muteOffer && (
         <div className="inbox-mute">
-          <p>{t('inbox.muteOffer')}</p>
+          <p>{t('inbox.muteOffer', { label: muteOffer.type.replace(/_/g, '-').toLowerCase() })}</p>
           <div className="inbox-mute-actions">
             <button type="button" className="btn" onClick={() => mute.mutate(muteOffer.type)}>
               {t('inbox.mute')}
@@ -143,7 +153,18 @@ export function InboxPage() {
                 {task.type === 'APPLY_MARKER' || task.type === 'REMOVE_MARKER' ? (
                   <span className="muted">{t('inbox.scanRequired')}</span>
                 ) : (
-                  <button type="button" className="btn secondary" onClick={() => complete.mutate(task.id)}>
+                  <button
+                    type="button"
+                    className="btn secondary"
+                    onClick={() => {
+                      if (!navigator.onLine) {
+                        enqueueReminderOp({ kind: 'complete', taskId: task.id });
+                        cacheTasksForOffline(readCachedTasks().filter((row) => row.id !== task.id));
+                        return;
+                      }
+                      complete.mutate(task.id);
+                    }}
+                  >
                     {t('inbox.done')}
                   </button>
                 )}
@@ -164,7 +185,19 @@ export function InboxPage() {
             {dismissId === task.id && (
               <div className="inbox-dismiss">
                 {DISMISS.map((reason) => (
-                  <button key={reason} type="button" onClick={() => dismiss.mutate({ id: task.id, reason })}>
+                  <button
+                    key={reason}
+                    type="button"
+                    onClick={() => {
+                      if (!navigator.onLine) {
+                        enqueueReminderOp({ kind: 'dismiss', taskId: task.id, reason });
+                        setDismissId(null);
+                        cacheTasksForOffline(readCachedTasks().filter((row) => row.id !== task.id));
+                        return;
+                      }
+                      dismiss.mutate({ id: task.id, reason });
+                    }}
+                  >
                     {t(`inbox.reason.${reason}`)}
                   </button>
                 ))}

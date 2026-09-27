@@ -17,6 +17,7 @@ import { getAnimal, searchAnimals } from '../api/animals';
 import { useAuth } from '../auth/auth-context';
 import { parseQrPayload, type QrTarget } from '../lib/qr';
 import { AnimalActionGrid } from './AnimalActionGrid';
+import { Modal } from './Modal';
 import { ScanResultModal } from './ScanResultModal';
 
 const READER_ID = 'farm-scan-anywhere-reader';
@@ -108,6 +109,7 @@ export function ScanAnywhere() {
 
   const allowedScan = !!user && modulesForRole(user.role).includes('scan');
   const onScanHub = location.pathname === '/scan' || location.pathname.startsWith('/scan/');
+  const onShed = location.pathname === '/shed';
 
   const stopScanner = useCallback(async () => {
     const scanner = scannerRef.current;
@@ -304,9 +306,9 @@ export function ScanAnywhere() {
 
   return (
     <>
-      {!onScanHub && (
+      {!onScanHub && !onShed && (
         <button
-          className={`scan-fab no-print${location.pathname === '/shed' ? ' scan-fab-shed' : ''}`}
+          className="scan-fab no-print"
           type="button"
           onClick={openScan}
           aria-label={t('qr.fabLabel')}
@@ -317,139 +319,124 @@ export function ScanAnywhere() {
       )}
 
       {open && (
-        <div
-          className="modal-backdrop scan-anywhere-backdrop"
-          role="presentation"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) close();
-          }}
+        <Modal
+          open
+          onClose={close}
+          className="scan-anywhere-sheet"
+          title={step === 'actions' ? t('qr.whatNext') : t('qr.identifyTitle')}
+          label={t('qr.identifyTitle')}
         >
-          <div
-            className="modal-sheet scan-anywhere-sheet"
-            role="dialog"
-            aria-modal="true"
-            aria-label={t('qr.identifyTitle')}
-          >
-            <div className="modal-sheet-header">
-              <h2>
-                {step === 'actions' ? t('qr.whatNext') : t('qr.identifyTitle')}
-              </h2>
-              <button className="btn secondary" type="button" onClick={close}>
-                {t('common.close')}
-              </button>
-            </div>
-            <div className="modal-sheet-body">
-              {step === 'identify' && (
-                <>
-                  <p className="muted">{t('qr.identifyHint')}</p>
-                  <div className="page-actions" style={{ marginBottom: 12 }}>
-                    <button
-                      className={identifyMode === 'camera' ? 'btn' : 'btn secondary'}
-                      type="button"
-                      onClick={() => {
-                        setLookupError(null);
-                        setIdentifyMode('camera');
-                      }}
-                    >
-                      {t('qr.useCamera')}
-                    </button>
-                    <button
-                      className={identifyMode === 'manual' ? 'btn' : 'btn secondary'}
-                      type="button"
-                      onClick={() => {
-                        void stopScanner();
-                        setIdentifyMode('manual');
-                      }}
-                    >
-                      {t('qr.typeNumber')}
-                    </button>
-                  </div>
+          <>
+            {step === 'identify' && (
+              <>
+                <p className="muted">{t('qr.identifyHint')}</p>
+                <div className="page-actions" style={{ marginBottom: 12 }}>
+                  <button
+                    className={identifyMode === 'camera' ? 'btn' : 'btn secondary'}
+                    type="button"
+                    onClick={() => {
+                      setLookupError(null);
+                      setIdentifyMode('camera');
+                    }}
+                  >
+                    {t('qr.useCamera')}
+                  </button>
+                  <button
+                    className={identifyMode === 'manual' ? 'btn' : 'btn secondary'}
+                    type="button"
+                    onClick={() => {
+                      void stopScanner();
+                      setIdentifyMode('manual');
+                    }}
+                  >
+                    {t('qr.typeNumber')}
+                  </button>
+                </div>
 
-                  {identifyMode === 'camera' && (
-                    <>
-                      <div id={READER_ID} className="scan-reader scan-anywhere-reader" />
-                      {cameraError && <p className="error-text">{cameraError}</p>}
-                    </>
-                  )}
+                {identifyMode === 'camera' && (
+                  <>
+                    <div id={READER_ID} className="scan-reader scan-anywhere-reader" />
+                    {cameraError && <p className="error-text">{cameraError}</p>}
+                  </>
+                )}
 
-                  {identifyMode === 'manual' && (
-                    <form className="inline-form" style={{ flexWrap: 'wrap' }} onSubmit={submitManual}>
-                      <input
-                        type="text"
-                        autoFocus
-                        autoCapitalize="characters"
-                        placeholder={t('qr.manualPlaceholder')}
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        aria-label={t('qr.manualPlaceholder')}
-                      />
-                      <button className="btn" type="submit" disabled={lookingUp || !query.trim()}>
-                        {lookingUp ? t('qr.searching') : t('qr.lookupAnimal')}
+                {identifyMode === 'manual' && (
+                  <form className="inline-form" style={{ flexWrap: 'wrap' }} onSubmit={submitManual}>
+                    <input
+                      type="text"
+                      data-autofocus
+                      autoCapitalize="characters"
+                      placeholder={t('qr.manualPlaceholder')}
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      aria-label={t('qr.manualPlaceholder')}
+                    />
+                    <button className="btn" type="submit" disabled={lookingUp || !query.trim()}>
+                      {lookingUp ? t('qr.searching') : t('qr.lookupAnimal')}
+                    </button>
+                  </form>
+                )}
+
+                {lookupError && <p className="error-text">{lookupError}</p>}
+
+                {hits.length > 0 && (
+                  <div className="scan-hit-list">
+                    <h3 className="scan-modal-subtitle">{t('qr.pickAnimal')}</h3>
+                    {hits.map((hit) => (
+                      <button
+                        key={hit.id}
+                        type="button"
+                        className="scan-hit"
+                        onClick={() =>
+                          void pickAnimal(hit.id, {
+                            id: hit.id,
+                            tag: hit.tag,
+                            name: hit.name,
+                            species: hit.species,
+                          })
+                        }
+                      >
+                        <strong>{hit.tag}</strong>
+                        <span>
+                          {hit.name?.trim() || SPECIES_LABEL[hit.species as Species] || hit.species}
+                          {hit.penName ? ` · ${hit.penName}` : ''}
+                        </span>
                       </button>
-                    </form>
-                  )}
-
-                  {lookupError && <p className="error-text">{lookupError}</p>}
-
-                  {hits.length > 0 && (
-                    <div className="scan-hit-list">
-                      <h3 className="scan-modal-subtitle">{t('qr.pickAnimal')}</h3>
-                      {hits.map((hit) => (
-                        <button
-                          key={hit.id}
-                          type="button"
-                          className="scan-hit"
-                          onClick={() =>
-                            void pickAnimal(hit.id, {
-                              id: hit.id,
-                              tag: hit.tag,
-                              name: hit.name,
-                              species: hit.species,
-                            })
-                          }
-                        >
-                          <strong>{hit.tag}</strong>
-                          <span>
-                            {hit.name?.trim() || SPECIES_LABEL[hit.species as Species] || hit.species}
-                            {hit.penName ? ` · ${hit.penName}` : ''}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-
-              {step === 'actions' && animal && (
-                <>
-                  <p className="muted">{t('qr.scanAnimal')}</p>
-                  <h3 className="scan-picked-name">
-                    {animal.name?.trim() || SPECIES_LABEL[animal.species as Species] || animal.species}{' '}
-                    #{animal.tag}
-                  </h3>
-                  <p className="muted">{t('qr.whatNextHint')}</p>
-                  <AnimalActionGrid animalId={animal.id} onNavigate={close} />
-                  <div className="page-actions" style={{ marginTop: 16 }}>
-                    <button
-                      className="btn secondary"
-                      type="button"
-                      onClick={() => {
-                        setAnimal(null);
-                        setHits([]);
-                        setQuery('');
-                        setLookupError(null);
-                        setStep('identify');
-                        setIdentifyMode('camera');
-                      }}
-                    >
-                      {t('qr.backToScan')}
-                    </button>
+                    ))}
                   </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
+                )}
+              </>
+            )}
+
+            {step === 'actions' && animal && (
+              <>
+                <p className="muted">{t('qr.scanAnimal')}</p>
+                <h3 className="scan-picked-name">
+                  {animal.name?.trim() || SPECIES_LABEL[animal.species as Species] || animal.species}{' '}
+                  #{animal.tag}
+                </h3>
+                <p className="muted">{t('qr.whatNextHint')}</p>
+                <AnimalActionGrid animalId={animal.id} onNavigate={close} />
+                <div className="page-actions" style={{ marginTop: 16 }}>
+                  <button
+                    className="btn secondary"
+                    type="button"
+                    onClick={() => {
+                      setAnimal(null);
+                      setHits([]);
+                      setQuery('');
+                      setLookupError(null);
+                      setStep('identify');
+                      setIdentifyMode('camera');
+                    }}
+                  >
+                    {t('qr.backToScan')}
+                  </button>
+                </div>
+              </>
+            )}
+          </>
+        </Modal>
       )}
 
       {batchTarget && (
@@ -472,7 +459,8 @@ export function TopbarScanButton() {
   const { openScan } = useScanOverlay();
   const allowedScan = !!user && modulesForRole(user.role).includes('scan');
   const onScanHub = location.pathname === '/scan' || location.pathname.startsWith('/scan/');
-  if (!allowedScan || onScanHub) return null;
+  const onShed = location.pathname === '/shed';
+  if (!allowedScan || onScanHub || onShed) return null;
   return (
     <button className="btn ghost scan-topbar-btn no-print" type="button" onClick={openScan} aria-label={t('qr.fabLabel')}>
       <ScanIcon size={18} />

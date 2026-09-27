@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { alertsFromTasks, syncLocalAlerts } from '../src/core/notify';
-import { MemoryNotificationEngine } from '../src/native/notifee-engine';
+import { MemoryNotificationEngine } from '../src/native/memory-notification-engine';
 import { createStore } from '../src/core/store';
 
 describe('on-device notification engine', () => {

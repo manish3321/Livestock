@@ -285,8 +285,10 @@ export class RoundsService {
       throw new NotFoundException({ code: 'SCAN_NO_MATCH', message: 'No animal matched that scan' });
     }
 
+    // Resolve before writing the scan event so "already recorded" is not the scan we just created.
+    const dto = await this.resolveContext(user, animal.id, round);
     await this.writeScan(user, input, animal.id, true, null);
-    return this.resolveContext(user, animal.id, round);
+    return dto;
   }
 
   async resolveContext(

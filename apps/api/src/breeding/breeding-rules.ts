@@ -34,12 +34,6 @@ export function addHours(date: Date, hours: number): Date {
   return new Date(date.getTime() + hours * HOUR_MS);
 }
 
-export function atLocalHour(date: Date, hour: number): Date {
-  const next = new Date(date);
-  next.setHours(hour, 0, 0, 0);
-  return next;
-}
-
 export function daysBetween(from: Date, to: Date): number {
   return Math.round((to.getTime() - from.getTime()) / DAY_MS);
 }

@@ -19,6 +19,8 @@ import {
   type Species,
 } from '@farm/contracts';
 import { useAuth } from '../../auth/auth-context';
+import { FieldError } from '../../components/FieldError';
+import { DeleteButton } from '../../components/Modal';
 import { ErrorState, LoadingState } from '../../components/PageState';
 import { StatusChip } from '../../components/StatusChip';
 import { useFarmMode } from '../../hooks/useFarmMode';
@@ -36,7 +38,10 @@ import { QrPrintCard } from '../../components/QrPrintCard';
 import { AnimalRecordPanel, AnimalTopicTabs } from '../../components/AnimalRecordTabs';
 import { WithholdBanner } from '../../components/WithholdBanner';
 import { animalScanUrl } from '../../lib/qr';
+import { required, useFieldErrors } from '../../lib/form-errors';
 import { parseAnimalTab, parseSpeciesParam } from '../../lib/livestock';
+import { breedingPath } from '../../lib/breeding-cycle';
+import { ReproTimeline } from './ReproTimeline';
 
 export function AnimalDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -73,6 +78,7 @@ export function AnimalDetailPage() {
   });
 
   const deleteMutation = useMutation({
+    meta: { successKey: 'common.deleted' },
     mutationFn: () => deleteAnimal(id!),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['animals'] });
@@ -132,17 +138,11 @@ export function AnimalDetailPage() {
                 </Link>
               )}
               {can('animals:delete') && (
-                <button
-                  className="btn secondary danger"
-                  type="button"
-                  onClick={() => {
-                    if (window.confirm(t('animals.confirmDelete'))) {
-                      deleteMutation.mutate();
-                    }
-                  }}
-                >
-                  {t('common.delete')}
-                </button>
+                <DeleteButton
+                  message={t('animals.confirmDelete')}
+                  pending={deleteMutation.isPending}
+                  onConfirm={() => deleteMutation.mutate()}
+                />
               )}
             </div>
           </div>
@@ -285,17 +285,25 @@ export function AnimalDetailPage() {
           url={animalScanUrl(animal.id)}
         />
 
+        {can('breeding:read') &&
+          animal.gender === 'FEMALE' &&
+          (animal.species === 'BUFFALO' || animal.species === 'COW') && (
+          <div className="card">
+            <h2>{t('breeding.timeline.title')}</h2>
+            <ReproTimeline animalId={animal.id} />
+          </div>
+        )}
         {can('breeding:read') && (
           <div className="card">
             <div className="page-header" style={{ marginBottom: 12 }}>
               <h2 style={{ margin: 0 }}>{t('animals.breedingHistory')}</h2>
               {can('breeding:write') && animal.gender === 'FEMALE' && (
-                <Link className="btn secondary" to={`/breeding?animalId=${animal.id}`}>
+                <Link className="btn secondary" to={breedingPath({ animalId: animal.id, form: 'service' })}>
                   {t('breeding.add')}
                 </Link>
               )}
               {can('breeding:write') && animal.source === 'BORN' && (
-                <Link className="btn" to={`/breeding?form=colostrum&animalId=${animal.id}`}>
+                <Link className="btn" to={breedingPath({ animalId: animal.id, form: 'colostrum' })}>
                   {t('breeding.recordColostrumNow')}
                 </Link>
               )}
@@ -359,7 +367,7 @@ export function AnimalDetailPage() {
               </table>
             )}
             <p style={{ marginTop: 12 }}>
-              <Link to={`/breeding?animalId=${animal.id}`}>{t('animals.openBreeding')}</Link>
+              <Link to={breedingPath({ animalId: animal.id })}>{t('animals.openBreeding')}</Link>
             </p>
           </div>
         )}
@@ -391,7 +399,7 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
     breedingStock: true,
     tag: `${SPECIES_TAG_PREFIX[createSpecies]}001`,
   });
-  const [error, setError] = useState<string | null>(null);
+  const { errors: fieldErrors, validate, clearField, fieldProps } = useFieldErrors('animal');
 
   useEffect(() => {
     if (mode === 'edit' && existing.data) {
@@ -468,7 +476,6 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
       void qc.invalidateQueries({ queryKey: ['animal', animal.id] });
       navigate(`/animals/${animal.id}`);
     },
-    onError: (err: Error) => setError(err.message),
   });
 
   if (mode === 'edit' && existing.isLoading) return <LoadingState />;
@@ -478,12 +485,11 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!form.tag || !form.breed) {
-      setError(t('animals.requiredFields'));
-      return;
-    }
-    setError(null);
-    save.mutate();
+    const ok = validate({
+      tag: required(form.tag, t('common.requiredField')),
+      breed: required(form.breed, t('common.requiredField')),
+    });
+    if (ok) save.mutate();
   };
 
   const set = <K extends keyof AnimalCreate>(key: K, value: AnimalCreate[K]) =>
@@ -526,14 +532,17 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
             </select>
           </div>
           <div className="field">
-            <label htmlFor="tag">{t('animals.tag')}</label>
+            <label htmlFor="animal-tag">{t('animals.tag')}</label>
             <input
-              id="tag"
-              required
+              {...fieldProps('tag')}
               value={form.tag ?? ''}
               placeholder={`${tagPrefix}001`}
-              onChange={(e) => set('tag', e.target.value.toUpperCase())}
+              onChange={(e) => {
+                clearField('tag');
+                set('tag', e.target.value.toUpperCase());
+              }}
             />
+            <FieldError id="animal-tag-error" message={fieldErrors.tag} />
           </div>
           <div className="field">
             <label htmlFor="name">{t('animals.name')}</label>
@@ -544,13 +553,16 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
             />
           </div>
           <div className="field">
-            <label htmlFor="breed">{t('animals.breed')}</label>
+            <label htmlFor="animal-breed">{t('animals.breed')}</label>
             <input
-              id="breed"
-              required
+              {...fieldProps('breed')}
               value={form.breed ?? ''}
-              onChange={(e) => set('breed', e.target.value)}
+              onChange={(e) => {
+                clearField('breed');
+                set('breed', e.target.value);
+              }}
             />
+            <FieldError id="animal-breed-error" message={fieldErrors.breed} />
           </div>
           <div className="field">
             <label htmlFor="gender">{t('animals.gender')}</label>
@@ -793,14 +805,14 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
           />
         </div>
 
-        {error && <p className="error-text">{error}</p>}
+        {Object.keys(fieldErrors).length > 0 && <p className="form-summary-error">{t('common.fixErrors')}</p>}
 
         <div className="page-actions">
           <button className="btn secondary" type="button" onClick={() => navigate(-1)}>
             {t('common.cancel')}
           </button>
-          <button className="btn" type="submit" disabled={save.isPending}>
-            {t('common.save')}
+          <button className="btn" type="submit" disabled={save.isPending} aria-busy={save.isPending}>
+            {save.isPending ? t('common.saving') : t('common.save')}
           </button>
         </div>
       </form>

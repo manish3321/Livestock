@@ -14,9 +14,11 @@ import { listBatches } from '../../api/batches';
 import { createRevenue, listRevenue, type RevenueDto } from '../../api/revenue';
 import { useAuth } from '../../auth/auth-context';
 import { DataTable, type Column } from '../../components/DataTable';
+import { FieldError } from '../../components/FieldError';
 import { ErrorState, LoadingState } from '../../components/PageState';
 import { StatusChip } from '../../components/StatusChip';
 import { useFarmMode } from '../../hooks/useFarmMode';
+import { inRange, notFuture, required, useFieldErrors } from '../../lib/form-errors';
 import { downloadInvoicePdf } from '../../lib/pdf';
 import { effectivePrice, recordPayment } from '../../api/milk';
 
@@ -40,7 +42,7 @@ export function RevenuePage() {
     paymentStatus: 'PENDING',
     revenueDate: new Date(),
   });
-  const [error, setError] = useState<string | null>(null);
+  const { errors: fieldErrors, validate, clearField, fieldProps } = useFieldErrors('rev');
 
   useEffect(() => {
     const animalId = searchParams.get('animalId') ?? undefined;
@@ -90,7 +92,6 @@ export function RevenuePage() {
       }),
     onSuccess: () => {
       setShowForm(false);
-      setError(null);
       setForm({
         source: 'MILK',
         unit: 'L',
@@ -99,7 +100,6 @@ export function RevenuePage() {
       });
       void qc.invalidateQueries({ queryKey: ['revenue'] });
     },
-    onError: (err: Error) => setError(err.message),
   });
 
   const columns = useMemo<Column<RevenueDto>[]>(
@@ -167,11 +167,16 @@ export function RevenuePage() {
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!form.quantity || !form.rate || Number(form.quantity) <= 0) {
-      setError(t('revenue.requiredFields'));
-      return;
-    }
-    save.mutate();
+    const ok = validate({
+      quantity:
+        required(form.quantity == null ? '' : String(form.quantity), t('common.requiredField')) ||
+        inRange(String(form.quantity ?? ''), 0.01, 1_000_000, t('common.numberRange', { min: 0.01, max: 1000000 })),
+      rate:
+        required(form.rate == null ? '' : String(form.rate), t('common.requiredField')) ||
+        inRange(String(form.rate ?? ''), 0, 1_000_000, t('common.numberRange', { min: 0, max: 1000000 })),
+      revenueDate: notFuture(form.revenueDate ?? null, t('common.futureDate')),
+    });
+    if (ok) save.mutate();
   };
 
   return (
@@ -217,38 +222,40 @@ export function RevenuePage() {
               </select>
             </div>
             <div className="field">
-              <label htmlFor="rev-qty">{t('revenue.quantity')}</label>
+              <label htmlFor="rev-quantity">{t('revenue.quantity')}</label>
               <input
-                id="rev-qty"
+                {...fieldProps('quantity')}
                 type="number"
                 min="0.01"
                 step="0.01"
-                required
                 value={form.quantity ?? ''}
-                onChange={(e) =>
+                onChange={(e) => {
+                  clearField('quantity');
                   setForm((prev) => ({
                     ...prev,
                     quantity: e.target.value ? Number(e.target.value) : undefined,
-                  }))
-                }
+                  }));
+                }}
               />
+              <FieldError id="rev-quantity-error" message={fieldErrors.quantity} />
             </div>
             <div className="field">
               <label htmlFor="rev-rate">{t('revenue.rate')}</label>
               <input
-                id="rev-rate"
+                {...fieldProps('rate')}
                 type="number"
                 min="0"
                 step="0.01"
-                required
                 value={form.rate ?? ''}
-                onChange={(e) =>
+                onChange={(e) => {
+                  clearField('rate');
                   setForm((prev) => ({
                     ...prev,
                     rate: e.target.value ? Number(e.target.value) : undefined,
-                  }))
-                }
+                  }));
+                }}
               />
+              <FieldError id="rev-rate-error" message={fieldErrors.rate} />
             </div>
             <div className="field">
               <label htmlFor="rev-buyer">{t('revenue.buyer')}</label>
@@ -280,19 +287,20 @@ export function RevenuePage() {
               </select>
             </div>
             <div className="field">
-              <label htmlFor="rev-date">{t('common.date')}</label>
+              <label htmlFor="rev-revenueDate">{t('common.date')}</label>
               <input
-                id="rev-date"
+                {...fieldProps('revenueDate')}
                 type="date"
-                required
                 value={toDateInput(form.revenueDate)}
-                onChange={(e) =>
+                onChange={(e) => {
+                  clearField('revenueDate');
                   setForm((prev) => ({
                     ...prev,
                     revenueDate: e.target.value ? new Date(e.target.value) : new Date(),
-                  }))
-                }
+                  }));
+                }}
               />
+              <FieldError id="rev-revenueDate-error" message={fieldErrors.revenueDate} />
             </div>
             {commercial && (
               <>
@@ -388,10 +396,10 @@ export function RevenuePage() {
               </select>
             </div>
           </div>
-          {error && <p className="error-text">{error}</p>}
+          {Object.keys(fieldErrors).length > 0 && <p className="form-summary-error">{t('common.fixErrors')}</p>}
           <div className="page-actions">
-            <button className="btn" type="submit" disabled={save.isPending}>
-              {t('common.save')}
+            <button className="btn" type="submit" disabled={save.isPending} aria-busy={save.isPending}>
+              {save.isPending ? t('common.saving') : t('common.save')}
             </button>
           </div>
         </form>

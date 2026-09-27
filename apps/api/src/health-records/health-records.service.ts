@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import {
   HEALTH_DEFAULT_INTERVAL_DAYS,
@@ -12,7 +12,7 @@ import {
   type UdderCheckCreate,
   type UdderCheckDto,
 } from '@farm/contracts';
-import { ensureTask } from '../jobs/task-writer';
+import { completeOpenTask, ensureTask } from '../jobs/task-writer';
 import type { HealthRecord, Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/types';
@@ -21,6 +21,7 @@ import { ProfitService } from '../profit/profit.service';
 import { daysInMilk } from '../profit/profit-rules';
 import { SpeciesConfigService } from '../species-config/species-config.service';
 import { WithholdsService } from '../withholds/withholds.service';
+import { ReproStageService } from '../breeding/repro-stage.service';
 import {
   affectedQuarters,
   classifyMastitis,
@@ -79,6 +80,7 @@ export class HealthRecordsService {
     private readonly withholds: WithholdsService,
     private readonly speciesConfig?: SpeciesConfigService,
     private readonly profit?: ProfitService,
+    @Optional() private readonly reproStage?: ReproStageService,
   ) {}
 
   async list(
@@ -229,6 +231,30 @@ export class HealthRecordsService {
         explicitMilkUntil: input.milkWithholdUntil,
         explicitMeatUntil: input.meatWithholdUntil,
       });
+      if (input.type === 'CHECKUP') {
+        await completeOpenTask(
+          this.prisma,
+          { farmId: user.farmId, type: 'POSTPARTUM_CHECK', animalId: input.animalId },
+          user.id,
+        );
+        const abnormal = (input.outcome ?? '').length > 0 && !/^(normal|healthy|ok|none)$/i.test(input.outcome ?? '');
+        if (abnormal) {
+          const watch = await this.prisma.task.findFirst({
+            where: {
+              farmId: user.farmId,
+              animalId: input.animalId,
+              type: 'HEAT_WATCH',
+              status: { in: ['PENDING', 'SNOOZED'] },
+            },
+          });
+          if (watch) {
+            await this.prisma.task.update({
+              where: { id: watch.id },
+              data: { dueAt: new Date(watch.dueAt.getTime() + 14 * 24 * 60 * 60 * 1000) },
+            });
+          }
+        }
+      }
     }
 
     const extras = await this.recordEventAndCourse(user, row, input);
@@ -503,6 +529,7 @@ export class HealthRecordsService {
       entityType: 'mortalityRecord',
       entityId: row.id,
     });
+    await this.reproStage?.recomputeAnimal(user.farmId, animal.id, 'DEAD');
     return {
       id: row.id,
       animalId: row.animalId,

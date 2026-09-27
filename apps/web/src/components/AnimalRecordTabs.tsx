@@ -1,15 +1,18 @@
 import { FormEvent, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { formatDate, type AnimalDetailDto, type Permission } from '@farm/contracts';
-import { addWeight, getAnimalProductionStats } from '../api/animals';
-import { createHeat, listHeat } from '../api/breeding';
-import { createHealthRecord, listHealthRecords } from '../api/health';
+import { addWeight, deleteWeight, getAnimalProductionStats } from '../api/animals';
+import { createHeat, deleteHeat, listHeat } from '../api/breeding';
+import { createHealthRecord, deleteHealthRecord, listHealthRecords } from '../api/health';
 import { createProduction } from '../api/production';
+import { FieldError } from './FieldError';
+import { DeleteButton } from './Modal';
 import { ErrorState, LoadingState } from './PageState';
 import { useAuth } from '../auth/auth-context';
 import { useFarmMode } from '../hooks/useFarmMode';
+import { inRange, notFuture, required, useFieldErrors } from '../lib/form-errors';
 import {
   ANIMAL_RECORD_TABS,
   animalRecordPath,
@@ -18,6 +21,7 @@ import {
   type AnimalRecordMode,
   type AnimalRecordTab,
 } from '../lib/livestock';
+import { breedingPath } from '../lib/breeding-cycle';
 
 const TOPIC_LABEL: Record<Exclude<AnimalRecordTab, 'overview'>, string> = {
   milk: 'qr.action.milk',
@@ -110,10 +114,22 @@ function RecordBody({
       {showAdd ? (
         <>
           <p className="muted animal-add-hint">{t('animals.addViaScan')}</p>
+          {tab === 'heat' && (
+            <p>
+              <Link to={breedingPath({ animalId: animal.id, form: 'heat' })}>{t('animals.openBreeding')}</Link>
+            </p>
+          )}
           <AddForm animal={animal} tab={tab} />
         </>
       ) : (
-        <RecordList animal={animal} tab={tab} />
+        <>
+          {tab === 'heat' && (
+            <p>
+              <Link to={breedingPath({ animalId: animal.id, form: 'heat' })}>{t('animals.openBreeding')}</Link>
+            </p>
+          )}
+          <RecordList animal={animal} tab={tab} />
+        </>
       )}
     </div>
   );
@@ -127,7 +143,9 @@ function RecordList({
   tab: Exclude<AnimalRecordTab, 'overview'>;
 }) {
   const { t } = useTranslation();
+  const { can } = useAuth();
   const { commercial } = useFarmMode();
+  const qc = useQueryClient();
 
   const milkQ = useQuery({
     queryKey: ['animal', animal.id, 'production-stats'],
@@ -148,6 +166,22 @@ function RecordList({
     queryKey: ['breeding', 'heat', animal.id],
     queryFn: () => listHeat(animal.id),
     enabled: tab === 'heat',
+  });
+
+  const deleteHealthMut = useMutation({
+    meta: { successKey: 'common.deleted' },
+    mutationFn: (id: string) => deleteHealthRecord(id),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['health-records', animal.id] }),
+  });
+  const deleteHeatMut = useMutation({
+    meta: { successKey: 'breeding.toast.heatDeleted' },
+    mutationFn: (id: string) => deleteHeat(id),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['breeding', 'heat', animal.id] }),
+  });
+  const deleteWeightMut = useMutation({
+    meta: { successKey: 'common.deleted' },
+    mutationFn: (weightId: string) => deleteWeight(animal.id, weightId),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['animal', animal.id] }),
   });
 
   if (tab === 'milk') {
@@ -206,6 +240,7 @@ function RecordList({
             <th>{t('health.title')}</th>
             <th>{t('health.medicine')}</th>
             <th>{t('health.nextDueAt')}</th>
+            {can('health:write') && <th>{t('common.actions')}</th>}
           </tr>
         </thead>
         <tbody>
@@ -215,6 +250,15 @@ function RecordList({
               <td>{row.title}</td>
               <td>{row.medicine ?? '—'}</td>
               <td>{row.nextDueAt ? formatDate(row.nextDueAt) : '—'}</td>
+              {can('health:write') && (
+                <td className="row-actions">
+                  <DeleteButton
+                    message={t('animals.confirmDeleteRecord')}
+                    pending={deleteHealthMut.isPending}
+                    onConfirm={() => deleteHealthMut.mutate(row.id)}
+                  />
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -234,6 +278,7 @@ function RecordList({
             <th>{t('common.date')}</th>
             <th>{t('animals.heatIntensity')}</th>
             <th>{t('common.notes')}</th>
+            {can('breeding:write') && <th>{t('common.actions')}</th>}
           </tr>
         </thead>
         <tbody>
@@ -242,6 +287,15 @@ function RecordList({
               <td>{formatDate(row.observedAt)}</td>
               <td>{row.intensity}</td>
               <td>{row.notes ?? '—'}</td>
+              {can('breeding:write') && (
+                <td className="row-actions">
+                  <DeleteButton
+                    message={t('breeding.confirmDeleteHeat')}
+                    pending={deleteHeatMut.isPending}
+                    onConfirm={() => deleteHeatMut.mutate(row.id)}
+                  />
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -257,6 +311,7 @@ function RecordList({
           <th>{t('animals.date')}</th>
           <th>{t('animals.weight')}</th>
           {commercial && <th>{t('animals.bcs')}</th>}
+          {can('animals:write') && <th>{t('common.actions')}</th>}
         </tr>
       </thead>
       <tbody>
@@ -265,6 +320,15 @@ function RecordList({
             <td>{formatDate(w.recordedAt)}</td>
             <td>{w.weightKg} kg</td>
             {commercial && <td>{w.bcs ?? '—'}</td>}
+            {can('animals:write') && (
+              <td className="row-actions">
+                <DeleteButton
+                  message={t('animals.confirmDeleteRecord')}
+                  pending={deleteWeightMut.isPending}
+                  onConfirm={() => deleteWeightMut.mutate(w.id)}
+                />
+              </td>
+            )}
           </tr>
         ))}
       </tbody>
@@ -282,11 +346,12 @@ function AddForm({
   const { t } = useTranslation();
   const { commercial } = useFarmMode();
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [, setParams] = useSearchParams();
   const afterSave = () => {
     setParams({ tab }, { replace: true });
   };
-  const [error, setError] = useState<string | null>(null);
+  const { errors, validate, clearField, fieldProps } = useFieldErrors('add');
   const [litres, setLitres] = useState('');
   const [date, setDate] = useState(toDateInput());
   const [title, setTitle] = useState('');
@@ -308,11 +373,9 @@ function AddForm({
       }),
     onSuccess: () => {
       setLitres('');
-      setError(null);
       void qc.invalidateQueries({ queryKey: ['animal', animal.id, 'production-stats'] });
       afterSave();
     },
-    onError: (err: Error) => setError(err.message),
   });
   const healthMut = useMutation({
     mutationFn: () =>
@@ -328,11 +391,9 @@ function AddForm({
       setTitle('');
       setMedicine('');
       setNotes('');
-      setError(null);
       void qc.invalidateQueries({ queryKey: ['health-records', animal.id] });
       afterSave();
     },
-    onError: (err: Error) => setError(err.message),
   });
   const heatMut = useMutation({
     mutationFn: () =>
@@ -344,11 +405,9 @@ function AddForm({
       }),
     onSuccess: () => {
       setNotes('');
-      setError(null);
       void qc.invalidateQueries({ queryKey: ['breeding', 'heat', animal.id] });
-      afterSave();
+      navigate(breedingPath({ animalId: animal.id, form: 'service' }));
     },
-    onError: (err: Error) => setError(err.message),
   });
   const weightMut = useMutation({
     mutationFn: () =>
@@ -360,41 +419,46 @@ function AddForm({
     onSuccess: () => {
       setWeightKg('');
       setBcs('');
-      setError(null);
       void qc.invalidateQueries({ queryKey: ['animal', animal.id] });
       void qc.invalidateQueries({ queryKey: ['animals'] });
       afterSave();
     },
-    onError: (err: Error) => setError(err.message),
   });
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (tab === 'milk') {
-      if (!litres || Number(litres) <= 0) {
-        setError(t('animals.weightRequired'));
-        return;
-      }
-      milkMut.mutate();
+      const ok = validate({
+        litres:
+          required(litres, t('common.requiredField')) ||
+          inRange(litres, 0.1, 100, t('common.numberRange', { min: 0.1, max: 100 })),
+        date: required(date, t('common.requiredField')) || notFuture(new Date(date), t('common.futureDate')),
+      });
+      if (ok) milkMut.mutate();
       return;
     }
     if (tab === 'vaccine' || tab === 'treatment') {
-      if (!title.trim()) {
-        setError(t('health.requiredFields'));
-        return;
-      }
-      healthMut.mutate();
+      const ok = validate({
+        title: required(title, t('common.requiredField')),
+        date: required(date, t('common.requiredField')) || notFuture(new Date(date), t('common.futureDate')),
+      });
+      if (ok) healthMut.mutate();
       return;
     }
     if (tab === 'heat') {
-      heatMut.mutate();
+      const ok = validate({
+        when: required(when, t('common.requiredField')) || notFuture(new Date(when), t('common.futureDate')),
+      });
+      if (ok) heatMut.mutate();
       return;
     }
-    if (!weightKg || Number(weightKg) <= 0) {
-      setError(t('animals.weightRequired'));
-      return;
-    }
-    weightMut.mutate();
+    const ok = validate({
+      weightKg:
+        required(weightKg, t('common.requiredField')) ||
+        inRange(weightKg, 0.1, 2000, t('common.numberRange', { min: 0.1, max: 2000 })),
+      bcs: inRange(bcs, 1, 5, t('common.numberRange', { min: 1, max: 5 })),
+    });
+    if (ok) weightMut.mutate();
   };
 
   const pending =
@@ -405,49 +469,61 @@ function AddForm({
       {tab === 'milk' && (
         <>
           <div className="field">
-            <label htmlFor="animal-litres">{t('animals.litres')}</label>
+            <label htmlFor="add-litres">{t('animals.litres')}</label>
             <input
-              id="animal-litres"
+              {...fieldProps('litres')}
               type="number"
               min="0.1"
               step="0.1"
               value={litres}
-              onChange={(e) => setLitres(e.target.value)}
-              required
+              onChange={(e) => {
+                clearField('litres');
+                setLitres(e.target.value);
+              }}
             />
+            <FieldError id="add-litres-error" message={errors.litres} />
           </div>
           <div className="field">
-            <label htmlFor="animal-milk-date">{t('common.date')}</label>
+            <label htmlFor="add-date">{t('common.date')}</label>
             <input
-              id="animal-milk-date"
+              {...fieldProps('date')}
               type="date"
               value={date}
-              onChange={(e) => setDate(e.target.value)}
-              required
+              onChange={(e) => {
+                clearField('date');
+                setDate(e.target.value);
+              }}
             />
+            <FieldError id="add-date-error" message={errors.date} />
           </div>
         </>
       )}
       {(tab === 'vaccine' || tab === 'treatment') && (
         <>
           <div className="field">
-            <label htmlFor="animal-health-title">{t('health.title')}</label>
+            <label htmlFor="add-title">{t('health.title')}</label>
             <input
-              id="animal-health-title"
+              {...fieldProps('title')}
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              required
+              onChange={(e) => {
+                clearField('title');
+                setTitle(e.target.value);
+              }}
             />
+            <FieldError id="add-title-error" message={errors.title} />
           </div>
           <div className="field">
-            <label htmlFor="animal-health-date">{t('health.performedAt')}</label>
+            <label htmlFor="add-date">{t('health.performedAt')}</label>
             <input
-              id="animal-health-date"
+              {...fieldProps('date')}
               type="date"
               value={date}
-              onChange={(e) => setDate(e.target.value)}
-              required
+              onChange={(e) => {
+                clearField('date');
+                setDate(e.target.value);
+              }}
             />
+            <FieldError id="add-date-error" message={errors.date} />
           </div>
           {tab === 'treatment' && (
             <div className="field">
@@ -472,14 +548,17 @@ function AddForm({
       {tab === 'heat' && (
         <>
           <div className="field">
-            <label htmlFor="animal-heat-when">{t('common.date')}</label>
+            <label htmlFor="add-when">{t('common.date')}</label>
             <input
-              id="animal-heat-when"
+              {...fieldProps('when')}
               type="datetime-local"
               value={when}
-              onChange={(e) => setWhen(e.target.value)}
-              required
+              onChange={(e) => {
+                clearField('when');
+                setWhen(e.target.value);
+              }}
             />
+            <FieldError id="add-when-error" message={errors.when} />
           </div>
           <div className="field">
             <label htmlFor="animal-heat-intensity">{t('animals.heatIntensity')}</label>
@@ -506,35 +585,42 @@ function AddForm({
       {tab === 'weight' && (
         <>
           <div className="field">
-            <label htmlFor="animal-weight">{t('animals.weightKg')}</label>
+            <label htmlFor="add-weightKg">{t('animals.weightKg')}</label>
             <input
-              id="animal-weight"
+              {...fieldProps('weightKg')}
               type="number"
               min="0.1"
               step="0.1"
               value={weightKg}
-              onChange={(e) => setWeightKg(e.target.value)}
-              required
+              onChange={(e) => {
+                clearField('weightKg');
+                setWeightKg(e.target.value);
+              }}
             />
+            <FieldError id="add-weightKg-error" message={errors.weightKg} />
           </div>
           {commercial && (
             <div className="field">
-              <label htmlFor="animal-bcs">{t('animals.bcs')}</label>
+              <label htmlFor="add-bcs">{t('animals.bcs')}</label>
               <input
-                id="animal-bcs"
+                {...fieldProps('bcs')}
                 type="number"
                 min="1"
                 max="5"
                 value={bcs}
-                onChange={(e) => setBcs(e.target.value)}
+                onChange={(e) => {
+                  clearField('bcs');
+                  setBcs(e.target.value);
+                }}
               />
+              <FieldError id="add-bcs-error" message={errors.bcs} />
             </div>
           )}
         </>
       )}
-      {error && <p className="error-text">{error}</p>}
-      <button className="btn" type="submit" disabled={pending}>
-        {pending ? t('common.loading') : t('common.save')}
+      {Object.keys(errors).length > 0 && <p className="form-summary-error">{t('common.fixErrors')}</p>}
+      <button className="btn" type="submit" disabled={pending} aria-busy={pending}>
+        {pending ? t('common.saving') : t('common.save')}
       </button>
     </form>
   );

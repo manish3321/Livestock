@@ -13,9 +13,11 @@ import { listBatches } from '../../api/batches';
 import { createProduction, listProduction, type ProductionDto } from '../../api/production';
 import { useAuth } from '../../auth/auth-context';
 import { DataTable, type Column } from '../../components/DataTable';
+import { FieldError } from '../../components/FieldError';
 import { ErrorState, LoadingState } from '../../components/PageState';
 import { StatusChip } from '../../components/StatusChip';
 import { useFarmMode } from '../../hooks/useFarmMode';
+import { inRange, notFuture, required, useFieldErrors } from '../../lib/form-errors';
 
 const DEFAULT_UNIT: Record<(typeof PRODUCTION_TYPES)[number], string> = {
   MILK: 'L',
@@ -35,7 +37,7 @@ export function ProductionPage() {
     entryDate: new Date(),
     quality: 'A',
   });
-  const [error, setError] = useState<string | null>(null);
+  const { errors: fieldErrors, validate, clearField, fieldProps } = useFieldErrors('prod');
 
   const query = useQuery({
     queryKey: ['production'],
@@ -81,11 +83,9 @@ export function ProductionPage() {
       }),
     onSuccess: () => {
       setShowForm(false);
-      setError(null);
       setForm({ type: 'MILK', unit: 'L', entryDate: new Date(), quality: 'A' });
       void qc.invalidateQueries({ queryKey: ['production'] });
     },
-    onError: (err: Error) => setError(err.message),
   });
 
   const grades =
@@ -153,11 +153,14 @@ export function ProductionPage() {
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!form.quantity || Number(form.quantity) <= 0) {
-      setError(t('production.requiredFields'));
-      return;
-    }
-    save.mutate();
+    const ok = validate({
+      quantity:
+        required(form.quantity == null ? '' : String(form.quantity), t('common.requiredField')) ||
+        inRange(String(form.quantity ?? ''), 0.01, 100_000, t('common.numberRange', { min: 0.01, max: 100000 })),
+      unit: required(form.unit, t('common.requiredField')),
+      entryDate: notFuture(form.entryDate ?? null, t('common.futureDate')),
+    });
+    if (ok) save.mutate();
   };
 
   return (
@@ -271,30 +274,34 @@ export function ProductionPage() {
               </div>
             )}
             <div className="field">
-              <label htmlFor="prod-qty">{t('production.quantity')}</label>
+              <label htmlFor="prod-quantity">{t('production.quantity')}</label>
               <input
-                id="prod-qty"
+                {...fieldProps('quantity')}
                 type="number"
                 min="0.01"
                 step="0.01"
-                required
                 value={form.quantity ?? ''}
-                onChange={(e) =>
+                onChange={(e) => {
+                  clearField('quantity');
                   setForm((prev) => ({
                     ...prev,
                     quantity: e.target.value ? Number(e.target.value) : undefined,
-                  }))
-                }
+                  }));
+                }}
               />
+              <FieldError id="prod-quantity-error" message={fieldErrors.quantity} />
             </div>
             <div className="field">
               <label htmlFor="prod-unit">{t('production.unit')}</label>
               <input
-                id="prod-unit"
-                required
+                {...fieldProps('unit')}
                 value={form.unit ?? ''}
-                onChange={(e) => setForm((prev) => ({ ...prev, unit: e.target.value }))}
+                onChange={(e) => {
+                  clearField('unit');
+                  setForm((prev) => ({ ...prev, unit: e.target.value }));
+                }}
               />
+              <FieldError id="prod-unit-error" message={fieldErrors.unit} />
             </div>
             <div className="field">
               <label htmlFor="prod-quality">{t('production.quality')}</label>
@@ -316,19 +323,20 @@ export function ProductionPage() {
               </select>
             </div>
             <div className="field">
-              <label htmlFor="prod-date">{t('common.date')}</label>
+              <label htmlFor="prod-entryDate">{t('common.date')}</label>
               <input
-                id="prod-date"
+                {...fieldProps('entryDate')}
                 type="date"
-                required
                 value={toDateInput(form.entryDate)}
-                onChange={(e) =>
+                onChange={(e) => {
+                  clearField('entryDate');
                   setForm((prev) => ({
                     ...prev,
                     entryDate: e.target.value ? new Date(e.target.value) : new Date(),
-                  }))
-                }
+                  }));
+                }}
               />
+              <FieldError id="prod-entryDate-error" message={fieldErrors.entryDate} />
             </div>
             {form.type === 'MILK' && commercial && (
               <>
@@ -444,10 +452,10 @@ export function ProductionPage() {
               }
             />
           </div>
-          {error && <p className="error-text">{error}</p>}
+          {Object.keys(fieldErrors).length > 0 && <p className="form-summary-error">{t('common.fixErrors')}</p>}
           <div className="page-actions">
-            <button className="btn" type="submit" disabled={save.isPending}>
-              {t('common.save')}
+            <button className="btn" type="submit" disabled={save.isPending} aria-busy={save.isPending}>
+              {save.isPending ? t('common.saving') : t('common.save')}
             </button>
           </div>
         </form>

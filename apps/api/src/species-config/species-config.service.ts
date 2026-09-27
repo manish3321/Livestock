@@ -82,6 +82,7 @@ type SpeciesConfigRow = {
   pregnancyCheckEarliestDays: number;
   targetCalvingIntervalDays: number;
   dryOffDaysBeforeCalving: number;
+  gestationVarianceDays?: number;
   minWeightFirstServiceKg: number;
   serviceWindowStartHours?: number;
   serviceWindowEndHours?: number;
@@ -103,6 +104,7 @@ function toDto(row: SpeciesConfigRow): SpeciesConfigDto {
     pregnancyCheckEarliestDays: row.pregnancyCheckEarliestDays,
     targetCalvingIntervalDays: row.targetCalvingIntervalDays,
     dryOffDaysBeforeCalving: row.dryOffDaysBeforeCalving,
+    gestationVarianceDays: row.gestationVarianceDays ?? 7,
     minWeightFirstServiceKg: row.minWeightFirstServiceKg,
     serviceWindowStartHours: row.serviceWindowStartHours ?? 12,
     serviceWindowEndHours: row.serviceWindowEndHours ?? 18,

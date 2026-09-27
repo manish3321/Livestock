@@ -11,6 +11,7 @@ import {
 } from '../components/ScanAnywhere';
 import { useFarmMode } from '../hooks/useFarmMode';
 import { setLocale } from '../i18n';
+import { ReminderRuntime } from '../components/ReminderRuntime';
 import {
   HOUSEHOLD_HIDDEN,
   NON_NAV_MODULES,
@@ -213,11 +214,12 @@ function AppLayoutInner() {
             </button>
           </div>
         </header>
-        <main className="content rise-in">
+        <main className="content fade-in">
           <Outlet />
         </main>
       </div>
       <ScanAnywhere />
+      <ReminderRuntime />
       {/* Mobile: Home / Shed / Inbox / More + ember Scan FAB (from ScanAnywhere) */}
       <nav className="tab-bar no-print" aria-label={t('appName')}>
         {allowed.has('dashboard') && (

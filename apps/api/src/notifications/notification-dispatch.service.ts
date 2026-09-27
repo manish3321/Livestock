@@ -15,6 +15,7 @@ import {
   nepalHour,
   nepalMonthBounds,
   shouldHoldUntilMorning,
+  silentHeatOptIn,
   smsAllowed,
   smsEncoding,
   suppressNonCritical,
@@ -177,7 +178,7 @@ export class NotificationDispatchService {
         },
       });
       for (const member of members) {
-        const recipient = toRecipient(member);
+        const recipient = toRecipient(member, false);
         await this.deliver({
           farmId: log.farmId,
           recipient,
@@ -251,7 +252,11 @@ export class NotificationDispatchService {
         user: { include: { devices: true, notificationPreferences: true } },
       },
     });
-    const recipients = members.map(toRecipient);
+    const buffalo = await this.prisma.animal.findFirst({
+      where: { farmId, deletedAt: null, species: 'BUFFALO' },
+      select: { id: true },
+    });
+    const recipients = members.map((member) => toRecipient(member, Boolean(buffalo)));
     const day = nepalDayBounds(now);
     const month = nepalMonthBounds(now);
     const monthlyCap = loadEnv().SMS_MONTHLY_CAP;
@@ -338,7 +343,11 @@ export class NotificationDispatchService {
     let sent = false;
     let smsSent = false;
 
-    if (input.recipient.literacySupport && input.recipient.phone) {
+    if (
+      input.recipient.literacySupport &&
+      input.recipient.phone &&
+      (input.group.priority === 'CRITICAL' || input.kind === 'escalation')
+    ) {
       await this.notifier.enqueueVoice({
         to: input.recipient.phone,
         clipIds: voiceClipsFor({
@@ -419,16 +428,19 @@ export class NotificationDispatchService {
   }
 }
 
-function toRecipient(member: {
-  role: string;
-  user: {
-    id: string;
-    phone: string | null;
-    literacySupport: boolean;
-    devices: Array<{ fcmToken: string | null }>;
-    notificationPreferences: Array<{ taskType: string; muted: boolean; push: boolean }>;
-  };
-}): Recipient {
+function toRecipient(
+  member: {
+    role: string;
+    user: {
+      id: string;
+      phone: string | null;
+      literacySupport: boolean;
+      devices: Array<{ fcmToken: string | null }>;
+      notificationPreferences: Array<{ taskType: string; muted: boolean; push: boolean }>;
+    };
+  },
+  buffaloFarm: boolean,
+): Recipient {
   const muted = new Set(
     member.user.notificationPreferences.filter((p) => p.muted).map((p) => p.taskType),
   );
@@ -440,7 +452,7 @@ function toRecipient(member: {
     role: member.role,
     tokens: member.user.devices.map((d) => d.fcmToken).filter((t): t is string => Boolean(t)),
     muted,
-    silentHeatOptIn: Boolean(silent && silent.push && !silent.muted),
+    silentHeatOptIn: silentHeatOptIn(silent, buffaloFarm),
   };
 }
 

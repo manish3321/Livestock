@@ -1,4 +1,4 @@
-import { useQueries, useQuery } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -13,10 +13,11 @@ import {
 } from '@farm/contracts';
 import { useAuth } from '../../auth/auth-context';
 import { AnimalActionGrid } from '../../components/AnimalActionGrid';
+import { DeleteButton } from '../../components/Modal';
 import { SpeciesGlyph } from '../../components/ModuleIcon';
 import { ErrorState, LoadingState } from '../../components/PageState';
 import { StatusChip } from '../../components/StatusChip';
-import { downloadAnimalsCsv, listAnimals } from '../../api/animals';
+import { deleteAnimal, downloadAnimalsCsv, listAnimals } from '../../api/animals';
 import { downloadTablePdf } from '../../lib/pdf';
 import { parseSpeciesParam } from '../../lib/livestock';
 
@@ -229,8 +230,18 @@ function HerdRow({
   onToggle: () => void;
 }) {
   const { t } = useTranslation();
+  const { can } = useAuth();
+  const qc = useQueryClient();
   const label = row.herdNumber ?? row.tag;
   const name = row.name?.trim();
+  const deleteMut = useMutation({
+    meta: { successKey: 'common.deleted' },
+    mutationFn: () => deleteAnimal(row.id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['animals'] });
+      onToggle();
+    },
+  });
 
   return (
     <article className={`herd-row${open ? ' open' : ''}`}>
@@ -273,6 +284,20 @@ function HerdRow({
             ) : null}
           </div>
           <AnimalActionGrid animalId={row.id} compact />
+          <div className="herd-row-actions" style={{ marginTop: 8 }}>
+            {can('animals:write') && (
+              <Link className="btn secondary" to={`/animals/${row.id}/edit`}>
+                {t('common.edit')}
+              </Link>
+            )}
+            {can('animals:delete') && (
+              <DeleteButton
+                message={t('animals.confirmDelete')}
+                pending={deleteMut.isPending}
+                onConfirm={() => deleteMut.mutate()}
+              />
+            )}
+          </div>
         </div>
       )}
     </article>

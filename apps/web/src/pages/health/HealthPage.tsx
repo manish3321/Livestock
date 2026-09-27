@@ -31,9 +31,11 @@ import { listActiveWithholds } from '../../api/withholds';
 import { WithholdBanner } from '../../components/WithholdBanner';
 import { useAuth } from '../../auth/auth-context';
 import { DataTable, type Column } from '../../components/DataTable';
+import { FieldError } from '../../components/FieldError';
 import { ErrorState, LoadingState } from '../../components/PageState';
 import { StatusChip } from '../../components/StatusChip';
 import { useFarmMode } from '../../hooks/useFarmMode';
+import { notFuture, required, useFieldErrors } from '../../lib/form-errors';
 
 type DueFilter = HealthListQuery['due'];
 
@@ -61,6 +63,7 @@ export function HealthPage() {
     frequencyPerDay: 2,
   });
   const [error, setError] = useState<string | null>(null);
+  const { errors: fieldErrors, validate, clearField, fieldProps } = useFieldErrors('health');
 
   useEffect(() => {
     const animalId = searchParams.get('animalId') ?? undefined;
@@ -179,7 +182,6 @@ export function HealthPage() {
       setForm({ type: 'VACCINATION', performedAt: new Date(), frequencyPerDay: 2 });
       void qc.invalidateQueries({ queryKey: ['health-records'] });
     },
-    onError: (err: Error) => setError(err.message),
   });
 
   const udderSave = useMutation({
@@ -196,7 +198,6 @@ export function HealthPage() {
       void qc.invalidateQueries({ queryKey: ['health-records'] });
       void qc.invalidateQueries({ queryKey: ['tasks'] });
     },
-    onError: (err: Error) => setError(err.message),
   });
 
   const deathSave = useMutation({
@@ -210,7 +211,6 @@ export function HealthPage() {
       setError(null);
       void qc.invalidateQueries({ queryKey: ['animals'] });
     },
-    onError: (err: Error) => setError(err.message),
   });
 
   const columns = useMemo<Column<HealthRecordDto>[]>(
@@ -247,11 +247,13 @@ export function HealthPage() {
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!form.title?.trim()) {
-      setError(t('health.requiredFields'));
-      return;
-    }
-    save.mutate();
+    const ok = validate({
+      title: required(form.title, t('common.requiredField')),
+      performedAt:
+        required(form.performedAt ? 'set' : '', t('common.requiredField')) ||
+        notFuture(form.performedAt ?? null, t('common.futureDate')),
+    });
+    if (ok) save.mutate();
   };
 
   return (
@@ -448,11 +450,14 @@ export function HealthPage() {
             <div className="field">
               <label htmlFor="health-title">{t('health.title')}</label>
               <input
-                id="health-title"
-                required
+                {...fieldProps('title')}
                 value={form.title ?? ''}
-                onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
+                onChange={(e) => {
+                  clearField('title');
+                  setForm((prev) => ({ ...prev, title: e.target.value }));
+                }}
               />
+              <FieldError id="health-title-error" message={fieldErrors.title} />
             </div>
             <div className="field">
               <label htmlFor="health-animal">{t('health.animal')}</label>
@@ -493,19 +498,20 @@ export function HealthPage() {
               </select>
             </div>
             <div className="field">
-              <label htmlFor="health-performed">{t('health.performedAt')}</label>
+              <label htmlFor="health-performedAt">{t('health.performedAt')}</label>
               <input
-                id="health-performed"
+                {...fieldProps('performedAt')}
                 type="date"
-                required
                 value={toDateInput(form.performedAt)}
-                onChange={(e) =>
+                onChange={(e) => {
+                  clearField('performedAt');
                   setForm((prev) => ({
                     ...prev,
                     performedAt: e.target.value ? new Date(e.target.value) : new Date(),
-                  }))
-                }
+                  }));
+                }}
               />
+              <FieldError id="health-performedAt-error" message={fieldErrors.performedAt} />
             </div>
             <div className="field">
               <label htmlFor="health-due">{t('health.nextDueAt')}</label>
@@ -823,9 +829,10 @@ export function HealthPage() {
             />
           </div>
           {error && <p className="error-text">{error}</p>}
+          {Object.keys(fieldErrors).length > 0 && <p className="form-summary-error">{t('common.fixErrors')}</p>}
           <div className="page-actions">
-            <button className="btn" type="submit" disabled={save.isPending}>
-              {t('common.save')}
+            <button className="btn" type="submit" disabled={save.isPending} aria-busy={save.isPending}>
+              {save.isPending ? t('common.saving') : t('common.save')}
             </button>
           </div>
         </form>

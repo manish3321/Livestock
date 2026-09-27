@@ -10,21 +10,23 @@ export function patchXhrStatusZero(): void {
   const proto = XMLHttpRequest.prototype;
   const originalSend = proto.send;
 
-  proto.send = function patchedSend(body?: Document | string | FormData | Blob | ArrayBufferView | ArrayBuffer | null) {
-    const xhr = this;
-    const userOnLoad = xhr.onload;
+  proto.send = function patchedSend(
+    this: XMLHttpRequest,
+    body?: Document | string | FormData | Blob | ArrayBufferView | ArrayBuffer | null,
+  ) {
+    const userOnLoad = this.onload;
     if (typeof userOnLoad === 'function') {
-      xhr.onload = function onLoadStatusZeroGuard(ev: ProgressEvent) {
-        if (xhr.status === 0) {
-          const onError = xhr.onerror;
+      this.onload = (ev: ProgressEvent) => {
+        if (this.status === 0) {
+          const onError = this.onerror;
           if (typeof onError === 'function') {
-            onError.call(xhr, ev);
+            onError.call(this, ev);
             return;
           }
         }
-        userOnLoad.call(xhr, ev);
+        userOnLoad.call(this, ev);
       };
     }
-    return originalSend.call(xhr, body as never);
+    return originalSend.call(this, body as never);
   };
 }

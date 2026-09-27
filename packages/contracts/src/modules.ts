@@ -321,7 +321,7 @@ export const breedingCreateSchema = z.object({
   technicianName: z.string().max(120).optional(),
   technicianPhone: z.string().max(40).optional(),
   costNpr: z.number().nonnegative().optional(),
-  pregnancyStatus: z.enum(PREGNANCY_STATUSES).default('PREGNANT'),
+  pregnancyStatus: z.enum(PREGNANCY_STATUSES).default('OPEN'),
   notes: z.string().max(2000).optional(),
 }).refine((v) => Boolean(v.motherId || v.animalId), { message: 'motherId is required' })
   .refine((v) => Boolean(v.matingDate || v.serviceDate), { message: 'serviceDate is required' });
@@ -329,6 +329,8 @@ export type BreedingCreate = z.infer<typeof breedingCreateSchema>;
 
 export const breedingUpdateSchema = z.object({
   pregnancyStatus: z.enum(PREGNANCY_STATUSES).optional(),
+  matingType: z.enum(MATING_TYPES).optional(),
+  matingDate: z.coerce.date().optional(),
   birthDate: z.coerce.date().optional(),
   offspringTag: z.string().max(20).optional(),
   offspringAnimalId: z.string().uuid().optional(),
@@ -724,8 +726,19 @@ export const heatCreateSchema = z.object({
   signList: z.array(z.enum(HEAT_SIGNS)).optional(),
   notes: z.string().max(1000).optional(),
   deviceId: z.string().max(80).optional(),
+  taskId: z.string().uuid().optional(),
 });
 export type HeatCreate = z.infer<typeof heatCreateSchema>;
+
+export const heatUpdateSchema = z.object({
+  observedAt: z.coerce.date().optional(),
+  intensity: z.enum(['WEAK', 'MEDIUM', 'STRONG', 'SILENT_SUSPECTED']).optional(),
+  observerName: z.string().max(80).optional(),
+  signs: z.string().max(500).optional(),
+  signList: z.array(z.enum(HEAT_SIGNS)).optional(),
+  notes: z.string().max(1000).optional(),
+});
+export type HeatUpdate = z.infer<typeof heatUpdateSchema>;
 
 export const heatListQuerySchema = pageQuerySchema.extend({
   animalId: z.string().uuid().optional(),
