@@ -50,7 +50,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     'expo-font',
   ],
   extra: {
-    apiUrl: process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4001',
+    apiUrl: process.env.EXPO_PUBLIC_API_URL ?? 'https://evoqedlivestockfarm.vercel.app',
     eas: {
       projectId: process.env.EAS_PROJECT_ID ?? undefined,
     },

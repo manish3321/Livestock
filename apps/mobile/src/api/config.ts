@@ -27,14 +27,34 @@ function isLoopbackAlias(hostname: string): boolean {
   );
 }
 
+/** Loopback or private-LAN dev hosts — the only origins worth rewriting to emulator/Metro hosts. */
+function isLocalDevHost(hostname: string): boolean {
+  if (isLoopbackAlias(hostname) || hostname.endsWith('.local')) return true;
+  const m = hostname.match(/^(\d+)\.(\d+)\.\d+\.\d+$/);
+  if (!m) return false;
+  const a = Number(m[1]);
+  const b = Number(m[2]);
+  return a === 10 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31);
+}
+
+function isLocalDevOrigin(raw: string): boolean {
+  try {
+    return isLocalDevHost(new URL(raw).hostname);
+  } catch {
+    return false;
+  }
+}
+
 function withHostname(raw: string, hostname: string): string {
   const url = new URL(raw);
   url.hostname = hostname;
   return url.origin.replace(/\/$/, '');
 }
 
+const PRODUCTION_ORIGIN = 'https://evoqedlivestockfarm.vercel.app';
+
 function configuredOrigin(): string {
-  return (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4001').replace(/\/$/, '');
+  return (process.env.EXPO_PUBLIC_API_URL ?? PRODUCTION_ORIGIN).replace(/\/$/, '');
 }
 
 /**
@@ -67,6 +87,7 @@ export function noteWorkingOrigin(origin: string): void {
  */
 export function apiBaseUrlCandidates(): string[] {
   const raw = configuredOrigin();
+  if (!isLocalDevOrigin(raw)) return [raw];
   const out: string[] = [];
   const add = (origin: string) => {
     if (!out.includes(origin)) out.push(origin);
@@ -123,7 +144,8 @@ export function apiBaseUrl(): string {
  * Emulator: http://10.0.2.2:5173 — Physical: same LAN rewrite as the API.
  */
 export function webBaseUrl(): string {
-  const raw = (process.env.EXPO_PUBLIC_WEB_URL ?? 'http://10.0.2.2:5173').replace(/\/$/, '');
+  const raw = (process.env.EXPO_PUBLIC_WEB_URL ?? PRODUCTION_ORIGIN).replace(/\/$/, '');
+  if (!isLocalDevOrigin(raw)) return raw;
   if (isAndroidEmulator()) {
     try {
       return withHostname(raw, '10.0.2.2');
