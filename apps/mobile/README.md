@@ -21,3 +21,4 @@ pnpm --filter @farm/mobile start
 - Tabs: **Home · Shed · Inbox · More**
 - Ember **Scan FAB** (camera QR from any screen)
 - More drawer: moss green, full module list (role-aware)
+just to redeploy
