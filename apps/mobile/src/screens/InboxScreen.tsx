@@ -6,6 +6,7 @@ import type { PageResult, TaskDismissReason, TaskDto } from '@farm/contracts';
 import { formatDateTime } from '@farm/contracts';
 import { enqueueTaskComplete } from '../core/scan-round';
 import { AppShell } from '../components/AppShell';
+import { SmsPhoneCard } from '../components/SmsPhoneCard';
 import {
   Button,
   Card,
@@ -158,6 +159,7 @@ export function InboxScreen() {
   return (
     <AppShell module="inbox">
       <PageHeader title={t('inbox.title')} subtitle={t('inbox.subtitle')} />
+      <SmsPhoneCard />
 
       <View style={styles.tabs} accessibilityRole="tablist">
         <Pressable

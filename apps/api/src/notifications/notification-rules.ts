@@ -65,6 +65,71 @@ export const TRIGGER_CATALOGUE: Record<
 };
 
 /**
+ * Decisions, money and stock buying go to the people who run the farm.
+ * Every other task type is hands-on shed work and goes to workers.
+ */
+export const MANAGEMENT_TASK_TYPES = new Set<string>([
+  'YIELD_DROP',
+  'STOCK_REORDER',
+  'LOT_EXPIRING',
+  'STOCK_RECONCILE',
+  'TANK_VARIANCE',
+  'REPEAT_BREEDER',
+  'EXPENSE_APPROVAL',
+  'UNPAID_REVENUE',
+  'ANESTRUS_VET',
+  'ANESTRUS_DECISION',
+  'PROTOCOL_BROKEN',
+  'CYCLING_UNBRED',
+  'PD_STALLED',
+]);
+
+/** A farm vet only hears about the animals that need a vet. */
+export const VET_TASK_TYPES = new Set<string>([
+  'VET_URGENT',
+  'ANESTRUS_VET',
+  'TREATMENT_FOLLOWUP',
+  'PREGNANCY_CHECK',
+  'CALF_HEALTH_CHECK',
+]);
+
+export type TaskAudience = 'FIELD' | 'MANAGEMENT';
+
+export function audienceFor(type: string): TaskAudience {
+  return MANAGEMENT_TASK_TYPES.has(type) ? 'MANAGEMENT' : 'FIELD';
+}
+
+/** Who is on the farm, so field work still reaches someone on a farm with no workers. */
+export type FarmStaffing = { workers: number; managers: number };
+
+/**
+ * Who gets pinged for a task:
+ * - CRITICAL: admin, manager and every worker (plus the vet for health cases).
+ * - Assigned task: only the assignee.
+ * - Management types: admin and manager.
+ * - Field types: workers only; managers if there are no workers; admin if neither.
+ */
+export function shouldNotify(input: {
+  task: { type: string; priority: string; assignedToId?: string | null };
+  recipient: { id: string; role: string };
+  staffing: FarmStaffing;
+}): boolean {
+  const { task, recipient, staffing } = input;
+  const role = recipient.role;
+  if (role === 'COOP') return false;
+  if (task.assignedToId === recipient.id) return true;
+  const critical = task.priority === 'CRITICAL';
+  if (role === 'VET') return VET_TASK_TYPES.has(task.type) && (critical || !task.assignedToId);
+  if (critical) return true;
+  if (task.assignedToId) return false;
+  if (audienceFor(task.type) === 'MANAGEMENT') return role === 'ADMIN' || role === 'MANAGER';
+  if (role === 'WORKER') return true;
+  if (staffing.workers > 0) return false;
+  if (role === 'MANAGER') return true;
+  return role === 'ADMIN' && staffing.managers === 0;
+}
+
+/**
  * 9.3 heat-stress has no TaskType and no weather source in this phase.
  * Keep it in the catalogue; do not invent a weather fetch.
  */

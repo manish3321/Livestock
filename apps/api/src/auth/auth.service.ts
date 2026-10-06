@@ -5,7 +5,14 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { ROLE_PERMISSIONS } from '@farm/contracts';
-import type { AuthUser, LoginRequest, LoginResponse, Role, TokenPair } from '@farm/contracts';
+import type {
+  AuthUser,
+  LoginRequest,
+  LoginResponse,
+  ProfileUpdate,
+  Role,
+  TokenPair,
+} from '@farm/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { TokenService } from './token.service';
@@ -69,6 +76,7 @@ export class AuthService {
         id: user.id,
         email: user.email,
         name: user.name,
+        phone: user.phone,
         farmId: membership.farmId,
         farmName: membership.farm.name,
         farmMode: membership.farm.mode === 'COMMERCIAL' ? 'COMMERCIAL' : 'HOUSEHOLD',
@@ -89,6 +97,7 @@ export class AuthService {
       id: user.id,
       email: user.email,
       name: user.name,
+      phone: user.phone,
       farmId,
       farmName: farm.name,
       farmMode: farm.mode === 'COMMERCIAL' ? 'COMMERCIAL' : 'HOUSEHOLD',
@@ -96,6 +105,23 @@ export class AuthService {
       role,
       permissions: [...ROLE_PERMISSIONS[role]],
     };
+  }
+
+  /** Self-service name / SMS phone. Role and farm stay admin-only. */
+  async updateProfile(
+    userId: string,
+    farmId: string,
+    role: Role,
+    input: ProfileUpdate,
+  ): Promise<AuthUser> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.phone !== undefined ? { phone: input.phone } : {}),
+      },
+    });
+    return this.me(userId, farmId, role);
   }
 
   /**

@@ -8,6 +8,7 @@ import { OfflineBanner } from './OfflineBanner';
 import { TopBar } from './shell/TopBar';
 import { BottomTabBar, type TabKey } from './shell/BottomTabBar';
 import { MoreDrawer, type DrawerDest } from './shell/MoreDrawer';
+import { ProfileSheet } from './shell/ProfileSheet';
 import { Txt } from './ui';
 import { RequireCommercial, RequireModule } from '../navigation/RequireModule';
 import { useFarm } from '../state/FarmProvider';
@@ -50,6 +51,7 @@ export function AppShell({
   const { can, household, commercial } = useAccess();
   const { locale, t, toggleLocale } = useLocale();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   const allowed = useMemo(() => {
     if (!user) return new Set<ModuleKey>();
@@ -112,8 +114,11 @@ export function AppShell({
         todayLabel={todayLabel}
         onLocale={toggleLocale}
         localeLabel={locale === 'en' ? 'नेपाली' : 'English'}
-        onSignOut={() => void logout()}
-        signOutLabel={t('nav.logout')}
+        onProfile={() => {
+          setMoreOpen(false);
+          setProfileOpen(true);
+        }}
+        profileLabel={t('profile.account')}
         userInitial={user?.name?.slice(0, 1).toUpperCase()}
       />
       <OfflineBanner
@@ -175,6 +180,16 @@ export function AppShell({
           onNavigate={onDrawerNav}
         />
       ) : null}
+      <ProfileSheet
+        open={profileOpen}
+        user={user}
+        online={online}
+        onClose={() => setProfileOpen(false)}
+        onSignOut={() => {
+          setProfileOpen(false);
+          void logout();
+        }}
+      />
     </View>
   );
 

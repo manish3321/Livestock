@@ -3079,3 +3079,16 @@ button.kpi-hit {
   .watch-count { align-items: stretch; }
   .repro-track { grid-template-columns: 1fr 1fr; }
 }
+
+/* ---- Members admin ---- */
+.member-status.on { background: var(--color-brand-subtle); color: var(--color-brand-strong); }
+.member-status.off { background: var(--color-danger-subtle); color: var(--color-danger); }
+.member-you { margin-left: 8px; background: var(--color-surface-muted); color: var(--color-text-secondary); }
+.member-check { display: flex; align-items: center; gap: 8px; font-size: 14px; align-self: end; min-height: 36px; }
+.member-editor { margin-bottom: 24px; border-color: var(--color-brand); }
+.member-editor-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.member-editor h3 { font-size: 15px; margin: 16px 0 8px; }
+.member-editor-section { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--color-border); }
+.member-inline { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.member-inline input { min-width: 220px; }
+.member-danger h3 { color: var(--color-danger); }

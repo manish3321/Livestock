@@ -4,17 +4,20 @@ import {
   Get,
   Headers,
   HttpCode,
+  Patch,
   Post,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import {
   loginRequestSchema,
+  profileUpdateSchema,
   refreshRequestSchema,
 } from '@farm/contracts';
 import type {
   LoginRequest,
   LoginResponse,
+  ProfileUpdate,
   RefreshRequest,
   TokenPair,
 } from '@farm/contracts';
@@ -62,5 +65,14 @@ export class AuthController {
   @ApiOperation({ summary: 'Current principal, role, farm mode, and permission map' })
   me(@CurrentUser() user: RequestUser) {
     return this.auth.me(user.id, user.farmId, user.role);
+  }
+
+  @Patch('me')
+  @ApiOperation({ summary: 'Update your own name or SMS phone number' })
+  updateMe(
+    @CurrentUser() user: RequestUser,
+    @Body(new ZodValidationPipe(profileUpdateSchema)) body: ProfileUpdate,
+  ) {
+    return this.auth.updateProfile(user.id, user.farmId, user.role, body);
   }
 }

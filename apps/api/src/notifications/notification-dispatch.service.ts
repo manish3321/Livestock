@@ -15,11 +15,13 @@ import {
   nepalHour,
   nepalMonthBounds,
   shouldHoldUntilMorning,
+  shouldNotify,
   silentHeatOptIn,
   smsAllowed,
   smsEncoding,
   suppressNonCritical,
   voiceClipsFor,
+  type FarmStaffing,
   type GroupableTask,
   type TaskGroup,
 } from './notification-rules';
@@ -234,7 +236,7 @@ export class NotificationDispatchService {
       for (const id of payload.taskIds ?? []) already.add(id);
     }
 
-    const pending: GroupableTask[] = open
+    const pending: Array<GroupableTask & { assignedToId: string | null }> = open
       .filter((t) => !already.has(t.id))
       .map((t) => ({
         id: t.id,
@@ -242,12 +244,12 @@ export class NotificationDispatchService {
         titleEn: t.titleEn,
         titleNp: t.titleNp,
         priority: t.priority,
+        assignedToId: t.assignedToId ?? null,
       }));
-    const groups = groupSameType(pending);
-    stats.grouped = groups.length;
+    stats.grouped = groupSameType(pending).length;
 
     const members = await this.prisma.farmMembership.findMany({
-      where: { farmId },
+      where: { farmId, user: { isActive: true } },
       include: {
         user: { include: { devices: true, notificationPreferences: true } },
       },
@@ -257,6 +259,10 @@ export class NotificationDispatchService {
       select: { id: true },
     });
     const recipients = members.map((member) => toRecipient(member, Boolean(buffalo)));
+    const staffing: FarmStaffing = {
+      workers: recipients.filter((r) => r.role === 'WORKER').length,
+      managers: recipients.filter((r) => r.role === 'MANAGER').length,
+    };
     const day = nepalDayBounds(now);
     const month = nepalMonthBounds(now);
     const monthlyCap = loadEnv().SMS_MONTHLY_CAP;
@@ -282,6 +288,9 @@ export class NotificationDispatchService {
       });
       let smsCount = smsThisMonth;
 
+      const groups = groupSameType(
+        pending.filter((task) => shouldNotify({ task, recipient, staffing })),
+      );
       for (const group of groups) {
         if (recipient.muted.has(group.type)) continue;
         const hold = shouldHoldUntilMorning({

@@ -104,6 +104,7 @@ type FarmContextValue = {
   syncNow: () => Promise<number>;
   hydrate: () => Promise<void>;
   registerPushDevice: () => Promise<void>;
+  patchUser: (partial: Partial<AuthUser>) => void;
 };
 
 const FarmContext = createContext<FarmContextValue | null>(null);
@@ -308,6 +309,10 @@ export function FarmProvider({ children }: { children: ReactNode }) {
     persist();
   }, [api, persist]);
 
+  const patchUser = useCallback((partial: Partial<AuthUser>) => {
+    setUser((prev) => (prev ? { ...prev, ...partial } : prev));
+  }, []);
+
   const value: FarmContextValue = {
     store: storeRef.current,
     api,
@@ -323,6 +328,7 @@ export function FarmProvider({ children }: { children: ReactNode }) {
     syncNow,
     hydrate,
     registerPushDevice,
+    patchUser,
   };
 
   return <FarmContext.Provider value={value}>{children}</FarmContext.Provider>;

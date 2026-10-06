@@ -21,6 +21,8 @@ const envSchema = z.object({
   TWILIO_ACCOUNT_SID: z.string().optional().default(''),
   TWILIO_AUTH_TOKEN: z.string().optional().default(''),
   TWILIO_FROM_NUMBER: z.string().optional().default(''),
+  SPARROW_SMS_TOKEN: z.string().optional().default(''),
+  SPARROW_SMS_FROM: z.string().optional().default(''),
   NOTIFICATION_CRON_SECRET: z.string().optional().default(''),
 }).superRefine((data, ctx) => {
   if (data.STORAGE_DRIVER === 'mongodb' && !data.MONGODB_URI) {

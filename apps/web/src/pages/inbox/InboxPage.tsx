@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import type { TaskDismissReason, TaskDto } from '@farm/contracts';
 import { completeTask, dismissTask, listTasks, muteTaskType, snoozeTask } from '../../api/tasks';
 import { ErrorState, LoadingState } from '../../components/PageState';
+import { SmsPhoneCard } from '../../components/SmsPhoneCard';
 import { cacheTasksForOffline, enqueueReminderOp, readCachedTasks } from '../../lib/reminder-offline';
 
 const DISMISS: TaskDismissReason[] = [
@@ -87,6 +88,8 @@ export function InboxPage() {
           <p className="page-subtitle">{t('inbox.subtitle')}</p>
         </div>
       </div>
+
+      <SmsPhoneCard />
 
       <div className="inbox-tabs" role="tablist">
         <button

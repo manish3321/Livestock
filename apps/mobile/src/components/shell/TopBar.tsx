@@ -8,16 +8,16 @@ export function TopBar({
   todayLabel,
   onLocale,
   localeLabel,
-  onSignOut,
-  signOutLabel,
+  onProfile,
+  profileLabel,
   userInitial,
 }: {
   farmName: string;
   todayLabel: string;
   onLocale: () => void;
   localeLabel: string;
-  onSignOut: () => void;
-  signOutLabel: string;
+  onProfile: () => void;
+  profileLabel: string;
   userInitial?: string;
 }) {
   const showEn = localeLabel === 'नेपाली' || localeLabel.toLowerCase().includes('ne');
@@ -52,10 +52,10 @@ export function TopBar({
       </Pressable>
 
       <Pressable
-        onPress={onSignOut}
+        onPress={onProfile}
         style={styles.notify}
         accessibilityRole="button"
-        accessibilityLabel={signOutLabel}
+        accessibilityLabel={profileLabel}
       >
         {userInitial ? (
           <Txt weight="bold" style={styles.notifyInitial}>

@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ScrollView, StyleSheet } from 'react-native';
+import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import type { RouteProp } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
-import { ROLES, formatDateTime, type Role } from '@farm/contracts';
+import { ROLES, formatDateTime, normalizeNepalMobile, type Role } from '@farm/contracts';
 import { AppShell } from '../components/AppShell';
 import { ChipSelect, Field, FormActions } from '../components/forms';
 import {
   Button,
   Card,
+  Chip,
+  ChipRow,
   EmptyState,
   ErrorText,
   ListRow,
@@ -28,10 +30,197 @@ type Member = {
   id?: string;
   email?: string;
   name?: string;
+  phone?: string | null;
   role?: Role | string;
   isActive?: boolean;
   active?: boolean;
+  literacySupport?: boolean;
+  sharedAccount?: boolean;
+  isSelf?: boolean;
+  lastSignInAt?: string | null;
 };
+
+const memberId = (m: Member) => m.userId ?? m.id ?? '';
+const memberActive = (m: Member) => m.isActive ?? m.active ?? true;
+
+function MemberEditor({
+  member,
+  roleLabels,
+  onChanged,
+  onClose,
+}: {
+  member: Member;
+  roleLabels: Record<Role, string>;
+  onChanged: () => Promise<void>;
+  onClose: () => void;
+}) {
+  const { api, patchUser } = useFarm();
+  const { t } = useLocale();
+  const id = memberId(member);
+  const self = member.isSelf === true;
+  const shared = member.sharedAccount === true;
+  const [name, setName] = useState(member.name ?? '');
+  const [email, setEmail] = useState(member.email ?? '');
+  const [phone, setPhone] = useState(member.phone ?? '');
+  const [role, setRole] = useState<Role>((member.role as Role) ?? 'WORKER');
+  const [active, setActive] = useState(memberActive(member));
+  const [voice, setVoice] = useState(member.literacySupport ?? false);
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const run = async (work: () => Promise<void>) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await work();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('errors.generic'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const save = () => {
+    const trimmedPhone = phone.trim();
+    const nextPhone = trimmedPhone ? normalizeNepalMobile(trimmedPhone) : null;
+    if (trimmedPhone && !nextPhone) {
+      setError(t('sms.invalid'));
+      return;
+    }
+    const body: Record<string, unknown> = {
+      name: name.trim() || undefined,
+      phone: nextPhone,
+      literacySupport: voice,
+    };
+    const nextEmail = email.trim().toLowerCase();
+    if (!shared && nextEmail && nextEmail !== (member.email ?? '').toLowerCase()) {
+      body.email = nextEmail;
+    }
+    if (!self) {
+      body.role = role;
+      body.isActive = active;
+    }
+    void run(async () => {
+      await api.patch(`/v1/farms/me/members/${id}`, body);
+      if (self) patchUser({ name: name.trim() || undefined, phone: nextPhone });
+      setNotice(t('members.saved'));
+      await onChanged();
+    });
+  };
+
+  const resetPassword = () => {
+    if (password.length < 8) {
+      setError(t('members.passwordTooShort'));
+      return;
+    }
+    void run(async () => {
+      await api.patch(`/v1/farms/me/members/${id}`, { password });
+      setPassword('');
+      setNotice(t('members.passwordReset'));
+    });
+  };
+
+  const remove = () => {
+    Alert.alert(t('members.remove'), t('members.removeConfirm', { name: member.name ?? member.email ?? '' }), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('members.remove'),
+        style: 'destructive',
+        onPress: () =>
+          void run(async () => {
+            await api.del(`/v1/farms/me/members/${id}`);
+            onClose();
+            await onChanged();
+          }),
+      },
+    ]);
+  };
+
+  return (
+    <View style={styles.editor}>
+      {error ? <ErrorText message={error} /> : null}
+      {notice ? <Muted>{notice}</Muted> : null}
+      <Field label={t('admin.name')} value={name} onChangeText={setName} />
+      <Field
+        label={t('admin.email')}
+        value={email}
+        onChangeText={setEmail}
+        autoCapitalize="none"
+        keyboardType="email-address"
+        editable={!shared}
+        hint={shared ? t('members.sharedHint') : undefined}
+      />
+      <Field
+        label={t('admin.phone')}
+        value={phone}
+        onChangeText={setPhone}
+        placeholder="98XXXXXXXX"
+        keyboardType="phone-pad"
+      />
+      {self ? (
+        <Muted>{t('members.selfHint')}</Muted>
+      ) : (
+        <>
+          <ChipSelect
+            label={t('admin.role')}
+            options={[...ROLES]}
+            value={role}
+            onChange={setRole}
+            labels={roleLabels}
+          />
+          <ChipSelect
+            label={t('members.canSignIn')}
+            options={['yes', 'no']}
+            value={active ? 'yes' : 'no'}
+            onChange={(v) => setActive(v === 'yes')}
+            labels={{ yes: t('common.yes'), no: t('common.no') }}
+          />
+        </>
+      )}
+      <ChipSelect
+        label={t('members.voiceAlerts')}
+        options={['yes', 'no']}
+        value={voice ? 'yes' : 'no'}
+        onChange={(v) => setVoice(v === 'yes')}
+        labels={{ yes: t('common.yes'), no: t('common.no') }}
+      />
+      <FormActions>
+        <Button label={t('common.save')} onPress={save} disabled={busy} />
+        <Button label={t('common.cancel')} variant="ghost" onPress={onClose} disabled={busy} />
+      </FormActions>
+
+      {!shared ? (
+        <View style={styles.editorSection}>
+          <SectionHead title={t('members.resetPassword')} />
+          <Muted>{t('members.resetHint')}</Muted>
+          <Field
+            label={t('members.newPassword')}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            autoCapitalize="none"
+          />
+          <Button
+            label={t('members.resetPassword')}
+            variant="secondary"
+            onPress={resetPassword}
+            disabled={busy || password.length === 0}
+          />
+        </View>
+      ) : null}
+
+      {!self ? (
+        <View style={styles.editorSection}>
+          <Muted>{t('members.removeHint')}</Muted>
+          <Button label={t('members.remove')} variant="danger" onPress={remove} disabled={busy} />
+        </View>
+      ) : null}
+    </View>
+  );
+}
 
 type AuditItem = {
   id: string;
@@ -51,13 +240,18 @@ export function AdminScreen() {
 function AdminMembers() {
   const { api, store, persist } = useFarm();
   const { can } = useAccess();
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const [members, setMembers] = useState<Member[]>([]);
+  const [query, setQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState<Role | 'ALL'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
   const [role, setRole] = useState<Role>('WORKER');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -146,11 +340,13 @@ function AdminMembers() {
       await api.post('/v1/farms/me/members', {
         email: email.trim(),
         name: name.trim(),
+        phone: phone.trim() || null,
         role,
         password: password || undefined,
       });
       setEmail('');
       setName('');
+      setPhone('');
       setPassword('');
       setShowForm(false);
       await load();
@@ -161,16 +357,15 @@ function AdminMembers() {
     }
   };
 
-  const patchMember = async (member: Member, body: { role?: Role; isActive?: boolean }) => {
-    const id = member.userId ?? member.id;
-    if (!id) return;
-    try {
-      await api.patch(`/v1/farms/me/members/${id}`, body);
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('errors.generic'));
-    }
-  };
+  const needle = query.trim().toLowerCase();
+  const visible = members.filter((m) => {
+    if (roleFilter !== 'ALL' && m.role !== roleFilter) return false;
+    if (statusFilter === 'ACTIVE' && !memberActive(m)) return false;
+    if (statusFilter === 'INACTIVE' && memberActive(m)) return false;
+    if (!needle) return true;
+    return [m.name, m.email, m.phone].some((v) => v?.toLowerCase().includes(needle));
+  });
+  const activeCount = members.filter(memberActive).length;
 
   const roleLabels = Object.fromEntries(ROLES.map((r) => [r, t(`common.role.${r}`)])) as Record<
     Role,
@@ -235,6 +430,13 @@ function AdminMembers() {
               autoCapitalize="none"
               keyboardType="email-address"
             />
+            <Field
+              label={t('admin.phone')}
+              value={phone}
+              onChangeText={setPhone}
+              placeholder="98XXXXXXXX"
+              keyboardType="phone-pad"
+            />
             <ChipSelect
               label={t('admin.role')}
               options={[...ROLES]}
@@ -254,29 +456,71 @@ function AdminMembers() {
           </Card>
         ) : null}
 
-        {members.length === 0 && !loading ? <EmptyState /> : null}
-        {members.map((m) => {
-          const id = m.userId ?? m.id ?? m.email ?? '';
-          const active = m.isActive ?? m.active ?? true;
+        {members.length > 0 ? (
+          <>
+            <Muted>{t('members.summary', { total: members.length, active: activeCount })}</Muted>
+            <Field
+              label={t('members.search')}
+              value={query}
+              onChangeText={setQuery}
+              autoCapitalize="none"
+            />
+            <ChipSelect
+              label={t('admin.role')}
+              options={['ALL', ...ROLES]}
+              value={roleFilter}
+              onChange={setRoleFilter}
+              labels={{ ALL: t('members.all'), ...roleLabels }}
+            />
+            <ChipSelect
+              label={t('members.canSignIn')}
+              options={['ALL', 'ACTIVE', 'INACTIVE']}
+              value={statusFilter}
+              onChange={setStatusFilter}
+              labels={{
+                ALL: t('members.all'),
+                ACTIVE: t('common.yes'),
+                INACTIVE: t('members.inactive'),
+              }}
+            />
+          </>
+        ) : null}
+
+        {visible.length === 0 && !loading ? <EmptyState /> : null}
+        {visible.map((m) => {
+          const id = memberId(m) || m.email || '';
+          const active = memberActive(m);
+          const editing = editingId === id;
           return (
             <Card key={id} style={styles.card}>
               <ListRow
                 title={m.name ?? m.email ?? id}
-                subtitle={m.email}
+                subtitle={[m.email, m.phone].filter(Boolean).join(' · ')}
                 meta={t(`common.role.${String(m.role ?? 'WORKER')}`)}
               />
-              <ChipSelect
-                label={t('admin.role')}
-                options={[...ROLES]}
-                value={(m.role as Role) ?? 'WORKER'}
-                onChange={(next) => void patchMember(m, { role: next })}
-                labels={roleLabels}
-              />
-              <Button
-                label={active ? t('admin.deactivate') : t('admin.activate')}
-                variant="secondary"
-                onPress={() => void patchMember(m, { isActive: !active })}
-              />
+              <ChipRow>
+                {m.isSelf ? <Chip label={t('members.you')} status="PREGNANT" /> : null}
+                {active ? null : <Chip label={t('members.inactive')} status="REJECTED" />}
+                <Muted>
+                  {m.lastSignInAt
+                    ? t('members.lastSeen', { date: formatDateTime(m.lastSignInAt, locale) })
+                    : t('members.never')}
+                </Muted>
+              </ChipRow>
+              {editing ? (
+                <MemberEditor
+                  member={m}
+                  roleLabels={roleLabels}
+                  onChanged={load}
+                  onClose={() => setEditingId(null)}
+                />
+              ) : (
+                <Button
+                  label={t('members.edit')}
+                  variant="secondary"
+                  onPress={() => setEditingId(id)}
+                />
+              )}
             </Card>
           );
         })}
@@ -350,4 +594,6 @@ function AdminAudit() {
 const styles = StyleSheet.create({
   pad: { paddingHorizontal: 16, paddingBottom: 48, gap: space.sm },
   card: { marginBottom: 16 },
+  editor: { marginTop: space.sm, gap: space.xs },
+  editorSection: { marginTop: space.md, gap: space.xs },
 });

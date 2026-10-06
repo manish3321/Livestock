@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { pageQuerySchema } from './common';
+import { optionalNepalMobileSchema } from './auth';
+import { ROLES, type Role } from './roles';
 import {
   APPROVAL_STATUSES,
   EXPENSE_CATEGORIES,
@@ -607,18 +609,42 @@ export const batchFeedCreateSchema = z.object({
 export type BatchFeedCreate = z.infer<typeof batchFeedCreateSchema>;
 
 export const farmMemberCreateSchema = z.object({
-  email: z.string().email(),
-  name: z.string().min(1).max(120),
-  role: z.enum(['ADMIN', 'MANAGER', 'WORKER']),
+  email: z.string().trim().toLowerCase().email(),
+  name: z.string().trim().min(1).max(120),
+  role: z.enum(ROLES),
   password: z.string().min(8).max(128),
+  phone: optionalNepalMobileSchema,
+  literacySupport: z.boolean().optional(),
 });
 export type FarmMemberCreate = z.infer<typeof farmMemberCreateSchema>;
 
+/** Admin edit of one member. A `password` here is a reset and signs them out everywhere. */
 export const farmMemberUpdateSchema = z.object({
-  role: z.enum(['ADMIN', 'MANAGER', 'WORKER']).optional(),
+  name: z.string().trim().min(1).max(120).optional(),
+  email: z.string().trim().toLowerCase().email().optional(),
+  role: z.enum(ROLES).optional(),
   isActive: z.boolean().optional(),
+  phone: optionalNepalMobileSchema,
+  literacySupport: z.boolean().optional(),
+  password: z.string().min(8).max(128).optional(),
 });
 export type FarmMemberUpdate = z.infer<typeof farmMemberUpdateSchema>;
+
+export interface FarmMemberDto {
+  userId: string;
+  email: string;
+  name: string;
+  phone: string | null;
+  role: Role;
+  isActive: boolean;
+  /** Voice-call alerts for people who prefer not to read. */
+  literacySupport: boolean;
+  /** Also a member of another farm: email and password are locked here. */
+  sharedAccount: boolean;
+  isSelf: boolean;
+  lastSignInAt: string | null;
+  createdAt: string;
+}
 
 export const FARM_MODES = ['HOUSEHOLD', 'COMMERCIAL'] as const;
 export type FarmMode = (typeof FARM_MODES)[number];

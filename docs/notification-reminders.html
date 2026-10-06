@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Kharka Farm OS — Notifications &amp; Reminders</title>
+  <style>
+    @page { margin: 16mm 14mm; size: A4; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", "Nirmala UI", "Helvetica Neue", Arial, sans-serif;
+      color: #1a2e22;
+      line-height: 1.45;
+      font-size: 10pt;
+      margin: 0;
+    }
+    h1 { font-size: 20pt; margin: 0 0 4px; letter-spacing: -0.02em; color: #14532d; }
+    h2 {
+      font-size: 12.5pt;
+      margin: 22px 0 8px;
+      padding-bottom: 4px;
+      border-bottom: 1.5px solid #c5d9cb;
+      color: #166534;
+      break-after: avoid;
+    }
+    h3 { font-size: 10.5pt; margin: 14px 0 6px; color: #1a2e22; break-after: avoid; }
+    p { margin: 6px 0; }
+    .meta { color: #4b6354; font-size: 9.5pt; margin-bottom: 16px; }
+    .banner {
+      background: #e8f5ec;
+      border: 1.5px solid #a7d4b5;
+      border-radius: 6px;
+      padding: 12px 14px;
+      margin-bottom: 8px;
+    }
+    .note {
+      background: #fff8e6;
+      border: 1.5px solid #f2d48a;
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin: 10px 0;
+      font-size: 9.5pt;
+    }
+    ul, ol { margin: 6px 0 10px; padding-left: 1.2em; }
+    li { margin-bottom: 4px; }
+    table { width: 100%; border-collapse: collapse; font-size: 8.8pt; margin: 6px 0 12px; }
+    tr { break-inside: avoid; }
+    th, td { border: 1px solid #c5d9cb; padding: 5px 7px; text-align: left; vertical-align: top; }
+    th { background: #e8f5ec; color: #14532d; }
+    td.np { font-family: "Nirmala UI", "Segoe UI", sans-serif; color: #3f5a49; font-size: 8.6pt; }
+    .u {
+      display: inline-block;
+      font-size: 7.5pt;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      padding: 1px 6px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+    .crit { background: #fee2e2; color: #991b1b; }
+    .high { background: #ffedd5; color: #9a3412; }
+    .norm { background: #dbeafe; color: #1e3a8a; }
+    .low  { background: #f1f5f9; color: #475569; }
+    .new  { background: #dcfce7; color: #14532d; }
+    .ch { font-size: 8pt; color: #4b6354; }
+    code {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 8.5pt;
+      background: #f0f7f2;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+    .grid2 { display: flex; gap: 12px; }
+    .grid2 > div { flex: 1; }
+    .footer {
+      margin-top: 26px;
+      padding-top: 10px;
+      border-top: 1px solid #c5d9cb;
+      font-size: 8.5pt;
+      color: #4b6354;
+    }
+    .pb { break-before: page; }
+  </style>
+</head>
+<body>
+
+  <h1>Notifications &amp; Reminders</h1>
+  <p class="meta">
+    Kharka Farm OS · Livestock monorepo · Prepared 3 Oct 2026<br />
+    Covers the API (<code>apps/api</code>), mobile app (<code>apps/mobile</code>) and web Inbox (<code>apps/web</code>).
+  </p>
+
+  <div class="banner">
+    <strong>In one paragraph.</strong> Every reminder is a <em>task</em> in the farm's Inbox. Tasks are created
+    automatically from farm events (a calving, a heat, a service, low stock, an unpaid sale) or by scheduled checks.
+    A dispatcher then delivers each due task as a <strong>push notification</strong>, and for the most urgent ones also
+    by <strong>SMS</strong> and a recorded <strong>Nepali voice call</strong>. Anti-fatigue rules hold back non-urgent alerts
+    at night, cap how many a farmer gets per day, and bundle similar ones together. Urgent alerts that nobody
+    acknowledges escalate to the manager, then the owner. The phone also keeps alarms for urgent tasks so they still
+    ring with no signal.
+  </div>
+
+  <h2>1. How a reminder reaches the farmer</h2>
+  <ol>
+    <li><strong>A task is created.</strong> Triggered by an event (e.g. recording a calving creates the colostrum reminders),
+      or by the nightly / hourly checks (e.g. stock below reorder level). Creating the same task twice changes nothing.</li>
+    <li><strong>It appears in the Inbox</strong> on web and mobile, with a button that opens the right form.</li>
+    <li><strong>The dispatcher sends it</strong> when it falls due, applying the delivery rules in section 2.</li>
+    <li><strong>The phone schedules an offline alarm</strong> for urgent task types, so it fires even without internet.</li>
+    <li><strong>The farmer acts</strong> — Do, Done, Snooze or Dismiss — and the task closes.</li>
+  </ol>
+
+  <h3>Delivery channels</h3>
+  <table>
+    <tr><th style="width:18%">Channel</th><th style="width:22%">Used for</th><th>How it works</th></tr>
+    <tr>
+      <td><strong>Push notification</strong></td>
+      <td>Every reminder</td>
+      <td>Sent through Firebase Cloud Messaging (installed app) or the Expo push service (Expo Go testing).
+        The phone registers its push token after login. Android channels: <em>Critical farm alerts</em> (max importance) and <em>Farm reminders</em>.</td>
+    </tr>
+    <tr>
+      <td><strong>SMS</strong></td>
+      <td>Critical alerts, and High alerts overdue by 24 h</td>
+      <td>Sent through <strong>Sparrow SMS</strong> (Nepal, NTC + Ncell), with Twilio as a fallback. Goes to the mobile number each person
+        saves in the Inbox <em>SMS alerts</em> card, or that an admin sets on the Members page (Nepal mobiles only, e.g. 98XXXXXXXX).
+        Capped at <strong>40 SMS per farm per Nepali month</strong> (<code>SMS_MONTHLY_CAP</code>).
+        Nepali text uses 70 characters per SMS segment, English 160.</td>
+    </tr>
+    <tr>
+      <td><strong>Voice call</strong></td>
+      <td>Critical alerts and escalations</td>
+      <td>Built from pre-recorded Nepali voice clips spliced together (e.g. "colostrum" + "number is" + digits).
+        Never machine text-to-speech. Queued for now; not dialled yet.</td>
+    </tr>
+    <tr>
+      <td><strong>Offline phone alarm</strong></td>
+      <td>Urgent types (section 5)</td>
+      <td>Scheduled on the phone itself from tasks synced in the last 30 days, so it rings with no signal.</td>
+    </tr>
+    <tr>
+      <td><strong>Inbox</strong></td>
+      <td>Everything</td>
+      <td>Web and mobile list of open tasks with actions. Works offline from the last synced copy.</td>
+    </tr>
+  </table>
+
+  <h3>Who gets which reminder</h3>
+  <table>
+    <tr><th style="width:26%">Reminder</th><th style="width:30%">Sent to</th><th>Examples</th></tr>
+    <tr><td><span class="u crit">CRITICAL</span> (any type)</td>
+      <td><strong>Everyone</strong>: admin, manager and all workers</td>
+      <td>Calving today, colostrum, retained placenta, urgent vet, calf health check.</td></tr>
+    <tr><td><strong>Shed work</strong></td>
+      <td><strong>Workers only</strong>. If the farm has no workers, the manager; if no manager either, the admin.</td>
+      <td>Heat watch, service window, vaccination, medication dose, dry-off, milk withhold end, missing milk log, markers, sync injections.</td></tr>
+    <tr><td><strong>Decisions &amp; money</strong></td>
+      <td><strong>Admin and manager</strong></td>
+      <td>Expense approval, unpaid revenue, stock reorder, expiring lots, stock count, tank variance, yield drop,
+        repeat breeder, anestrus vet / decision, protocol broken, cycling unbred, pregnancy check stalled.</td></tr>
+    <tr><td><strong>Assigned task</strong></td>
+      <td>Only the person it's assigned to (Critical still goes to everyone)</td>
+      <td>A vaccination assigned to one worker.</td></tr>
+    <tr><td><strong>Farm vet</strong></td>
+      <td>Only animals that need a vet</td>
+      <td>Urgent vet, anestrus vet, treatment follow-up, pregnancy check, calf health check.</td></tr>
+  </table>
+
+  <h2>2. Delivery rules (anti-fatigue)</h2>
+  <table>
+    <tr><th style="width:26%">Rule</th><th>What it does</th></tr>
+    <tr><td><strong>Quiet hours 20:00 – 05:00</strong></td>
+      <td>Non-critical alerts are held and delivered at 05:00 Nepal time. <span class="u crit">CRITICAL</span> alerts always go through immediately.</td></tr>
+    <tr><td><strong>Buffalo silent-heat exception</strong></td>
+      <td>The buffalo silent-heat check is allowed out at <strong>04:00</strong>, because buffalo show heat mostly before dawn.
+        On by default for buffalo farms; can be switched off per user.</td></tr>
+    <tr><td><strong>Daily cap</strong></td>
+      <td>At most <strong>5 non-critical pushes per person per day</strong>. Extra ones stay in the Inbox but don't buzz the phone.</td></tr>
+    <tr><td><strong>Grouping</strong></td>
+      <td>Same-type alerts are bundled into one push, e.g. <em>"6 animals to check for heat this morning"</em> or
+        <em>"4 animals due for FMD"</em>. <strong>Never grouped:</strong> colostrum, calving watch, urgent vet, and sync-protocol injections —
+        one animal, one alert.</td></tr>
+    <tr><td><strong>SMS gate</strong></td>
+      <td>SMS only for Critical alerts, or High alerts more than 24 h overdue, and only while the monthly cap has room.</td></tr>
+    <tr><td><strong>Escalation</strong></td>
+      <td>An unacknowledged Critical alert escalates to the <strong>manager after 30 minutes</strong> and the <strong>owner after 60 minutes</strong>.</td></tr>
+    <tr><td><strong>Mute offer</strong></td>
+      <td>After a user dismisses the same reminder type <strong>3 times</strong>, they're offered to mute it for <strong>14 days</strong>. Never offered for Critical types.</td></tr>
+    <tr><td><strong>Expiry</strong></td>
+      <td>Open tasks more than <strong>30 days</strong> past due are marked expired by the nightly job.</td></tr>
+  </table>
+
+  <h3>When things run</h3>
+  <table>
+    <tr><th style="width:26%">Job</th><th style="width:22%">Schedule (Nepal time)</th><th>Purpose</th></tr>
+    <tr><td><strong>Dispatcher</strong></td><td>Every 5 minutes</td>
+      <td>Sends due tasks as push / SMS / voice, applying the rules above.</td></tr>
+    <tr><td><strong>Hourly job</strong></td><td>Every hour, on the hour</td>
+      <td>Service windows closing / missed; escalates unacknowledged Critical alerts.</td></tr>
+    <tr><td><strong>Nightly job</strong></td><td>01:00 daily</td>
+      <td>Breeding stages and stage reminders, anestrus ladder, protocol checks, vaccinations, withhold ends,
+        stock, missing milk, finance, profit metrics, and expiring stale tasks.</td></tr>
+  </table>
+  <div class="note">
+    <strong>On Vercel:</strong> serverless hosting doesn't run timers. The dispatcher is triggered every 5 minutes by the
+    GitHub Action <code>notification-dispatch.yml</code> calling <code>POST /v1/notifications/dispatch</code>.
+    The <strong>hourly and nightly jobs do not yet have an external trigger on Vercel</strong>, so in production their reminders
+    are only created by in-app events until one is added.
+  </div>
+
+  <h2 class="pb">3. Reminder catalogue</h2>
+  <p>
+    <span class="u crit">CRITICAL</span> push + SMS (+ voice where noted), escalates ·
+    <span class="u high">HIGH</span> push; SMS if 24 h overdue ·
+    <span class="u norm">NORMAL</span> push ·
+    <span class="u low">LOW</span> push, lowest priority ·
+    <span class="u new">NEW</span> added in the latest release.
+    <br /><code>[tag]</code> is the animal's short herd number.
+  </p>
+
+  <h3>3.1 Calving &amp; newborn care</h3>
+  <table>
+    <tr><th style="width:17%">Reminder</th><th style="width:20%">When</th><th style="width:9%">Urgency</th><th style="width:10%">Channels</th><th>Message (English)</th><th style="width:24%">Message (Nepali)</th></tr>
+    <tr><td>Calving in 7 days</td><td>7 days before expected calving, 08:00</td><td><span class="u high">HIGH</span></td><td class="ch">Push</td><td>[tag] calving in 7 days</td><td class="np">[tag] ७ दिनमा बियाउने</td></tr>
+    <tr><td>Calving in 3 days</td><td>3 days before, 08:00</td><td><span class="u crit">CRITICAL</span></td><td class="ch">Push, SMS</td><td>[tag] calving in 3 days</td><td class="np">[tag] ३ दिनमा बियाउने</td></tr>
+    <tr><td>Calving tomorrow</td><td>1 day before, 08:00</td><td><span class="u crit">CRITICAL</span></td><td class="ch">Push, SMS</td><td>[tag] calving tomorrow</td><td class="np">[tag] भोलि बियाउने</td></tr>
+    <tr><td>Calving today</td><td>Due date, 06:00</td><td><span class="u crit">CRITICAL</span></td><td class="ch">Push, SMS</td><td>[tag] due to calve today</td><td class="np">[tag] आज बियाउने</td></tr>
+    <tr><td>Calving overdue</td><td>3 days past due date</td><td><span class="u high">HIGH</span></td><td class="ch">Push, SMS</td><td>[tag] is 3 days past the due date</td><td class="np">[tag] तोकिएको मितिभन्दा ३ दिन ढिलो</td></tr>
+    <tr><td>Calving well overdue</td><td>Well past due date</td><td><span class="u crit">CRITICAL</span></td><td class="ch">Push, SMS, Voice</td><td>[tag] is well past the due date — check for a lost pregnancy or an unrecorded calving</td><td class="np">[tag] धेरै ढिलो — गर्भ गएको वा बियाएको तर नलेखिएको हुन सक्छ</td></tr>
+    <tr><td>Colostrum 1</td><td>2 h after calving</td><td><span class="u crit">CRITICAL</span></td><td class="ch">Push, SMS, Voice</td><td>Colostrum for [tag] — feed within 6 hours of birth</td><td class="np">[tag] लाई बिगौती — जन्मको ६ घण्टाभित्र खुवाउनुहोस्</td></tr>
+    <tr><td>Colostrum 2</td><td>6 h after the first feed</td><td><span class="u crit">CRITICAL</span></td><td class="ch">Push, SMS</td><td>Second colostrum for [tag]</td><td class="np">[tag] को दोस्रो बिगौती</td></tr>
+    <tr><td>Colostrum 3</td><td>8 h after the second feed</td><td><span class="u high">HIGH</span></td><td class="ch">Push</td><td>Third colostrum for [tag]</td><td class="np">[tag] को तेस्रो बिगौती</td></tr>
+    <tr><td>Retained placenta</td><td>12 h after calving</td><td><span class="u crit">CRITICAL</span></td><td class="ch">Push, SMS, Voice</td><td>Check [tag] — placenta should have expelled by now</td><td class="np">[tag] जाँच — खेर अहिलेसम्म झरिसक्नुपर्छ</td></tr>
+    <tr><td>Post-calving check</td><td>Day 7 and day 21, 08:00</td><td><span class="u norm">NORMAL</span></td><td class="ch">Push</td><td>Day-7 / Day-21 post-calving check [tag]</td><td class="np">[tag] बियाएको ७ / २१ दिन जाँच</td></tr>
+    <tr><td>High-risk calf</td><td>Daily from day 1 if colostrum was late, up to 21 days</td><td><span class="u high">HIGH</span></td><td class="ch">Push</td><td>High-risk calf [tag] — daily check</td><td class="np">जोखिममा बाच्छा [tag] — दैनिक जाँच</td></tr>
+  </table>
+
+  <h3>3.2 Heat &amp; breeding</h3>
+  <table>
+    <tr><th style="width:17%">Reminder</th><th style="width:20%">When</th><th style="width:9%">Urgency</th><th style="width:10%">Channels</th><th>Message (English)</th><th style="width:24%">Message (Nepali)</th></tr>
+    <tr><td>Wait period ending</td><td>3 days before the post-calving wait ends, 08:00</td><td><span class="u low">LOW</span></td><td class="ch">Push</td><td>[tag] — voluntary wait ends in 3 days. Start watching for heat.</td><td class="np">[tag] — पर्खाइ ३ दिनमा सकिन्छ। गर्मी हेर्न सुरु गर्नुहोस्।</td></tr>
+    <tr><td>Daily heat watch</td><td>Every morning 05:00 while awaiting heat</td><td><span class="u norm">NORMAL</span></td><td class="ch">Push</td><td>Heat watch [tag] this morning</td><td class="np">आज बिहान [tag] को गर्मी हेर्नुहोस्</td></tr>
+    <tr><td>Next heat expected</td><td>2 days before the next expected heat, 05:00</td><td><span class="u high">HIGH</span></td><td class="ch">Push</td><td>[tag] should be in heat again in 2 days</td><td class="np">[tag] फेरि २ दिनमा गर्मीमा हुनुपर्छ</td></tr>
+    <tr><td>Service window open</td><td>When a heat is recorded</td><td><span class="u high">HIGH</span></td><td class="ch">Push, SMS</td><td>Breed [tag] now — the service window is open</td><td class="np">[tag] लाई अहिले सेवा दिनुहोस् — समय खुल्यो</td></tr>
+    <tr><td>Service window closing</td><td>3 h before the window closes</td><td><span class="u high">HIGH</span></td><td class="ch">Push, SMS</td><td>Service window for [tag] closes in 3 hours</td><td class="np">[tag] को सेवा समय ३ घण्टामा बन्द हुन्छ</td></tr>
+    <tr><td>Service window missed</td><td>After the window closes with no service</td><td><span class="u norm">NORMAL</span></td><td class="ch">Push</td><td>Service window missed for [tag] — watch for the next heat</td><td class="np">[tag] को सेवा समय सकियो — अर्को गर्मी हेर्नुहोस्</td></tr>
+    <tr><td>Return-to-heat watch</td><td>After a service, around the next cycle, 05:00</td><td><span class="u norm">NORMAL</span></td><td class="ch">Push</td><td>Heat watch [tag] — if she cycles, the service failed</td><td class="np">[tag] गर्मी हेर्नुहोस् — आएमा सेवा असफल</td></tr>
+    <tr><td>Cycling but unbred</td><td>3rd heat this lactation with no service</td><td><span class="u high">HIGH</span></td><td class="ch">Push</td><td>[tag] — three heats and no service</td><td class="np">[tag] — तीन पटक रजस्वला, सेवा छैन</td></tr>
+    <tr><td>Repeat breeder</td><td>On the 3rd service</td><td><span class="u high">HIGH</span></td><td class="ch">Push</td><td>[tag] is on service [n]. Check: energy deficit, uterine infection, AI timing, semen handling. Cumulative AI cost: NPR [cost].</td><td class="np">[tag] को [n] औं सेवा। दानामा उर्जा, संक्रमण, एआई समय, वीर्य जाँच्नुहोस्।</td></tr>
+    <tr><td>Repeat breeder — vet</td><td>14 days after the repeat-breeder flag, still open</td><td><span class="u high">HIGH</span></td><td class="ch">Push</td><td>[tag] is still open 14 days after the repeat-breeder flag. Call the vet.</td><td class="np">[tag] १४ दिनपछि पनि खुला छ। पशु चिकित्सक बोलाउनुहोस्।</td></tr>
+  </table>
+
+  <h3>3.3 Pregnancy &amp; dry-off</h3>
+  <table>
+    <tr><th style="width:17%">Reminder</th><th style="width:20%">When</th><th style="width:9%">Urgency</th><th style="width:10%">Channels</th><th>Message (English)</th><th style="width:24%">Message (Nepali)</th></tr>
+    <tr><td>Pregnancy check due</td><td>Species pregnancy-check day after service, 08:00</td><td><span class="u high">HIGH</span></td><td class="ch">Push</td><td>Pregnancy check [tag]</td><td class="np">[tag] को गर्भ जाँच</td></tr>
+    <tr><td>Pregnancy check overdue</td><td>14 days after it was due</td><td><span class="u high">HIGH</span></td><td class="ch">Push, SMS</td><td>Pregnancy check overdue — [tag]</td><td class="np">गर्भ जाँच ढिलो — [tag]</td></tr>
+    <tr><td>Never checked</td><td>45 days after it was due</td><td><span class="u high">HIGH</span></td><td class="ch">Push, SMS</td><td>Bred [n] days ago and never checked. She may be carrying — do not breed again until examined.</td><td class="np">[n] दिनअघि सेवा, जाँच भएको छैन। जाँच नगरी फेरि सेवा नदिनुहोस्।</td></tr>
+    <tr><td>Dry-off due</td><td>Species dry-off date before calving, 08:00</td><td><span class="u high">HIGH</span></td><td class="ch">Push, SMS</td><td>Dry off [tag] — confirm she is still pregnant first</td><td class="np">[tag] को दूध बन्द गर्नुहोस् — पहिले गर्भ पक्का गर्नुहोस्</td></tr>
+    <tr><td>Dry-off overdue</td><td>Past dry-off date and still milking</td><td><span class="u high">HIGH</span></td><td class="ch">Push, SMS</td><td>[tag] is still milking — dry-off is overdue</td><td class="np">[tag] अझै दूध दिँदैछ — दूध बन्द गर्न ढिलो भयो</td></tr>
+    <tr><td>Transition feed</td><td>21 days before calving, 08:00</td><td><span class="u norm">NORMAL</span></td><td class="ch">Push</td><td>Transition feed for [tag] — 21 days to calving</td><td class="np">[tag] को दाना बदल्नुहोस् — बियाउन २१ दिन</td></tr>
+  </table>
+
+  <h3>3.4 No heat (anestrus) ladder</h3>
+  <table>
+    <tr><th style="width:17%">Reminder</th><th style="width:20%">When</th><th style="width:9%">Urgency</th><th style="width:10%">Channels</th><th>Message (English)</th><th style="width:24%">Message (Nepali)</th></tr>
+    <tr><td>Keep watching</td><td>When no heat is suspected</td><td><span class="u norm">NORMAL</span></td><td class="ch">Push</td><td>[tag] has not shown heat — keep watching</td><td class="np">[tag] लाई गर्मी आएको छैन — हेर्दै रहनुहोस्</td></tr>
+    <tr><td>Silent heat — buffalo</td><td>Every 3 days at 04:00</td><td><span class="u norm">NORMAL</span></td><td class="ch">Push</td><td>Check [tag] between 4 and 7am — buffalo silent heat</td><td class="np">[tag] बिहान ४ देखि ७ बजेसम्म हेर्नुहोस् — मौन गर्मी</td></tr>
+    <tr><td>Silent heat — cow</td><td>Every 3 days at 05:00</td><td><span class="u norm">NORMAL</span></td><td class="ch">Push</td><td>Check [tag] at dawn — possible silent heat</td><td class="np">[tag] बिहानै हेर्नुहोस् — मौन गर्मी हुन सक्छ</td></tr>
+    <tr><td>Try minerals</td><td>30 days into no-heat</td><td><span class="u norm">NORMAL</span></td><td class="ch">Push</td><td>[tag] has not shown heat for [days] days. Try a daily mineral mixture for 3 weeks before calling the vet — about NPR 400.</td><td class="np">[tag] लाई [days] दिन गर्मी छैन। ३ हप्ता खनिज मिश्रण दिनुहोस् — करिब रु ४००।</td></tr>
+    <tr><td>Call the vet</td><td>60 days into no-heat</td><td><span class="u high">HIGH</span></td><td class="ch">Push, SMS</td><td>[tag] — [days] days without heat. Call the vet.</td><td class="np">[tag] — [days] दिन गर्मी छैन। पशु चिकित्सक बोलाउनुहोस्।</td></tr>
+    <tr><td>Decision point</td><td>90 days into no-heat</td><td><span class="u high">HIGH</span></td><td class="ch">Push, SMS</td><td>[days] days without heat. Delay is costing about NPR [cost]. Options: CIDR protocol, continue waiting, or sell.</td><td class="np">ढिलाइ करिब रु [cost]। विकल्प: सिडर, पर्खिने, वा बेच्ने।</td></tr>
+  </table>
+
+  <h3>3.5 Synchronisation protocols &amp; heifers</h3>
+  <table>
+    <tr><th style="width:17%">Reminder</th><th style="width:20%">When</th><th style="width:9%">Urgency</th><th style="width:10%">Channels</th><th>Message (English)</th><th style="width:24%">Message (Nepali)</th></tr>
+    <tr><td>Protocol injection</td><td>On each protocol step day</td><td><span class="u high">HIGH</span></td><td class="ch">Push, SMS</td><td>Injection due for [tag]</td><td class="np">[tag] को सुई दिनुहोस्</td></tr>
+    <tr><td>Injection late</td><td>6 h after a missed step</td><td><span class="u crit">CRITICAL</span></td><td class="ch">Push, SMS, Voice</td><td>Injection for [tag] is 6 hours late — the protocol will break if this is missed</td><td class="np">[tag] को सुई ६ घण्टा ढिलो — छुट्यो भने प्रोटोकल रद्द हुन्छ</td></tr>
+    <tr><td>Protocol AI day</td><td>On the protocol's AI day</td><td><span class="u crit">CRITICAL</span></td><td class="ch">Push, SMS</td><td>AI due today for [tag]</td><td class="np">[tag] लाई आज एआई दिनुहोस्</td></tr>
+    <tr><td>Protocol broken</td><td>Nightly, when a step was missed</td><td><span class="u high">HIGH</span></td><td class="ch">Push</td><td>Protocol for [tag] is void — a missed injection. Restart, or switch to CIDR.</td><td class="np">[tag] को प्रोटोकल रद्द — सुई छुट्यो।</td></tr>
+    <tr><td>Heifer ready</td><td>When a heifer reaches breeding age</td><td><span class="u norm">NORMAL</span></td><td class="ch">Push</td><td>[tag] is old enough to breed</td><td class="np">[tag] प्रजनन उमेर पुग्यो</td></tr>
+    <tr><td>Weigh heifer</td><td>Every 30 days while ready</td><td><span class="u norm">NORMAL</span></td><td class="ch">Push</td><td>Weigh [tag] — heifers need a target weight before first service</td><td class="np">[tag] तौलनुहोस् — पहिलो सेवाअघि तौल पुग्नुपर्छ</td></tr>
+    <tr><td>Heifer overdue</td><td>180 days after ready, still unbred</td><td><span class="u high">HIGH</span></td><td class="ch">Push</td><td>[tag] has been ready to breed for 180 days. Accumulated rearing cost: NPR [cost].</td><td class="np">[tag] १८० दिनदेखि प्रजनन तयार छ।</td></tr>
+  </table>
+
+  <h3>3.6 Health &amp; treatment</h3>
+  <table>
+    <tr><th style="width:20%">Reminder</th><th style="width:34%">When</th><th style="width:10%">Urgency</th><th>Notes</th></tr>
+    <tr><td>Vaccination due</td><td>Nightly, from the vaccination schedule</td><td><span class="u high">HIGH</span></td><td>Grouped by disease, e.g. "4 animals due for FMD". Offline phone alarm.</td></tr>
+    <tr><td>Medication dose</td><td>Each scheduled dose of a treatment</td><td><span class="u high">HIGH</span></td><td>Offline phone alarm.</td></tr>
+    <tr><td>Treatment follow-up</td><td>Follow-up date set on a treatment</td><td><span class="u high">HIGH</span></td><td>Opens the treatment form.</td></tr>
+    <tr><td>Urgent vet</td><td>Retained placenta and other emergencies</td><td><span class="u crit">CRITICAL</span></td><td>Push, SMS, voice; never grouped; escalates.</td></tr>
+    <tr><td>Milk withhold ends</td><td>When an antibiotic milk withhold expires</td><td><span class="u norm">NORMAL</span></td><td>"Withhold ends for [tag]" — milk can go back in the tank.</td></tr>
+  </table>
+
+  <h3>3.7 Milk, shed &amp; stock</h3>
+  <table>
+    <tr><th style="width:20%">Reminder</th><th style="width:34%">When</th><th style="width:10%">Urgency</th><th>Notes</th></tr>
+    <tr><td>Missing milk record</td><td>Nightly, for milking animals with no milk entry after 20:00</td><td><span class="u low">LOW</span></td><td>"No milk recorded for [tag]".</td></tr>
+    <tr><td>Yield drop</td><td>When an animal's yield falls sharply</td><td><span class="u high">HIGH</span></td><td>Opens the Shed.</td></tr>
+    <tr><td>Tank variance</td><td>When the tank reading doesn't match recorded milk</td><td><span class="u high">HIGH</span></td><td>Opens the Shed.</td></tr>
+    <tr><td>Apply / remove marker</td><td>Marker cohort changes</td><td><span class="u high">HIGH</span></td><td>Can only be completed by scanning the tag.</td></tr>
+    <tr><td>Re-tag required</td><td>Lost or unreadable tag</td><td><span class="u high">HIGH</span></td><td>Opens Animals.</td></tr>
+    <tr><td>Low stock</td><td>Nightly, item below its reorder level</td><td><span class="u norm">NORMAL</span></td><td>"Low stock: [item]". Offline phone alarm.</td></tr>
+    <tr><td>Lot expiring</td><td>Nightly, item or lot near expiry</td><td><span class="u high">HIGH</span> ≤ 7 days, else <span class="u norm">NORMAL</span></td><td>"[item] lot [n] expires [date]".</td></tr>
+    <tr><td>Stock reconcile</td><td>Nightly, a lot shows negative quantity</td><td><span class="u high">HIGH</span></td><td>"Lot is negative — record the purchase".</td></tr>
+  </table>
+
+  <h3>3.8 Finance <span class="u new">NEW</span></h3>
+  <table>
+    <tr><th style="width:20%">Reminder</th><th style="width:34%">When</th><th style="width:10%">Urgency</th><th>Notes</th></tr>
+    <tr><td>Expense approval</td><td>Nightly, for each expense pending or escalated</td><td><span class="u high">HIGH</span></td><td>"Expense approval: [category] ([amount])". Opens Expenses. Offline phone alarm.</td></tr>
+    <tr><td>Unpaid revenue</td><td>Nightly, for each sale with payment pending or partial</td><td><span class="u norm">NORMAL</span></td><td>"Unpaid revenue: [source] ([amount])". Opens Revenue. Offline phone alarm.</td></tr>
+  </table>
+  <p style="font-size:9pt;color:#4b6354">Heat stress (temperature-humidity index above 78) is defined as a High alert but has no weather data source yet, so it doesn't fire.</p>
+
+  <h2 class="pb">4. Inbox actions</h2>
+  <div class="grid2">
+    <div>
+      <ul>
+        <li><strong>Do</strong> — opens the right form directly (e.g. colostrum form, pregnancy check, Expenses).</li>
+        <li><strong>Done</strong> — closes the task. Works offline; it syncs when back online.</li>
+        <li><strong>Snooze</strong> — +1 hour, +1 day or +1 week.</li>
+        <li><strong>Dismiss</strong> — with a reason: not needed, already done offline, animal sold, wrong animal, other. Works offline.</li>
+      </ul>
+    </div>
+    <div>
+      <ul>
+        <li><strong>Active / Completed tabs</strong> and a <strong>Mine only</strong> filter.</li>
+        <li><strong>Marker tasks</strong> can only be closed by scanning the animal's tag.</li>
+        <li><strong>Mute offer</strong> appears after 3 dismissals of the same type.</li>
+        <li>Titles show in the user's chosen language (English or Nepali).</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Where "Do" takes you</h3>
+  <table>
+    <tr><th style="width:22%">Opens</th><th>Reminder types</th></tr>
+    <tr><td>Breeding forms</td><td>Colostrum, calving watch, heat watch, silent heat, service window, pregnancy check, repeat breeder, protocol injections and AI, anestrus steps, never-checked pregnancy</td></tr>
+    <tr><td>Health</td><td>Vaccination, medication dose, treatment follow-up, urgent vet, post-calving and calf checks</td></tr>
+    <tr><td>Shed</td><td>Missing milk, yield drop, tank variance, milk withhold end, markers</td></tr>
+    <tr><td>Inventory</td><td>Low stock, lot expiring, stock reconcile</td></tr>
+    <tr><td>Animals / Feed</td><td>Dry-off, re-tag / transition feed</td></tr>
+    <tr><td>Expenses / Revenue</td><td>Expense approval / unpaid revenue</td></tr>
+  </table>
+
+  <h2>5. Offline phone alarms</h2>
+  <p>
+    The app schedules alarms on the phone for these types, using tasks synced in the last 30 days.
+    They ring at the due time even with no internet:
+  </p>
+  <p>
+    Colostrum · Calving watch · Urgent vet · Vaccination due · Medication dose · Service window ·
+    Low stock · Expense approval · Unpaid revenue
+  </p>
+  <p style="font-size:9pt;color:#4b6354">
+    Heat-watch reminders are deliberately not offline alarms because they come every morning for many animals;
+    they arrive as push notifications when online.
+  </p>
+
+  <h2>6. Production setup checklist</h2>
+  <table>
+    <tr><th style="width:40%">Setting</th><th style="width:16%">Where</th><th>Needed for</th></tr>
+    <tr><td><code>FCM_SERVICE_ACCOUNT_JSON</code> (one-line Firebase key)</td><td>Vercel env</td><td>Push to installed (EAS) builds. Expo Go push works without it.</td></tr>
+    <tr><td><code>NOTIFICATION_CRON_SECRET</code></td><td>Vercel env + GitHub secret</td><td>Lets the GitHub Action trigger the dispatcher.</td></tr>
+    <tr><td><code>API_BASE_URL</code> = <code>https://evoqedlivestockfarm.vercel.app</code></td><td>GitHub secret</td><td>Dispatcher trigger target.</td></tr>
+    <tr><td><code>ENABLE_NOTIFICATION_CRON</code> = <code>true</code></td><td>GitHub variable</td><td>Turns the 5-minute dispatcher trigger on.</td></tr>
+    <tr><td><code>SPARROW_SMS_TOKEN</code>, <code>SPARROW_SMS_FROM</code></td><td>Vercel env</td><td>SMS through Sparrow SMS (recommended for Nepal). Used first when set.</td></tr>
+    <tr><td><code>TWILIO_ACCOUNT_SID</code>, <code>TWILIO_AUTH_TOKEN</code>, <code>TWILIO_FROM_NUMBER</code></td><td>Vercel env</td><td>Fallback SMS provider (optional; SMS is only logged if neither is set).</td></tr>
+    <tr><td>Each person's mobile number</td><td>Inbox &rarr; SMS alerts, or Members page</td><td>Without a saved number, that person gets push only.</td></tr>
+    <tr><td><code>SMS_MONTHLY_CAP</code></td><td>Vercel env</td><td>Optional; defaults to 40 per farm per month.</td></tr>
+    <tr><td>External trigger for hourly + nightly jobs</td><td>To build</td><td>Scheduled reminders (stock, vaccinations, breeding ladder, finance) on Vercel.</td></tr>
+  </table>
+
+  <div class="footer">
+    Source of truth: <code>apps/api/src/notifications/notification-rules.ts</code> (delivery rules and urgency),
+    <code>apps/api/src/breeding/reminder-catalog.ts</code> (breeding and calving reminders),
+    <code>apps/api/src/jobs/nightly.job.ts</code> and <code>hourly.job.ts</code> (scheduled checks),
+    <code>apps/mobile/src/core/notify.ts</code> (offline phone alarms).
+    Farms can override breeding reminder rules per farm; this document lists the system defaults.
+  </div>
+
+</body>
+</html>

@@ -179,9 +179,9 @@ describe('notification dispatch', () => {
     state.tasks.push(
       task({
         id: randomUUID(),
-        type: 'STOCK_REORDER',
-        titleEn: 'Low stock',
-        titleNp: 'स्टक कम',
+        type: 'MILK_WITHHOLD_END',
+        titleEn: 'Withhold ends',
+        titleNp: 'दूध रोक्ने अवधि सकियो',
         priority: 'NORMAL',
         dueAt: evening,
       }),
@@ -215,12 +215,12 @@ describe('notification dispatch', () => {
   it('suppresses the sixth non-critical of the day', async () => {
     const now = atNepalHour(10);
     const types = [
-      'STOCK_REORDER',
-      'LOT_EXPIRING',
+      'HEAT_WATCH',
+      'POSTPARTUM_CHECK',
       'MISSING_PRODUCTION',
       'MILK_WITHHOLD_END',
       'DRY_OFF',
-      'YIELD_DROP',
+      'MEDICATION_DOSE',
     ];
     for (const type of types) {
       state.tasks.push(
@@ -371,5 +371,71 @@ describe('notification dispatch', () => {
     );
     await service.dispatch(dawn);
     expect(port.pushes).toHaveLength(1);
+  });
+
+  describe('who gets which reminder', () => {
+    const ADMIN = randomUUID();
+
+    function member(role: string, id: string, token: string) {
+      return {
+        farmId: FARM,
+        role,
+        user: {
+          id,
+          phone: null,
+          literacySupport: false,
+          devices: [{ fcmToken: token }],
+          notificationPreferences: [],
+        },
+      };
+    }
+
+    function tokensFor(type: string, priority: string, assignedToId?: string) {
+      const now = atNepalHour(10);
+      state.tasks.push(
+        task({ id: randomUUID(), type, titleEn: type, priority, dueAt: now, assignedToId }),
+      );
+      return service.dispatch(now).then(() => port.pushes.map((p) => p.token).sort());
+    }
+
+    beforeEach(() => {
+      state.members.push(
+        member('MANAGER', MANAGER, 'token-manager'),
+        member('ADMIN', ADMIN, 'token-admin'),
+      );
+    });
+
+    it('sends CRITICAL to admin, manager and worker', async () => {
+      expect(await tokensFor('CALVING_WATCH', 'CRITICAL')).toEqual([
+        'token-admin',
+        'token-manager',
+        'token-worker',
+      ]);
+    });
+
+    it('sends shed work to workers only', async () => {
+      expect(await tokensFor('VACCINATION_DUE', 'HIGH')).toEqual(['token-worker']);
+    });
+
+    it('sends money and decisions to admin and manager, not workers', async () => {
+      expect(await tokensFor('EXPENSE_APPROVAL', 'HIGH')).toEqual([
+        'token-admin',
+        'token-manager',
+      ]);
+    });
+
+    it('sends an assigned task only to the assignee', async () => {
+      expect(await tokensFor('VACCINATION_DUE', 'HIGH', MANAGER)).toEqual(['token-manager']);
+    });
+
+    it('falls back to the manager for shed work when the farm has no workers', async () => {
+      state.members = state.members.filter((m) => m.role !== 'WORKER');
+      expect(await tokensFor('DRY_OFF', 'HIGH')).toEqual(['token-manager']);
+    });
+
+    it('falls back to the admin when there is nobody else', async () => {
+      state.members = state.members.filter((m) => m.role === 'ADMIN');
+      expect(await tokensFor('DRY_OFF', 'HIGH')).toEqual(['token-admin']);
+    });
   });
 });

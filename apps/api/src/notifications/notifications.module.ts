@@ -1,5 +1,5 @@
 import { Global, Module } from '@nestjs/common';
-import { CompositeNotificationAdapter } from './composite-notification.adapter';
+import { CompositeNotificationAdapter, type SmsConfig } from './composite-notification.adapter';
 import { FcmNotificationAdapter, parseServiceAccount } from './fcm-notification.adapter';
 import { DevicesController, NotificationsController } from './notifications.controller';
 import { NotificationDispatchService } from './notification-dispatch.service';
@@ -17,17 +17,25 @@ function notificationAdapter() {
     }
   }
 
+  // Always use composite so Expo Push tokens work without FCM credentials.
+  return new CompositeNotificationAdapter(fcm, smsConfig());
+}
+
+/** Sparrow (Nepal) wins when its token is set; Twilio is the fallback. */
+function smsConfig(): SmsConfig | null {
+  const sparrowToken = process.env.SPARROW_SMS_TOKEN?.trim();
+  const sparrowFrom = process.env.SPARROW_SMS_FROM?.trim();
+  if (sparrowToken && sparrowFrom) {
+    return { provider: 'sparrow', token: sparrowToken, from: sparrowFrom };
+  }
   const sid = process.env.TWILIO_ACCOUNT_SID?.trim();
   const token = process.env.TWILIO_AUTH_TOKEN?.trim();
   const from = process.env.TWILIO_FROM_NUMBER?.trim();
-  const twilio = sid && token && from ? { accountSid: sid, authToken: token, from } : null;
-
-  // Always use composite so Expo Push tokens work without FCM credentials.
-  return new CompositeNotificationAdapter(fcm, twilio);
+  return sid && token && from ? { provider: 'twilio', accountSid: sid, authToken: token, from } : null;
 }
 
 /**
- * FCM / Expo push when credentials exist; Twilio SMS when configured;
+ * FCM / Expo push when credentials exist; Sparrow or Twilio SMS when configured;
  * otherwise logging. Voice stays on the logging sink.
  */
 @Global()
