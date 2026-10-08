@@ -125,13 +125,20 @@ for (const [name, pkgRoot] of packages) {
     prismaCandidates.push(join(pkgRoot, '..', '.prisma'));
   }
 }
+// Only a generated client has schema.prisma. A stale @prisma/client postinstall
+// stub (e.g. from a restored Vercel build cache) must not overwrite the real one.
 for (const dir of prismaCandidates) {
   try {
-    await stat(dir);
+    await stat(join(dir, 'client/schema.prisma'));
     copied += await copyFiltered(dir, join(funcDir, 'node_modules/.prisma'));
   } catch {
     /* skip */
   }
+}
+
+const bundledClient = await readFile(join(funcDir, 'node_modules/.prisma/client/default.js'), 'utf8');
+if (bundledClient.includes('did not initialize yet')) {
+  throw new Error('Bundled Prisma client is the un-generated stub; run prisma generate before packaging.');
 }
 
 await writeFile(
