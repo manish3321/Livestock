@@ -7,6 +7,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   owner: 'evoqed',
   version: '0.2.0',
   orientation: 'portrait',
+  icon: './assets/icon.png',
+  splash: {
+    image: './assets/splash-icon.png',
+    resizeMode: 'contain',
+    backgroundColor: '#1B4332',
+  },
   scheme: 'farmshed',
   userInterfaceStyle: 'light',
   newArchEnabled: true,
@@ -21,6 +27,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   android: {
     package: 'np.evoqed.farm.shed',
+    adaptiveIcon: {
+      foregroundImage: './assets/adaptive-icon.png',
+      backgroundColor: '#1B4332',
+    },
     permissions: ['CAMERA', 'VIBRATE', 'POST_NOTIFICATIONS', 'RECEIVE_BOOT_COMPLETED'],
     // Dev API is http:// on LAN / 10.0.2.2 — required outside Expo Go.
     usesCleartextTraffic: true,
@@ -41,7 +51,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     [
       'expo-notifications',
       {
-        icon: './assets/icon.png',
+        icon: './assets/notification-icon.png',
         color: '#1B4332',
         sounds: [],
       },
