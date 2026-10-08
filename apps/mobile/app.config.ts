@@ -4,6 +4,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: 'Farm Management',
   slug: 'farm-shed',
+  owner: 'evoqed',
   version: '0.2.0',
   orientation: 'portrait',
   scheme: 'farmshed',
@@ -52,7 +53,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   extra: {
     apiUrl: process.env.EXPO_PUBLIC_API_URL ?? 'https://evoqedlivestockfarm.vercel.app',
     eas: {
-      projectId: process.env.EAS_PROJECT_ID ?? undefined,
+      projectId: process.env.EAS_PROJECT_ID ?? '572fb3bd-6f2d-450d-a637-3330f89f9d11',
     },
   },
   notification: {

@@ -11,6 +11,7 @@
     "lint": "eslint src test App.tsx index.ts",
     "test": "vitest run",
     "build": "tsc -p tsconfig.json --noEmit",
+    "eas-build-post-install": "pnpm --filter @farm/contracts build && pnpm --filter @farm/design-tokens build",
     "eas:preview": "eas build --profile preview --platform all",
     "eas:dev": "eas build --profile development --platform all"
   },
