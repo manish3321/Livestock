@@ -1,11 +1,6 @@
 packages:
   - apps/*
   - packages/*
-
-# React Native (Metro + Gradle autolinking) requires a flat node_modules layout.
-# pnpm 11 ignores node-linker in .npmrc, so it must live here.
-nodeLinker: hoisted
-
 # Expo SDK 52 needs Metro 0.81. Without this, web's optional react-native peer
 # can hoist Metro 0.84 and break `expo start` (FileStore export error).
 overrides:
