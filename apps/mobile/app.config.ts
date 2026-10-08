@@ -56,6 +56,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         sounds: [],
       },
     ],
+    'expo-asset',
     'expo-secure-store',
     'expo-sqlite',
     'expo-font',
