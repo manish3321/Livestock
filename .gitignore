@@ -37,3 +37,6 @@ Thumbs.db
 *.log
 npm-debug.log*
 yarn-error.log*
+
+# Firebase config (uploaded to EAS as a file env var)
+google-services.json

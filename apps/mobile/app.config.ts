@@ -1,4 +1,10 @@
+import { existsSync } from 'fs';
 import type { ConfigContext, ExpoConfig } from 'expo/config';
+
+// EAS provides the file via the GOOGLE_SERVICES_JSON file env var; locally it sits next to this config.
+const googleServicesFile =
+  process.env.GOOGLE_SERVICES_JSON ??
+  (existsSync('./google-services.json') ? './google-services.json' : undefined);
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
@@ -27,6 +33,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   android: {
     package: 'np.evoqed.farm.shed',
+    ...(googleServicesFile ? { googleServicesFile } : {}),
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
       backgroundColor: '#1B4332',
