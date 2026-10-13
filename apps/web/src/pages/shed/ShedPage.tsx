@@ -170,6 +170,8 @@ export function ShedPage() {
             setMode(active.mode);
             if (active.session) setSession(active.session);
             rememberActiveRound(active.id, active.mode, active.session);
+          } else {
+            rememberActiveRound(null);
           }
         })
         .catch(() => {

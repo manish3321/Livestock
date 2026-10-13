@@ -23,9 +23,18 @@ import { color } from '../theme/tokens';
 
 type TodayProgress = Pick<RoundTodayDto, 'expected' | 'recorded' | 'remaining'> & { offline: boolean };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Round dates are UTC days and a Nepal morning starts before UTC midnight, so yesterday still counts. */
+function isCurrentRoundDate(date: string): boolean {
+  return Date.now() - new Date(`${date}T00:00:00Z`).getTime() < 2 * DAY_MS;
+}
+
 /** Same expected-animal rules as the API, from the phone's copy of the herd. */
 function localProgress(store: FarmStore, mode: RecordingMode): TodayProgress {
-  const recorded = new Set(store.round?.mode === mode ? store.round.recordedIds : []);
+  const recorded = new Set(
+    store.round?.mode === mode && isCurrentRoundDate(store.round.date) ? store.round.recordedIds : [],
+  );
   const expected = [...store.animals.values()].filter((a) => {
     if (a.deletedAt) return false;
     if (mode === 'MILKING') {
@@ -117,7 +126,8 @@ export function ShedScreen() {
 
   const remaining = today?.remaining ?? [];
   const pending = store.outbox.filter((o) => o.state === 'pending').length;
-  const localActive = store.round?.status === 'ACTIVE' ? store.round : null;
+  const localActive =
+    store.round?.status === 'ACTIVE' && isCurrentRoundDate(store.round.date) ? store.round : null;
   const conflicts = store.conflicts?.length ?? 0;
 
   useEffect(() => {

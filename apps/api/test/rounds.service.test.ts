@@ -70,7 +70,12 @@ class RecordingFake {
       return row;
     },
     findMany: async ({ where }: any) =>
-      [...this.rounds.values()].filter((r) => r.farmId === where.farmId),
+      [...this.rounds.values()].filter((r) => matchRound(r, where)),
+    updateMany: async ({ where, data }: any) => {
+      const rows = [...this.rounds.values()].filter((r) => matchRound(r, where));
+      for (const row of rows) Object.assign(row, data);
+      return { count: rows.length };
+    },
     count: async ({ where }: any) =>
       [...this.rounds.values()].filter((r) => !where?.id || r.id === where.id).length,
   };
@@ -277,12 +282,15 @@ function omitIncrement(data: any) {
 }
 
 function matchRound(r: any, where: any) {
-  if (where.id && r.id !== where.id) return false;
+  if (typeof where.id === 'string' && r.id !== where.id) return false;
   if (where.farmId && r.farmId !== where.farmId) return false;
   if (typeof where.status === 'string' && r.status !== where.status) return false;
   if (where.status?.not && r.status === where.status.not) return false;
   if (where.mode && r.mode !== where.mode) return false;
-  if (where.date && r.date.getTime() !== where.date.getTime()) return false;
+  if (where.date instanceof Date && r.date.getTime() !== where.date.getTime()) return false;
+  if (where.date?.gte && r.date < where.date.gte) return false;
+  if (where.date?.lt && r.date >= where.date.lt) return false;
+  if (where.id?.in && !where.id.in.includes(r.id)) return false;
   if (where.session && r.session !== where.session) return false;
   return true;
 }
@@ -470,5 +478,18 @@ describe('Phase 2 scan-to-record', () => {
 
     const otherSession = await rounds.today(actor, { mode: 'MILKING', session: 'MORNING' });
     expect(otherSession.remaining).toHaveLength(2);
+  });
+
+  it('active ignores and closes a round left open from an earlier day', async () => {
+    db.addAnimal({ herdNumber: 'B01', status: 'LACTATING' });
+    const old = await rounds.create(actor, { mode: 'MILKING', session: 'MORNING' });
+    const row = db.rounds.get(old.id);
+    row.date = new Date(row.date.getTime() - 18 * 86400000);
+
+    expect(await rounds.active(actor)).toBeNull();
+    expect(db.rounds.get(old.id).status).toBe('ABANDONED');
+
+    const fresh = await rounds.create(actor, { mode: 'MILKING', session: 'MORNING' });
+    expect((await rounds.active(actor))?.id).toBe(fresh.id);
   });
 });

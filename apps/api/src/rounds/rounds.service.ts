@@ -94,11 +94,37 @@ export class RoundsService {
   }
 
   async active(user: RequestUser): Promise<RecordingRoundDto | null> {
+    // Round dates are UTC days; a Nepal morning round starts before UTC midnight, so yesterday still counts.
+    const cutoff = new Date(startOfUtcDay(new Date()).getTime() - DAY_MS);
+    await this.abandonStale(user, cutoff);
     const row = await this.prisma.recordingRound.findFirst({
-      where: { farmId: user.farmId, status: 'ACTIVE' },
+      where: { farmId: user.farmId, status: 'ACTIVE', date: { gte: cutoff } },
       orderBy: { startedAt: 'desc' },
     });
     return row ? toRoundDto(row) : null;
+  }
+
+  /** A round left open from an earlier day would otherwise hijack the shed screen forever. */
+  private async abandonStale(user: RequestUser, cutoff: Date): Promise<void> {
+    const stale = await this.prisma.recordingRound.findMany({
+      where: { farmId: user.farmId, status: 'ACTIVE', date: { lt: cutoff } },
+      select: { id: true },
+    });
+    if (stale.length === 0) return;
+    await this.prisma.recordingRound.updateMany({
+      where: { id: { in: stale.map((r) => r.id) }, status: 'ACTIVE' },
+      data: { status: 'ABANDONED', finishedAt: new Date() },
+    });
+    for (const round of stale) {
+      await this.audit.record({
+        farmId: user.farmId,
+        userId: user.id,
+        action: 'round.abandon',
+        entityType: 'recordingRound',
+        entityId: round.id,
+        metadata: { reason: 'stale' },
+      });
+    }
   }
 
   async remaining(user: RequestUser, id: string): Promise<RoundRemainingDto> {
