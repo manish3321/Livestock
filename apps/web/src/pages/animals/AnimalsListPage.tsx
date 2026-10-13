@@ -13,6 +13,7 @@ import {
 } from '@farm/contracts';
 import { useAuth } from '../../auth/auth-context';
 import { AnimalActionGrid } from '../../components/AnimalActionGrid';
+import { AnimalPhoto } from '../../components/AnimalPhoto';
 import { DeleteButton } from '../../components/Modal';
 import { SpeciesGlyph } from '../../components/ModuleIcon';
 import { ErrorState, LoadingState } from '../../components/PageState';
@@ -175,6 +176,7 @@ export function AnimalsListPage() {
               <span className="species-pick-count">
                 {counts[i]?.data?.total ?? (counts[i]?.isLoading ? '…' : 0)}
               </span>
+              <AnimalPhoto species={s} size={60} className="species-pick-photo" />
             </button>
           ))}
         </div>
@@ -251,6 +253,7 @@ function HerdRow({
         aria-expanded={open}
         onClick={onToggle}
       >
+        <AnimalPhoto photoUrl={row.photoUrl} species={row.species} size={44} />
         <span className="herd-row-id">{label}</span>
         <span className="herd-row-name">
           {name || SPECIES_LABEL[row.species]}

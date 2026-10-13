@@ -9,9 +9,21 @@ const SPECIES_PICTURE: Record<string, string> = {
   SHEEP: '🐑',
   POULTRY: '🐔',
   CHICKEN: '🐔',
+  LAYER: '🐔',
+  BROILER: '🐓',
   DUCK: '🦆',
   FISH: '🐟',
+  RABBIT: '🐇',
 };
+
+/** Picture key for a batch: poultry and fish categories are free text, so fall back to the batch kind. */
+export function batchPictureKind(kind?: string | null, category?: string | null): string {
+  const cat = (category ?? '').toUpperCase();
+  if (cat && SPECIES_PICTURE[cat]) return cat;
+  if (kind === 'FISH') return 'FISH';
+  if (kind === 'POULTRY') return cat.includes('DUCK') ? 'DUCK' : 'POULTRY';
+  return cat;
+}
 
 const loaded = new Map<string, Promise<string | null>>();
 

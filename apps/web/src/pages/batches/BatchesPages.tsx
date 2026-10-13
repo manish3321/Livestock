@@ -32,6 +32,7 @@ import {
   listWaterQuality,
 } from '../../api/batches';
 import { listInventory } from '../../api/inventory';
+import { AnimalPhoto, batchPictureKind } from '../../components/AnimalPhoto';
 import { ErrorState, LoadingState } from '../../components/PageState';
 import { QrPrintCard } from '../../components/QrPrintCard';
 import { StatusChip } from '../../components/StatusChip';
@@ -181,7 +182,11 @@ function BatchKindPage({
             {query.data.items.map((b) => (
               <Link key={b.id} to={`/batches/${b.id}`} className="animal-card">
                 <div className="animal-card-media" data-species={b.category}>
-                  <span className="animal-card-glyph">{b.category.slice(0, 3)}</span>
+                  <AnimalPhoto
+                    species={batchPictureKind(kind, b.category)}
+                    size={96}
+                    className="animal-card-picture"
+                  />
                   {b.sickCount > 0 && (
                     <div className="animal-card-status">
                       <StatusChip status="SICK" label={`${b.sickCount} ${t('batches.sick')}`} />
