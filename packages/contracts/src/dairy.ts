@@ -421,6 +421,8 @@ export interface TaskDto {
   animalId: string | null;
   animalHerdNumber: string | null;
   animalName: string | null;
+  animalPhotoUrl?: string | null;
+  animalSpecies?: string | null;
   batchId: string | null;
   type: TaskType;
   titleEn: string;
@@ -765,6 +767,22 @@ export interface RoundRemainingAnimalDto {
 
 export interface RoundRemainingDto {
   round: RecordingRoundDto;
+  expected: number;
+  recorded: number;
+  remaining: RoundRemainingAnimalDto[];
+}
+
+export const roundTodayQuerySchema = z.object({
+  mode: z.enum(RECORDING_MODES).default('MILKING'),
+  session: z.enum(MILK_SESSIONS).optional(),
+});
+export type RoundTodayQuery = z.infer<typeof roundTodayQuerySchema>;
+
+/** Today's progress for a mode/session, whether or not a round has been started. */
+export interface RoundTodayDto {
+  mode: RecordingMode;
+  session: MilkSession | null;
+  round: RecordingRoundDto | null;
   expected: number;
   recorded: number;
   remaining: RoundRemainingAnimalDto[];

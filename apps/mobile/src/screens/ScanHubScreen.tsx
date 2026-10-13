@@ -5,6 +5,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { PageResult } from '@farm/contracts';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { AppShell } from '../components/AppShell';
+import { AnimalChoiceDialog, type ChosenAnimal } from '../components/AnimalChoiceDialog';
+import { AnimalPhoto } from '../components/AnimalPhoto';
 import { Button, Card, ErrorText, PageHeader, Txt, inputStyle, useTypeface } from '../components/ui';
 import { toQuery } from '../api/query';
 import { useFarm } from '../state/FarmProvider';
@@ -14,11 +16,19 @@ import { searchAnimalsLocal } from '../lib/animal-search';
 import type { RootStackParamList } from '../navigation/types';
 import { color } from '../theme/tokens';
 
-type SearchHit =
-  | { kind: 'animal'; id: string; tag?: string; name?: string | null }
-  | { kind: 'batch'; id: string; name: string; category?: string };
+type AnimalSuggestion = {
+  id: string;
+  tag: string;
+  name?: string | null;
+  shortNo?: string | null;
+  species?: string | null;
+  photoUrl?: string | null;
+  penName?: string | null;
+};
 
-type AnimalSuggestion = { id: string; tag: string; name?: string | null };
+type SearchHit =
+  | ({ kind: 'animal' } & AnimalSuggestion)
+  | { kind: 'batch'; id: string; name: string; category?: string };
 type BatchSuggestion = { id: string; name: string; category?: string };
 
 export function ScanHubScreen() {
@@ -37,8 +47,15 @@ export function ScanHubScreen() {
   const [lookingAnimals, setLookingAnimals] = useState(false);
   const [lookingBatches, setLookingBatches] = useState(false);
   const [scanning, setScanning] = useState(true);
+  const [chosen, setChosen] = useState<ChosenAnimal | null>(null);
   const scanned = useRef(false);
   const animalReq = useRef(0);
+
+  const pickAnimal = useCallback((animal: AnimalSuggestion) => {
+    setHit({ kind: 'animal', ...animal });
+    setChosen(animal);
+    setError(null);
+  }, []);
 
   const lookup = useCallback(
     async (q: string, kind?: 'animal' | 'batch') => {
@@ -49,10 +66,24 @@ export function ScanHubScreen() {
         if (parsed?.kind === 'animal' || (!kind && parsed?.kind !== 'batch' && /^[a-f0-9-]{36}$/i.test(q.trim()))) {
           const id = parsed?.kind === 'animal' ? parsed.id : q.trim();
           try {
-            const detail = await api.get<{ id: string; tag: string; name?: string | null }>(
-              `/v1/animals/${id}`,
-            );
-            setHit({ kind: 'animal', id: detail.id, tag: detail.tag, name: detail.name });
+            const detail = await api.get<{
+              id: string;
+              tag: string;
+              name?: string | null;
+              herdNumber?: string | null;
+              species?: string;
+              photoUrl?: string | null;
+              shed?: string | null;
+            }>(`/v1/animals/${id}`);
+            pickAnimal({
+              id: detail.id,
+              tag: detail.tag,
+              name: detail.name,
+              shortNo: detail.herdNumber,
+              species: detail.species,
+              photoUrl: detail.photoUrl,
+              penName: detail.shed,
+            });
           } catch {
             setError(t('qr.notFound'));
           }
@@ -65,13 +96,17 @@ export function ScanHubScreen() {
           }
         }
         if (kind !== 'batch') {
-          const animals = await api.get<Array<{ id: string; tag: string; name?: string | null }>>(
+          const animals = await api.get<AnimalSuggestion[]>(
             `/v1/animals/search?q=${encodeURIComponent(q.trim())}`,
           );
           const list = Array.isArray(animals) ? animals : [];
-          setAnimalHits(list.slice(0, 8));
-          if (list[0]) {
-            setHit({ kind: 'animal', id: list[0].id, tag: list[0].tag, name: list[0].name });
+          if (list.length === 1 && list[0]) {
+            setAnimalHits([]);
+            pickAnimal(list[0]);
+            return;
+          }
+          if (list.length > 1) {
+            setAnimalHits(list.slice(0, 8));
             return;
           }
         }
@@ -93,7 +128,7 @@ export function ScanHubScreen() {
         setError(err instanceof Error ? err.message : t('qr.notFound'));
       }
     },
-    [api, t],
+    [api, pickAnimal, t],
   );
 
   useEffect(() => {
@@ -103,10 +138,13 @@ export function ScanHubScreen() {
       setLookingAnimals(false);
       return;
     }
-    const local = searchAnimalsLocal(store, q, 8).map((a) => ({
+    const local: AnimalSuggestion[] = searchAnimalsLocal(store, q, 8).map((a) => ({
       id: a.id,
       tag: a.tag,
       name: a.name,
+      shortNo: a.shortNo,
+      species: a.species,
+      penName: a.penName,
     }));
     setAnimalHits(local);
     setError(null);
@@ -172,7 +210,7 @@ export function ScanHubScreen() {
   }, [api, batchQuery, t]);
 
   const onBarcode = ({ data }: { data: string }) => {
-    if (!scanning || scanned.current) return;
+    if (!scanning || scanned.current || chosen) return;
     scanned.current = true;
     void lookup(data).finally(() => {
       setTimeout(() => {
@@ -248,14 +286,17 @@ export function ScanHubScreen() {
               onPress={() => {
                 setTagQuery(row.tag);
                 setAnimalHits([]);
-                setHit({ kind: 'animal', id: row.id, tag: row.tag, name: row.name });
-                setError(null);
+                pickAnimal(row);
               }}
             >
-              <Txt weight="semibold">
-                {row.tag}
-                {row.name ? ` · ${row.name}` : ''}
-              </Txt>
+              <AnimalPhoto animalId={row.id} photoUrl={row.photoUrl} species={row.species} size={44} />
+              <View style={{ flex: 1 }}>
+                <Txt weight="semibold">
+                  {row.shortNo ?? row.tag}
+                  {row.name ? ` · ${row.name}` : ''}
+                </Txt>
+                {row.penName ? <Txt muted>{row.penName}</Txt> : null}
+              </View>
             </Pressable>
           ))}
           {tagQuery.trim() && animalHits.length === 0 && !lookingAnimals ? (
@@ -304,14 +345,14 @@ export function ScanHubScreen() {
         </Card>
         {hit?.kind === 'animal' ? (
           <View style={styles.hit}>
-            <Txt weight="display" style={styles.hitTitle}>
-              {hit.tag}
-              {hit.name ? ` · ${hit.name}` : ''}
-            </Txt>
-            <Button
-              label={t('qr.openDetail')}
-              onPress={() => navigation.navigate('AnimalDetail', { id: hit.id })}
-            />
+            <View style={styles.hitRow}>
+              <AnimalPhoto animalId={hit.id} photoUrl={hit.photoUrl} species={hit.species} size={56} />
+              <Txt weight="display" style={[styles.hitTitle, { flex: 1 }]}>
+                {hit.shortNo ?? hit.tag}
+                {hit.name ? ` · ${hit.name}` : ''}
+              </Txt>
+            </View>
+            <Button label={t('qr.chooseTitle')} onPress={() => setChosen(hit)} />
           </View>
         ) : null}
         {hit?.kind === 'batch' ? (
@@ -327,6 +368,7 @@ export function ScanHubScreen() {
           </View>
         ) : null}
       </ScrollView>
+      <AnimalChoiceDialog animal={chosen} onClose={() => setChosen(null)} />
     </AppShell>
   );
 }
@@ -353,7 +395,11 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   hitTitle: { fontSize: 18 },
+  hitRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   suggestion: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     paddingVertical: 10,
     paddingHorizontal: 12,
     marginBottom: 6,

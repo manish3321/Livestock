@@ -22,6 +22,8 @@ import { NotificationDispatchService } from '../notifications/notification-dispa
 import { PrismaService } from '../prisma/prisma.service';
 import { MUTE_WINDOW_DAYS, offerMute } from '../notifications/notification-rules';
 
+const TASK_ANIMAL_SELECT = { herdNumber: true, name: true, photoUrl: true, species: true } as const;
+
 const SNOOZE_MS: Record<TaskSnooze['preset'], number> = {
   '1h': 60 * 60 * 1000,
   '1d': 24 * 60 * 60 * 1000,
@@ -89,7 +91,7 @@ export class TasksService {
     const [rows, total] = await Promise.all([
       this.prisma.task.findMany({
         where,
-        include: { animal: { select: { herdNumber: true, name: true } } },
+        include: { animal: { select: TASK_ANIMAL_SELECT } },
         orderBy: [{ priority: 'asc' }, { dueAt: 'asc' }],
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
@@ -124,7 +126,7 @@ export class TasksService {
         completedAt: new Date(),
         completedById: user.id,
       },
-      include: { animal: { select: { herdNumber: true, name: true } } },
+      include: { animal: { select: TASK_ANIMAL_SELECT } },
     });
     await this.audit.record({
       farmId: user.farmId,
@@ -160,7 +162,7 @@ export class TasksService {
         snoozeCount: task.snoozeCount + 1,
         dueAt: until,
       },
-      include: { animal: { select: { herdNumber: true, name: true } } },
+      include: { animal: { select: TASK_ANIMAL_SELECT } },
     });
     await this.audit.record({
       farmId: user.farmId,
@@ -190,7 +192,7 @@ export class TasksService {
         completedById: user.id,
         completedAt: new Date(),
       },
-      include: { animal: { select: { herdNumber: true, name: true } } },
+      include: { animal: { select: TASK_ANIMAL_SELECT } },
     });
     await this.audit.record({
       farmId: user.farmId,
@@ -225,7 +227,7 @@ export class TasksService {
     const row = await this.prisma.task.update({
       where: { id: task.id },
       data: { assignedToId: input.assignedToId },
-      include: { animal: { select: { herdNumber: true, name: true } } },
+      include: { animal: { select: TASK_ANIMAL_SELECT } },
     });
     await this.audit.record({
       farmId: user.farmId,
@@ -256,7 +258,14 @@ export class TasksService {
 }
 
 function toDto(
-  r: Task & { animal?: { herdNumber: string | null; name: string | null } | null },
+  r: Task & {
+    animal?: {
+      herdNumber: string | null;
+      name: string | null;
+      photoUrl?: string | null;
+      species?: string;
+    } | null;
+  },
   extra?: { offerMute?: boolean },
 ): TaskDto {
   return {
@@ -265,6 +274,8 @@ function toDto(
     animalId: r.animalId,
     animalHerdNumber: r.animal?.herdNumber ?? null,
     animalName: r.animal?.name ?? null,
+    animalPhotoUrl: r.animal?.photoUrl ?? null,
+    animalSpecies: r.animal?.species ?? null,
     batchId: r.batchId,
     type: r.type as TaskType,
     titleEn: r.titleEn,

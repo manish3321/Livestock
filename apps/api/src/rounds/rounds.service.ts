@@ -13,6 +13,8 @@ import type {
   RecordingRoundFinish,
   RoundMetricsDto,
   RoundRemainingDto,
+  RoundTodayDto,
+  RoundTodayQuery,
   ScanCreate,
   ScanResolveDto,
 } from '@farm/contracts';
@@ -101,13 +103,47 @@ export class RoundsService {
 
   async remaining(user: RequestUser, id: string): Promise<RoundRemainingDto> {
     const round = await this.requireRound(user.farmId, id);
-    const expected = await this.expectedAnimals(user.farmId, round.mode);
-    const recordedIds = await this.recordedAnimalIds(round);
-    const skipped = await this.prisma.roundSkip.findMany({ where: { roundId: round.id } });
+    return { round: toRoundDto(round), ...(await this.progress(round)) };
+  }
+
+  async today(user: RequestUser, query: RoundTodayQuery): Promise<RoundTodayDto> {
+    const date = startOfUtcDay(new Date());
+    const session = query.mode === 'MILKING' ? (query.session ?? inferSession()) : null;
+    const round = await this.prisma.recordingRound.findFirst({
+      where: {
+        farmId: user.farmId,
+        mode: query.mode,
+        date,
+        status: { not: 'ABANDONED' },
+        ...(session ? { session } : {}),
+      },
+      orderBy: { startedAt: 'desc' },
+    });
+    const progress = await this.progress(
+      round ?? { id: '', farmId: user.farmId, mode: query.mode, session, date, milkRoundId: null },
+    );
+    return {
+      mode: query.mode,
+      session,
+      round: round ? toRoundDto(round) : null,
+      ...progress,
+    };
+  }
+
+  private async progress(round: {
+    id: string;
+    farmId: string;
+    mode: RecordingMode;
+    session: MilkSession | null;
+    date: Date;
+    milkRoundId: string | null;
+  }): Promise<Omit<RoundRemainingDto, 'round'>> {
+    const expected = await this.expectedAnimals(round.farmId, round.mode);
+    const recordedIds = round.id || round.mode === 'MILKING' ? await this.recordedAnimalIds(round) : new Set<string>();
+    const skipped = round.id ? await this.prisma.roundSkip.findMany({ where: { roundId: round.id } }) : [];
     const skippedIds = new Set(skipped.map((s) => s.animalId));
     const remaining = expected.filter((a) => !recordedIds.has(a.id) && !skippedIds.has(a.id));
     return {
-      round: toRoundDto(round),
       expected: expected.length,
       recorded: recordedIds.size,
       remaining: remaining.map((a) => ({

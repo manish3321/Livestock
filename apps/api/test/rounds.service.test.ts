@@ -279,7 +279,8 @@ function omitIncrement(data: any) {
 function matchRound(r: any, where: any) {
   if (where.id && r.id !== where.id) return false;
   if (where.farmId && r.farmId !== where.farmId) return false;
-  if (where.status && r.status !== where.status) return false;
+  if (typeof where.status === 'string' && r.status !== where.status) return false;
+  if (where.status?.not && r.status === where.status.not) return false;
   if (where.mode && r.mode !== where.mode) return false;
   if (where.date && r.date.getTime() !== where.date.getTime()) return false;
   if (where.session && r.session !== where.session) return false;
@@ -448,5 +449,26 @@ describe('Phase 2 scan-to-record', () => {
     expect(finished.skippedCount).toBe(1);
     expect(db.skips).toHaveLength(1);
     expect(db.skips[0]).toMatchObject({ animalId: b.id, reason: 'NOT_MILKED' });
+  });
+
+  it("today lists who is still not milked, before and after a round is started", async () => {
+    const a = db.addAnimal({ herdNumber: 'B01', status: 'LACTATING' });
+    db.addAnimal({ herdNumber: 'B02', status: 'LACTATING' });
+    db.addAnimal({ herdNumber: 'B03', status: 'DRY' });
+
+    const before = await rounds.today(actor, { mode: 'MILKING', session: 'EVENING' });
+    expect(before.round).toBeNull();
+    expect(before.expected).toBe(2);
+    expect(before.remaining.map((r) => r.shortNo)).toEqual(['B01', 'B02']);
+
+    const round = await rounds.create(actor, { mode: 'MILKING', session: 'EVENING' });
+    await milk.createEntry(actor, { animalId: a.id, session: 'EVENING', litres: 7, disposal: 'SOLD', roundId: round.id });
+    const after = await rounds.today(actor, { mode: 'MILKING', session: 'EVENING' });
+    expect(after.round?.id).toBe(round.id);
+    expect(after.recorded).toBe(1);
+    expect(after.remaining.map((r) => r.shortNo)).toEqual(['B02']);
+
+    const otherSession = await rounds.today(actor, { mode: 'MILKING', session: 'MORNING' });
+    expect(otherSession.remaining).toHaveLength(2);
   });
 });

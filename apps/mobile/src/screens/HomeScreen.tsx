@@ -1,16 +1,64 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
-import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RECORDING_MODES, type MilkSession, type RecordingMode } from '@farm/contracts';
-import { remainingAnimals, startLocalRound } from '../core/scan-round';
+import {
+  RECORDING_MODES,
+  type MilkSession,
+  type RecordingMode,
+  type RoundRemainingAnimalDto,
+  type RoundTodayDto,
+} from '@farm/contracts';
+import { startLocalRound } from '../core/scan-round';
+import type { FarmStore } from '../core/store';
 import { refreshMeansFromRound } from '../core/sync-engine';
+import { toQuery } from '../api/query';
 import { AppShell } from '../components/AppShell';
+import { AnimalPhoto } from '../components/AnimalPhoto';
 import { Button, Card, ScreenScroll, Txt } from '../components/ui';
 import { useLocale } from '../locale/LocaleProvider';
 import { useFarm } from '../state/FarmProvider';
 import type { RootStackParamList } from '../navigation/types';
 import { color } from '../theme/tokens';
+
+type TodayProgress = Pick<RoundTodayDto, 'expected' | 'recorded' | 'remaining'> & { offline: boolean };
+
+/** Same expected-animal rules as the API, from the phone's copy of the herd. */
+function localProgress(store: FarmStore, mode: RecordingMode): TodayProgress {
+  const recorded = new Set(store.round?.mode === mode ? store.round.recordedIds : []);
+  const expected = [...store.animals.values()].filter((a) => {
+    if (a.deletedAt) return false;
+    if (mode === 'MILKING') {
+      return a.gender === 'FEMALE' && !['SOLD', 'DEAD', 'CULLED', 'DRY'].includes(a.status);
+    }
+    return !['SOLD', 'DEAD', 'CULLED'].includes(a.status);
+  });
+  const withheld = new Set(
+    [...store.withholds.values()]
+      .filter((w) => new Date(w.endDate).getTime() >= Date.now())
+      .map((w) => w.animalId),
+  );
+  return {
+    offline: true,
+    expected: expected.length,
+    recorded: expected.filter((a) => recorded.has(a.id)).length,
+    remaining: expected
+      .filter((a) => !recorded.has(a.id))
+      .map((a) => ({
+        id: a.id,
+        shortNo: a.shortNo,
+        tag: a.tag,
+        name: a.name,
+        species: a.species,
+        penName: a.penName,
+        photoUrl: a.photoUrl,
+        status: a.status,
+        isPregnant: a.isPregnant,
+        withholdActive: withheld.has(a.id),
+        usualLitres: a.rolling7Mean,
+      })),
+  };
+}
 
 const SESSIONS: MilkSession[] = ['MORNING', 'EVENING', 'MIDDAY'];
 
@@ -42,9 +90,32 @@ export function ShedScreen() {
   const [session, setSession] = useState<MilkSession>(
     new Date().getHours() < 14 ? 'MORNING' : 'EVENING',
   );
+  const [today, setToday] = useState<TodayProgress | null>(null);
+  const [loadingToday, setLoadingToday] = useState(false);
+  const deepLinked = useRef<string | null>(null);
   void revision;
 
-  const remaining = useMemo(() => remainingAnimals(store), [store, revision]);
+  const loadToday = useCallback(async () => {
+    setLoadingToday(true);
+    try {
+      const dto = await api.get<RoundTodayDto>(
+        `/v1/rounds/today${toQuery({ mode, session: mode === 'MILKING' ? session : undefined })}`,
+      );
+      setToday({ offline: false, expected: dto.expected, recorded: dto.recorded, remaining: dto.remaining });
+    } catch {
+      setToday(localProgress(store, mode));
+    } finally {
+      setLoadingToday(false);
+    }
+  }, [api, mode, session, store]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadToday();
+    }, [loadToday, revision]),
+  );
+
+  const remaining = today?.remaining ?? [];
   const pending = store.outbox.filter((o) => o.state === 'pending').length;
   const localActive = store.round?.status === 'ACTIVE' ? store.round : null;
   const conflicts = store.conflicts?.length ?? 0;
@@ -95,7 +166,16 @@ export function ShedScreen() {
     }
   };
 
-  const startMode = async (next: RecordingMode) => {
+  const startMode = async (next: RecordingMode, animalId?: string) => {
+    const roundParams = animalId ? { animalId } : undefined;
+    const sameLocal =
+      localActive &&
+      localActive.mode === next &&
+      (next !== 'MILKING' || localActive.session === session);
+    if (sameLocal) {
+      navigation.navigate('Round', roundParams);
+      return;
+    }
     setStarting(true);
     setError(null);
     try {
@@ -126,7 +206,7 @@ export function ShedScreen() {
         });
       }
       persist();
-      navigation.navigate('Round');
+      navigation.navigate('Round', roundParams);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('login.serverUnreachable'));
     } finally {
@@ -134,8 +214,22 @@ export function ShedScreen() {
     }
   };
 
+  /** Scan → Milk opens the shed with the animal already chosen; go straight to her pad. */
+  useEffect(() => {
+    const animalId = route.params?.animalId;
+    if (!animalId || deepLinked.current === animalId) return;
+    deepLinked.current = animalId;
+    const next = (route.params?.mode as RecordingMode) || 'MILKING';
+    setMode(next);
+    void startMode(next, animalId);
+    navigation.setParams({ animalId: undefined });
+  }, [route.params?.animalId]);
+
   const canResume = Boolean(localActive || serverActiveId);
   const bannerBg = modeBannerColor(mode, session);
+  const expected = today?.expected ?? 0;
+  const done = Math.min(today?.recorded ?? 0, expected);
+  const progressPct = expected > 0 ? Math.round((done / expected) * 100) : 0;
 
   return (
     <AppShell module="shed" title={undefined}>
@@ -253,12 +347,108 @@ export function ShedScreen() {
             </View>
           ) : null}
         </Card>
+
+        <View style={styles.todoCard}>
+          <View style={styles.todoHead}>
+            <Txt weight="display" style={styles.todoTitle}>
+              {t('shed.notDoneTitle')}
+            </Txt>
+            {loadingToday ? <ActivityIndicator color={color.brand} /> : null}
+          </View>
+          <Txt muted style={styles.todoHint}>
+            {t(`shed.mode.${mode}`)}
+            {mode === 'MILKING' ? ` · ${t(`shed.session.${session}`)}` : ''}
+            {' · '}
+            {t('shed.progress', { done, total: expected })}
+          </Txt>
+          <View style={styles.track}>
+            <View style={[styles.fill, { width: `${progressPct}%` }]} />
+          </View>
+          <View style={styles.countRow}>
+            <View style={[styles.countChip, styles.countDone]}>
+              <Txt weight="bold" style={styles.countDoneText}>
+                {t('shed.doneCount', { n: done })}
+              </Txt>
+            </View>
+            <View style={[styles.countChip, remaining.length > 0 ? styles.countLeft : styles.countDone]}>
+              <Txt weight="bold" style={remaining.length > 0 ? styles.countLeftText : styles.countDoneText}>
+                {t('shed.leftCount', { n: remaining.length })}
+              </Txt>
+            </View>
+          </View>
+          {today?.offline ? <Txt muted style={styles.todoHint}>{t('shed.offlineList')}</Txt> : null}
+
+          {today && expected === 0 ? (
+            <Txt muted>{t('shed.nothingExpected')}</Txt>
+          ) : today && remaining.length === 0 ? (
+            <View style={styles.allDone}>
+              <Txt weight="bold" style={styles.allDoneText}>
+                ✓ {t('shed.allDone')}
+              </Txt>
+            </View>
+          ) : (
+            <>
+              {remaining.length > 0 ? <Txt muted style={styles.todoHint}>{t('shed.notDoneHint')}</Txt> : null}
+              {remaining.map((a) => (
+                <NotDoneRow
+                  key={a.id}
+                  animal={a}
+                  withholdLabel={t('shed.withhold')}
+                  disabled={starting}
+                  onPress={() => void startMode(mode, a.id)}
+                />
+              ))}
+            </>
+          )}
+        </View>
       </ScreenScroll>
     </AppShell>
   );
 }
 
 export const HomeScreen = ShedScreen;
+
+function NotDoneRow({
+  animal,
+  withholdLabel,
+  disabled,
+  onPress,
+}: {
+  animal: RoundRemainingAnimalDto;
+  withholdLabel: string;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+      accessibilityRole="button"
+    >
+      <View style={styles.rowStripe} />
+      <AnimalPhoto animalId={animal.id} photoUrl={animal.photoUrl} species={animal.species} size={52} />
+      <View style={{ flex: 1 }}>
+        <Txt weight="bold" style={styles.rowNo}>
+          {animal.shortNo ?? animal.tag}
+        </Txt>
+        <Txt muted numberOfLines={1}>
+          {[animal.name, animal.penName].filter(Boolean).join(' · ') || animal.species}
+        </Txt>
+      </View>
+      {animal.withholdActive ? (
+        <View style={styles.holdChip}>
+          <Txt weight="bold" style={styles.holdText}>
+            {withholdLabel}
+          </Txt>
+        </View>
+      ) : null}
+      <Txt weight="bold" style={styles.rowArrow}>
+        ›
+      </Txt>
+    </Pressable>
+  );
+}
 
 const styles = StyleSheet.create({
   modeBanner: {
@@ -298,4 +488,46 @@ const styles = StyleSheet.create({
   },
   chipText: { fontSize: 14, color: color.textPrimary },
   chipTextOn: { color: '#fff' },
+  todoCard: {
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: color.border,
+    backgroundColor: color.surface,
+    gap: 8,
+  },
+  todoHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  todoTitle: { fontSize: 22, color: color.brandStrong },
+  todoHint: { fontSize: 13 },
+  track: { height: 10, borderRadius: 5, backgroundColor: color.dangerSubtle, overflow: 'hidden' },
+  fill: { height: '100%', backgroundColor: color.success },
+  countRow: { flexDirection: 'row', gap: 8 },
+  countChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
+  countDone: { backgroundColor: color.successSubtle },
+  countDoneText: { color: color.success, fontSize: 13 },
+  countLeft: { backgroundColor: color.dangerSubtle },
+  countLeftText: { color: color.danger, fontSize: 13 },
+  allDone: { padding: 14, borderRadius: 8, backgroundColor: color.successSubtle },
+  allDoneText: { color: color.success, fontSize: 15 },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minHeight: 68,
+    paddingVertical: 8,
+    paddingLeft: 14,
+    paddingRight: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#F5C6C6',
+    backgroundColor: color.dangerSubtle,
+    overflow: 'hidden',
+  },
+  rowPressed: { backgroundColor: '#FFDCDC' },
+  rowStripe: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, backgroundColor: color.danger },
+  rowNo: { fontSize: 18, color: color.textPrimary },
+  rowArrow: { fontSize: 26, color: color.danger, marginLeft: 4 },
+  holdChip: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4, backgroundColor: color.danger },
+  holdText: { color: '#fff', fontSize: 11 },
 });

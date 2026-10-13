@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -23,6 +22,7 @@ import {
   saveWeightLocal,
   undoLastMilk,
 } from '../core/scan-round';
+import { AnimalPhoto } from '../components/AnimalPhoto';
 import { Numpad } from '../components/Numpad';
 import { AppShell } from '../components/AppShell';
 import { EarTagBadge } from '../components/ui';
@@ -35,7 +35,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Round'>;
 
 const SKIP_REASONS: RoundSkipReason[] = ['NOT_MILKED', 'FORGOT'];
 
-export function RoundScreen({ navigation }: Props) {
+export function RoundScreen({ navigation, route }: Props) {
   const { store, api, revision, persist } = useFarm();
   const { t } = useLocale();
   const copy = {
@@ -131,6 +131,13 @@ export function RoundScreen({ navigation }: Props) {
     },
     [mode, scanLock, store, t],
   );
+
+  const presetAnimalId = route.params?.animalId;
+  useEffect(() => {
+    if (!presetAnimalId || !store.round) return;
+    onScan(presetAnimalId, 'LIST_TAP');
+    navigation.setParams({ animalId: undefined });
+  }, [presetAnimalId]);
 
   const save = () => {
     if (!scan) return;
@@ -346,9 +353,13 @@ export function RoundScreen({ navigation }: Props) {
             code={String(scan.animal.shortNo ?? scan.animal.name ?? '—')}
             name={scan.animal.nameNp ?? scan.animal.name ?? undefined}
           />
-          {scan.animal.photoUrl ? (
-            <Image source={{ uri: scan.animal.photoUrl }} style={styles.photo} />
-          ) : null}
+          <AnimalPhoto
+            animalId={scan.animal.id}
+            photoUrl={scan.animal.photoUrl}
+            species={scan.animal.species}
+            size={112}
+            style={styles.photo}
+          />
           {mode === 'MILKING' ? (
             <>
               <Text style={styles.muted}>
@@ -480,12 +491,12 @@ export function RoundScreen({ navigation }: Props) {
                 onPress={() => onScan(a.id, photos ? 'PHOTO_PICK' : 'LIST_TAP')}
               >
                 <View style={styles.left}>
-                  {photos && (a.photoLocalPath || a.photoUrl) ? (
-                    <Image
-                      source={{ uri: a.photoLocalPath ?? a.photoUrl! }}
-                      style={styles.thumb}
-                    />
-                  ) : null}
+                  <AnimalPhoto
+                    animalId={a.id}
+                    photoUrl={a.photoUrl}
+                    species={a.species}
+                    size={photos ? 72 : 44}
+                  />
                   <Text style={styles.strong}>{a.shortNo ?? a.tag}</Text>
                 </View>
                 <Text style={styles.muted}>{a.name ?? a.penName ?? ''}</Text>
@@ -590,7 +601,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodyExtraBold,
   },
   hold: { color: color.danger, fontSize: 15, fontWeight: '700' },
-  photo: { width: 72, height: 72, borderRadius: 8, marginBottom: 8 },
+  photo: { alignSelf: 'center', marginVertical: 8 },
   perm: { marginBottom: 12 },
   list: { flex: 1 },
   row: {

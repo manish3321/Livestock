@@ -5,6 +5,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { formatDate, formatDateTime, formatNPR, SPECIES_LABEL, type Species } from '@farm/contracts';
 import { AppShell } from '../components/AppShell';
 import { ModuleIcon } from '../components/ModuleIcon';
+import { TodayTasks } from '../components/TodayTasks';
 import {
   Card,
   EarTagBadge,
@@ -146,6 +147,8 @@ export function DashboardScreen() {
               </View>
             </Pressable>
           ) : null}
+
+          <TodayTasks />
 
           <View style={styles.sectionHeadRow}>
             <Txt weight="display" style={styles.sectionTitle}>

@@ -3,9 +3,15 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   recordingRoundCreateSchema,
   recordingRoundFinishSchema,
+  roundTodayQuerySchema,
   scanCreateSchema,
 } from '@farm/contracts';
-import type { RecordingRoundCreate, RecordingRoundFinish, ScanCreate } from '@farm/contracts';
+import type {
+  RecordingRoundCreate,
+  RecordingRoundFinish,
+  RoundTodayQuery,
+  ScanCreate,
+} from '@farm/contracts';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/types';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
@@ -30,6 +36,16 @@ export class RoundsController {
   @RequirePermissions('rounds:read')
   active(@CurrentUser() user: RequestUser) {
     return this.rounds.active(user);
+  }
+
+  @Get('today')
+  @RequirePermissions('rounds:read')
+  @ApiOperation({ summary: "Today's shed progress for a mode/session: who is still not done" })
+  today(
+    @CurrentUser() user: RequestUser,
+    @Query(new ZodValidationPipe(roundTodayQuerySchema)) query: RoundTodayQuery,
+  ) {
+    return this.rounds.today(user, query);
   }
 
   @Get('metrics')

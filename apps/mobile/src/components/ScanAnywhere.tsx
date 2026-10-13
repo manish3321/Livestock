@@ -27,6 +27,8 @@ import { parseQrPayload, type QrTarget } from '../lib/qr';
 import { searchAnimalsLocal } from '../lib/animal-search';
 import { color } from '../theme/tokens';
 import { AnimalActionGrid } from './AnimalActionGrid';
+import { AnimalChoices } from './AnimalChoiceDialog';
+import { AnimalPhoto } from './AnimalPhoto';
 import { Button, Chip, ErrorState, LoadingState, Stat, Txt, inputStyle, useTypeface } from './ui';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -340,12 +342,24 @@ export function ScanAnywhere() {
                 </>
               ) : animal ? (
                 <>
-                  <Txt muted>{t('qr.scanAnimal')}</Txt>
-                  <Txt weight="display" style={styles.pickedName}>
-                    {`${animal.name?.trim() || SPECIES_LABEL[animal.species as Species] || animal.species} #${animal.tag}`}
+                  <View style={styles.pickedRow}>
+                    <AnimalPhoto animalId={animal.id} species={animal.species} size={72} />
+                    <View style={{ flex: 1 }}>
+                      <Txt muted>{t('qr.scanAnimal')}</Txt>
+                      <Txt weight="display" style={styles.pickedName}>
+                        {`${animal.name?.trim() || SPECIES_LABEL[animal.species as Species] || animal.species} #${animal.tag}`}
+                      </Txt>
+                    </View>
+                  </View>
+                  <Txt weight="display" style={{ fontSize: 18 }}>
+                    {t('qr.chooseTitle')}
                   </Txt>
                   <Txt muted style={{ marginBottom: 12 }}>
-                    {t('qr.whatNextHint')}
+                    {t('qr.chooseHint')}
+                  </Txt>
+                  <AnimalChoices animal={animal} onNavigate={close} />
+                  <Txt weight="semibold" style={{ marginTop: 20, marginBottom: 4 }}>
+                    {t('qr.otherActions')}
                   </Txt>
                   <AnimalActionGrid animalId={animal.id} onNavigate={close} />
                   <View style={{ marginTop: 16 }}>
@@ -569,6 +583,7 @@ const styles = StyleSheet.create({
     backgroundColor: color.surface,
   },
   pickedName: { fontSize: 22, marginVertical: 8 },
+  pickedRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   stats: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
 });

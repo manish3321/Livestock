@@ -2,7 +2,7 @@ export type RootStackParamList = {
   Login: undefined;
   Dashboard: undefined;
   Shed: { animalId?: string; mode?: string } | undefined;
-  Round: undefined;
+  Round: { animalId?: string } | undefined;
   TankDelivery: { milkRoundId: string };
   Conflicts: undefined;
   Inbox: undefined;
