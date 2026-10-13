@@ -35,6 +35,13 @@ function clock(ms: number): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function shortDate(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getDate()} ${MONTHS_EN[d.getMonth()]}`;
+}
+
 /** The worker's day at a glance: late, today, tomorrow — so nothing has to be remembered. */
 export function TodayTasks() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -125,8 +132,10 @@ export function TodayTasks() {
 
   const renderRow = (task: TaskDto, bucket: Bucket) => {
     const mine = Boolean(user?.id && task.assignedToId === user.id);
-    const title = locale === 'ne' ? task.titleNp || task.titleEn : task.titleEn;
-    const animal = [task.animalHerdNumber, task.animalName].filter(Boolean).join(' · ');
+    const kind = t(`today.kind.${task.type}`, { defaultValue: t('today.other') });
+    const detail = locale === 'ne' ? task.titleNp || task.titleEn : task.titleEn;
+    const animal = task.animalId ? task.animalHerdNumber || task.animalName : null;
+    const late = bucket === 'overdue';
     return (
       <View
         key={task.id}
@@ -157,19 +166,28 @@ export function TodayTasks() {
               animalId={task.animalId}
               photoUrl={task.animalPhotoUrl}
               species={task.animalSpecies}
-              size={52}
+              size={68}
             />
           ) : (
             <View style={styles.iconBox}>
-              <ModuleIcon module="inbox" size={26} color={color.brand} />
+              <ModuleIcon module="inbox" size={32} color={color.brand} />
             </View>
           )}
-          <View style={{ flex: 1 }}>
-            <Txt weight="bold" style={styles.rowTitle} numberOfLines={2}>
-              {title}
-            </Txt>
-            <Txt muted style={styles.rowSub} numberOfLines={1}>
-              {[animal, clock(effectiveDue(task))].filter(Boolean).join(' · ')}
+          <View style={{ flex: 1, gap: 2 }}>
+            <View style={styles.rowTop}>
+              <Txt weight="bold" style={styles.rowNumber} numberOfLines={1}>
+                {animal || kind}
+              </Txt>
+              <Txt weight="bold" style={[styles.rowTime, late && { color: color.danger }]}>
+                {late ? shortDate(effectiveDue(task)) : clock(effectiveDue(task))}
+              </Txt>
+            </View>
+            <Txt
+              weight="bold"
+              style={[styles.rowKind, late && { color: color.danger }]}
+              numberOfLines={1}
+            >
+              {animal ? kind : detail}
             </Txt>
             {mine ? (
               <View style={styles.mine}>
@@ -182,14 +200,20 @@ export function TodayTasks() {
         </Pressable>
         {bucket !== 'tomorrow' ? (
           <View style={styles.rowActions}>
-            <Button label={t('today.open')} onPress={() => open(task)} />
+            <View style={{ flex: 1 }}>
+              <Button label={t('today.open')} onPress={() => open(task)} block field />
+            </View>
             {!SCAN_ONLY.has(task.type) ? (
-              <Button
-                label={busyId === task.id ? '…' : t('today.done')}
-                variant="secondary"
-                disabled={busyId === task.id}
-                onPress={() => void complete(task)}
-              />
+              <View style={{ flex: 1 }}>
+                <Button
+                  label={busyId === task.id ? '…' : t('today.done')}
+                  variant="secondary"
+                  disabled={busyId === task.id}
+                  onPress={() => void complete(task)}
+                  block
+                  field
+                />
+              </View>
             ) : null}
           </View>
         ) : null}
@@ -294,27 +318,29 @@ const styles = StyleSheet.create({
     borderColor: color.border,
     borderRadius: 8,
     backgroundColor: color.surface,
-    paddingVertical: 10,
-    paddingLeft: 14,
-    paddingRight: 10,
-    gap: 8,
+    paddingVertical: 14,
+    paddingLeft: 16,
+    paddingRight: 12,
+    gap: 12,
     overflow: 'hidden',
   },
   rowLate: { backgroundColor: color.dangerSubtle, borderColor: '#F5C6C6' },
   rowTomorrow: { backgroundColor: color.surfaceSubtle },
-  stripe: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 5 },
-  rowMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  stripe: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 6 },
+  rowMain: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   iconBox: {
-    width: 52,
-    height: 52,
-    borderRadius: 9,
+    width: 68,
+    height: 68,
+    borderRadius: 12,
     backgroundColor: color.mint,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  rowTitle: { fontSize: 15, color: color.textPrimary },
-  rowSub: { fontSize: 12, marginTop: 2 },
-  rowActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  rowTop: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+  rowNumber: { flex: 1, fontSize: 22, color: color.textPrimary },
+  rowTime: { fontSize: 15, color: color.textSecondary },
+  rowKind: { fontSize: 17, color: color.brandStrong },
+  rowActions: { flexDirection: 'row', gap: 10 },
   mine: {
     alignSelf: 'flex-start',
     marginTop: 4,

@@ -3204,8 +3204,8 @@ button.kpi-hit {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 10px 12px 10px 16px;
+  gap: 12px 16px;
+  padding: 14px 14px 14px 20px;
   border: 1px solid var(--color-border);
   border-radius: 12px;
   background: var(--color-surface);
@@ -3217,7 +3217,7 @@ button.kpi-hit {
   left: 0;
   top: 0;
   bottom: 0;
-  width: 5px;
+  width: 6px;
   background: var(--color-brand);
 }
 .today-row-overdue { background: var(--color-danger-subtle); border-color: #f5c6c6; }
@@ -3228,8 +3228,8 @@ button.kpi-hit {
 .today-row-main {
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex: 1 1 260px;
+  gap: 14px;
+  flex: 1 1 280px;
   min-width: 0;
   padding: 0;
   border: 0;
@@ -3243,16 +3243,36 @@ button.kpi-hit {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 52px;
-  height: 52px;
-  border-radius: 10px;
+  width: 68px;
+  height: 68px;
+  border-radius: 13px;
   flex-shrink: 0;
   background: var(--color-brand-subtle);
   color: var(--color-brand);
 }
-.today-row-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.today-row-body strong { font-size: 0.98rem; color: var(--color-text-primary); }
-.today-row-body .muted { font-size: 0.82rem; }
+.today-row-body { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.today-row-top { display: flex; align-items: baseline; gap: 10px; }
+.today-row-number {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  color: var(--color-text-primary);
+}
+.today-row-time { font-weight: 700; font-size: 0.95rem; color: var(--color-text-secondary); }
+.today-row-kind {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--color-brand-strong, var(--color-brand));
+}
+.today-row-overdue .today-row-time,
+.today-row-overdue .today-row-kind { color: var(--color-danger); }
 .today-mine {
   align-self: flex-start;
   margin-top: 2px;
@@ -3264,7 +3284,8 @@ button.kpi-hit {
   background: var(--color-brand);
   color: #fffdf9;
 }
-.today-row-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.today-row-actions { display: flex; gap: 10px; flex-shrink: 0; }
+.today-row-actions .btn { min-height: 48px; min-width: 104px; font-size: 1rem; }
 .today-more {
   margin-top: 6px;
   padding: 4px 0;
