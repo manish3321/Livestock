@@ -11,6 +11,11 @@ export function listUpcomingTasks(): Promise<PageResult<TaskDto>> {
   return api(`/v1/tasks?pageSize=200&dueBefore=${encodeURIComponent(dueBefore)}`);
 }
 
+/** Open reminders due before a moment — used for the late / today / tomorrow list. */
+export function listTasksDueBefore(dueBefore: Date): Promise<PageResult<TaskDto>> {
+  return api(`/v1/tasks?page=1&pageSize=200&dueBefore=${encodeURIComponent(dueBefore.toISOString())}`);
+}
+
 export function completeTask(id: string, body: { byScan?: boolean } = {}): Promise<TaskDto> {
   return api(`/v1/tasks/${id}/complete`, { method: 'PATCH', body: JSON.stringify(body) });
 }

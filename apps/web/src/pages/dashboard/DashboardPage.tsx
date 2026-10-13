@@ -15,6 +15,7 @@ import { getDashboardSummary } from '../../api/dashboard';
 import { ErrorState, LoadingState } from '../../components/PageState';
 import { ModuleIcon } from '../../components/ModuleIcon';
 import { StatusChip } from '../../components/StatusChip';
+import { TodayTasks } from '../../components/TodayTasks';
 import { useFarmMode } from '../../hooks/useFarmMode';
 
 function speciesAccent(key: string): string {
@@ -153,6 +154,8 @@ export function DashboardPage() {
           <span aria-hidden="true">→</span>
         </Link>
       )}
+
+      {can('tasks:read') && <TodayTasks />}
 
       <div className="section-block rise-in rise-in-delay-2">
         <div className="section-head">

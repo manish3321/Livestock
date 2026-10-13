@@ -10,7 +10,7 @@ import {
 import { getAnimal, getAnimalEconomics, updateAnimal } from '../api/animals';
 import { getBatch, getBatchEconomics } from '../api/batches';
 import { useAuth } from '../auth/auth-context';
-import { AnimalActionGrid } from './AnimalActionGrid';
+import { AnimalChoices } from './AnimalChoices';
 import { Modal } from './Modal';
 import { ErrorState, LoadingState } from './PageState';
 import type { QrTarget } from '../lib/qr';
@@ -95,23 +95,27 @@ function AnimalResult({ id, onClose }: { id: string; onClose: () => void }) {
 
   return (
     <div className="scan-result">
-      <p className="muted">{t('qr.scanAnimal')}</p>
-      <h2>
-        {animal.name?.trim() || SPECIES_LABEL[animal.species]} #{animal.tag}
-      </h2>
-      <div className="chip-row" style={{ marginBottom: 16 }}>
+      <AnimalChoices
+        animal={{
+          id: animal.id,
+          tag: animal.tag,
+          shortNo: animal.herdNumber,
+          name: animal.name,
+          species: animal.species,
+          penName: animal.shed,
+          photoUrl: animal.photoUrl,
+        }}
+        onNavigate={onClose}
+      />
+      <div className="chip-row" style={{ margin: '16px 0' }}>
         <span className="meta-pill">{SPECIES_LABEL[animal.species]}</span>
         <span className="meta-pill">{animal.breed}</span>
         {animal.breedingStock && (
           <span className="meta-pill">{t('animals.breedingStock')}</span>
         )}
       </div>
-
-      <h3 className="scan-modal-subtitle">{t('qr.whatNext')}</h3>
-      <p className="muted">{t('qr.whatNextHint')}</p>
-      <AnimalActionGrid animalId={animal.id} onNavigate={onClose} />
-      {can('animals:write') && (
-        <div className="page-actions" style={{ marginTop: 16 }}>
+      <div className="page-actions" style={{ flexWrap: 'wrap', justifyContent: 'flex-start' }}>
+        {can('animals:write') && (
           <button
             className="btn secondary"
             type="button"
@@ -120,8 +124,11 @@ function AnimalResult({ id, onClose }: { id: string; onClose: () => void }) {
           >
             {animal.breedingStock ? t('qr.unsetBreeding') : t('qr.setBreeding')}
           </button>
-        </div>
-      )}
+        )}
+        <button className="btn ghost" type="button" onClick={onClose}>
+          {t('qr.cancel')}
+        </button>
+      </div>
 
       <EconomicsBlock
         invested={econ.investedTotal}

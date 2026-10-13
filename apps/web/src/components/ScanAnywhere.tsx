@@ -16,7 +16,8 @@ import { SPECIES_LABEL, modulesForRole, type AnimalSearchHitDto, type Species } 
 import { getAnimal, searchAnimals } from '../api/animals';
 import { useAuth } from '../auth/auth-context';
 import { parseQrPayload, type QrTarget } from '../lib/qr';
-import { AnimalActionGrid } from './AnimalActionGrid';
+import { AnimalChoices, type ChosenAnimal } from './AnimalChoices';
+import { AnimalPhoto } from './AnimalPhoto';
 import { Modal } from './Modal';
 import { ScanResultModal } from './ScanResultModal';
 
@@ -52,11 +53,18 @@ export function useScanOverlay(): ScanOverlayValue {
 type IdentifyMode = 'camera' | 'manual';
 type Step = 'identify' | 'actions';
 
-interface PickedAnimal {
-  id: string;
-  tag: string;
-  name: string | null;
-  species: string;
+type PickedAnimal = ChosenAnimal;
+
+function fromHit(hit: AnimalSearchHitDto): PickedAnimal {
+  return {
+    id: hit.id,
+    tag: hit.tag,
+    shortNo: hit.shortNo,
+    name: hit.name,
+    species: hit.species,
+    penName: hit.penName,
+    photoUrl: hit.photoUrl,
+  };
 }
 
 function ScanIcon({ size = 22 }: { size?: number }) {
@@ -158,8 +166,11 @@ export function ScanAnywhere() {
         setAnimal({
           id: detail.id,
           tag: detail.tag,
+          shortNo: detail.herdNumber,
           name: detail.name,
           species: detail.species,
+          penName: detail.shed,
+          photoUrl: detail.photoUrl,
         });
       } catch {
         setAnimal({ id, tag: id.slice(0, 8), name: null, species: '' });
@@ -190,12 +201,7 @@ export function ScanAnywhere() {
         const matches = await searchAnimals(raw.trim());
         if (matches.length === 1 && matches[0]) {
           const hit = matches[0];
-          await pickAnimal(hit.id, {
-            id: hit.id,
-            tag: hit.tag,
-            name: hit.name,
-            species: hit.species,
-          });
+          await pickAnimal(hit.id, fromHit(hit));
           return;
         }
         if (matches.length > 1) {
@@ -291,12 +297,7 @@ export function ScanAnywhere() {
     e.preventDefault();
     const first = hits[0];
     if (hits.length === 1 && first) {
-      void pickAnimal(first.id, {
-        id: first.id,
-        tag: first.tag,
-        name: first.name,
-        species: first.species,
-      });
+      void pickAnimal(first.id, fromHit(first));
       return;
     }
     if (query.trim()) void resolvePayload(query.trim());
@@ -323,7 +324,7 @@ export function ScanAnywhere() {
           open
           onClose={close}
           className="scan-anywhere-sheet"
-          title={step === 'actions' ? t('qr.whatNext') : t('qr.identifyTitle')}
+          title={step === 'actions' ? t('qr.scanAnimal') : t('qr.identifyTitle')}
           label={t('qr.identifyTitle')}
         >
           <>
@@ -386,20 +387,16 @@ export function ScanAnywhere() {
                       <button
                         key={hit.id}
                         type="button"
-                        className="scan-hit"
-                        onClick={() =>
-                          void pickAnimal(hit.id, {
-                            id: hit.id,
-                            tag: hit.tag,
-                            name: hit.name,
-                            species: hit.species,
-                          })
-                        }
+                        className="scan-hit scan-hit-photo"
+                        onClick={() => void pickAnimal(hit.id, fromHit(hit))}
                       >
-                        <strong>{hit.tag}</strong>
-                        <span>
-                          {hit.name?.trim() || SPECIES_LABEL[hit.species as Species] || hit.species}
-                          {hit.penName ? ` · ${hit.penName}` : ''}
+                        <AnimalPhoto photoUrl={hit.photoUrl} species={hit.species} size={48} />
+                        <span className="scan-hit-body">
+                          <strong>{hit.shortNo ?? hit.tag}</strong>
+                          <span>
+                            {hit.name?.trim() || SPECIES_LABEL[hit.species as Species] || hit.species}
+                            {hit.penName ? ` · ${hit.penName}` : ''}
+                          </span>
                         </span>
                       </button>
                     ))}
@@ -410,13 +407,7 @@ export function ScanAnywhere() {
 
             {step === 'actions' && animal && (
               <>
-                <p className="muted">{t('qr.scanAnimal')}</p>
-                <h3 className="scan-picked-name">
-                  {animal.name?.trim() || SPECIES_LABEL[animal.species as Species] || animal.species}{' '}
-                  #{animal.tag}
-                </h3>
-                <p className="muted">{t('qr.whatNextHint')}</p>
-                <AnimalActionGrid animalId={animal.id} onNavigate={close} />
+                <AnimalChoices animal={animal} onNavigate={close} />
                 <div className="page-actions" style={{ marginTop: 16 }}>
                   <button
                     className="btn secondary"
@@ -431,6 +422,9 @@ export function ScanAnywhere() {
                     }}
                   >
                     {t('qr.backToScan')}
+                  </button>
+                  <button className="btn ghost" type="button" onClick={close}>
+                    {t('qr.cancel')}
                   </button>
                 </div>
               </>

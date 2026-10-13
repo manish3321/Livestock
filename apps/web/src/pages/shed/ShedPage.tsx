@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Html5Qrcode } from 'html5-qrcode';
-import type { MilkSession, RecordingMode, RoundSkipReason } from '@farm/contracts';
+import type { MilkSession, RecordingMode, RoundSkipReason, RoundTodayDto } from '@farm/contracts';
 import { NEPAL_VACCINE_PROTOCOLS, RECORDING_MODES } from '@farm/contracts';
 import { batchVaccinate } from '../../api/health';
 import { listInventory } from '../../api/inventory';
@@ -14,6 +14,7 @@ import {
   finishRound,
   getActiveRound,
   getRoundRemaining,
+  getRoundToday,
   postScan,
   searchAnimals,
   startRound,
@@ -24,6 +25,7 @@ import { isShedMilkDeepLink, shedModeFromParams } from '../../lib/shed-deeplink'
 import { shedFeedback } from '../../lib/shed-feedback';
 import { matchRosterByQuery, optimisticScanFromRoster } from '../../lib/shed-scan';
 import { useScanOverlay } from '../../components/ScanAnywhere';
+import { AnimalPhoto } from '../../components/AnimalPhoto';
 import {
   cacheScan,
   cachedScan,
@@ -128,6 +130,13 @@ export function ShedPage() {
     queryFn: () => getRoundRemaining(roundId!),
     enabled: !!roundId && navigator.onLine,
   });
+
+  const todayQ = useQuery({
+    queryKey: ['round-today', mode, mode === 'MILKING' ? session : null],
+    queryFn: () => getRoundToday(mode, mode === 'MILKING' ? session : undefined),
+    enabled: !roundId && !milkDeepLink && activeRoundReady && navigator.onLine,
+  });
+  const [pendingAnimal, setPendingAnimal] = useState<string | null>(null);
 
   const tankQ = useQuery({
     queryKey: ['milk-round', remainingQ.data?.round.milkRoundId],
@@ -379,6 +388,17 @@ export function ShedPage() {
       void openAnimal(preset, 'LIST_TAP');
     }
   }, [params, roundId, openAnimal]);
+
+  useEffect(() => {
+    if (!pendingAnimal || !roundId) return;
+    setPendingAnimal(null);
+    void openAnimal(pendingAnimal, 'LIST_TAP');
+  }, [pendingAnimal, roundId, openAnimal]);
+
+  const startWith = (animalId: string) => {
+    setPendingAnimal(animalId);
+    start.mutate(undefined, { onError: () => setPendingAnimal(null) });
+  };
 
   const save = useMutation({
     meta: { silent: true },
@@ -766,7 +786,22 @@ export function ShedPage() {
           <button type="button" className="btn shed-go" onClick={() => start.mutate()} disabled={start.isPending}>
             {t('shed.start')}
           </button>
+          {start.error && (
+            <p className="error">
+              {start.error instanceof ApiRequestError ? start.error.error.message : t('shed.saveFailed')}
+            </p>
+          )}
         </div>
+      )}
+
+      {!roundId && !milkDeepLink && (
+        <ShedNotDone
+          today={todayQ.data}
+          loading={todayQ.isLoading}
+          offline={!navigator.onLine}
+          busy={start.isPending}
+          onPick={startWith}
+        />
       )}
 
       {!roundId && milkDeepLink && (
@@ -879,7 +914,7 @@ export function ShedPage() {
               className="shed-row shed-row-hit"
               onClick={() => void openAnimal(a.id, 'MANUAL_NUMBER')}
             >
-              {a.photoUrl ? <img src={a.photoUrl} alt="" className="shed-thumb" /> : <span className="shed-thumb shed-thumb-empty" />}
+              <AnimalPhoto photoUrl={a.photoUrl} species={a.species} className="shed-thumb" />
               <span className="shed-row-body">
                 <strong>{a.shortNo ?? a.tag}</strong>
                 <span>
@@ -907,7 +942,7 @@ export function ShedPage() {
                   className={`shed-photo${index === 0 ? ' shed-photo-next' : ''}${'withholdActive' in a && a.withholdActive ? ' shed-photo-hold' : ''}`}
                   onClick={() => void openAnimal(a.id, 'PHOTO_PICK')}
                 >
-                  {a.photoUrl ? <img src={a.photoUrl} alt="" /> : <span>{a.shortNo ?? a.tag}</span>}
+                  <AnimalPhoto photoUrl={a.photoUrl} species={a.species} size={72} className="shed-photo-img" />
                   <em>{a.shortNo ?? a.tag}</em>
                 </button>
               ))}
@@ -921,7 +956,7 @@ export function ShedPage() {
                 onClick={() => void openAnimal(a.id, 'LIST_TAP')}
               >
                 <span className="shed-row-stripe" aria-hidden="true" />
-                {a.photoUrl ? <img src={a.photoUrl} alt="" className="shed-thumb" /> : <span className="shed-thumb shed-thumb-empty">{a.shortNo ?? a.tag}</span>}
+                <AnimalPhoto photoUrl={a.photoUrl} species={a.species} className="shed-thumb" />
                 <span className="shed-row-body">
                   <strong>{a.shortNo ?? a.tag}</strong>
                   <span>
@@ -1166,6 +1201,88 @@ export function ShedPage() {
             </button>
           </form>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** Before a round is started: who still has not been done today, so nobody is missed. */
+function ShedNotDone({
+  today,
+  loading,
+  offline,
+  busy,
+  onPick,
+}: {
+  today: RoundTodayDto | undefined;
+  loading: boolean;
+  offline: boolean;
+  busy: boolean;
+  onPick: (animalId: string) => void;
+}) {
+  const { t } = useTranslation();
+  const left = today?.remaining.length ?? 0;
+  const done = today?.recorded ?? 0;
+  const total = today?.expected ?? 0;
+  const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+
+  return (
+    <div className="card shed-notdone">
+      <div className="shed-notdone-head">
+        <h2>{t('shed.notDoneTitle')}</h2>
+        {today && left > 0 && <span className="shed-remaining-badge">{left}</span>}
+      </div>
+
+      {offline && <p className="muted">{t('shed.offlineList')}</p>}
+      {loading && <p className="muted">{t('common.loading')}</p>}
+
+      {today && total === 0 && <p className="muted">{t('shed.nothingExpected')}</p>}
+
+      {today && total > 0 && (
+        <>
+          <div className="shed-progress" aria-label={t('shed.progress', { done, total })}>
+            <div className="shed-progress-track shed-notdone-track">
+              <div className="shed-progress-fill" style={{ width: `${pct}%` }} />
+            </div>
+            <div className="shed-progress-meta">
+              <span className="muted">{t('shed.progress', { done, total })}</span>
+              <span className="shed-chip shed-chip-done">{t('shed.doneCount', { n: done })}</span>
+              <span className={`shed-chip shed-notdone-chip${left > 0 ? '' : ' shed-chip-clear'}`}>
+                {t('shed.leftCount', { n: left })}
+              </span>
+            </div>
+          </div>
+
+          {left === 0 ? (
+            <p className="shed-all-done">{t('shed.sessionDone')}</p>
+          ) : (
+            <>
+              <p className="muted">{t('shed.notDoneHint')}</p>
+              <div className="shed-notdone-list">
+                {today.remaining.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    className={`shed-row shed-row-notdone${a.withholdActive ? ' shed-row-hold' : ''}`}
+                    disabled={busy}
+                    onClick={() => onPick(a.id)}
+                  >
+                    <span className="shed-row-stripe" aria-hidden="true" />
+                    <AnimalPhoto photoUrl={a.photoUrl} species={a.species} className="shed-thumb" />
+                    <span className="shed-row-body">
+                      <strong>{a.shortNo ?? a.tag}</strong>
+                      <span>
+                        {[a.name, a.penName].filter(Boolean).join(' · ')}
+                        {a.withholdActive ? ` · ${t('shed.withhold')}` : ''}
+                      </span>
+                    </span>
+                    <em className="shed-row-pen" aria-hidden="true">→</em>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </>
       )}
     </div>
   );

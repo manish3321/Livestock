@@ -1,8 +1,10 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Html5Qrcode } from 'html5-qrcode';
-import { listAnimals } from '../../api/animals';
+import { SPECIES_LABEL, type AnimalSearchHitDto, type Species } from '@farm/contracts';
+import { searchAnimals } from '../../api/animals';
 import { listBatches } from '../../api/batches';
+import { AnimalPhoto } from '../../components/AnimalPhoto';
 import { ScanResultModal } from '../../components/ScanResultModal';
 import { parseQrPayload, type QrTarget } from '../../lib/qr';
 
@@ -19,6 +21,7 @@ export function ScanHubPage() {
   const [batchQuery, setBatchQuery] = useState('');
   const [lookingUp, setLookingUp] = useState(false);
   const [target, setTarget] = useState<QrTarget | null>(null);
+  const [hits, setHits] = useState<AnimalSearchHitDto[]>([]);
 
   const stopScanner = useCallback(async () => {
     const scanner = scannerRef.current;
@@ -99,15 +102,23 @@ export function ScanHubPage() {
     if (!q) return;
     setLookupError(null);
     setLookingUp(true);
+    setHits([]);
     try {
-      const page = await listAnimals({ q, pageSize: 25 });
-      const exact = page.items.find((a) => a.tag.toUpperCase() === q.toUpperCase());
-      const match = exact ?? page.items[0];
-      if (!match) {
+      const rows = await searchAnimals(q);
+      const upper = q.toUpperCase();
+      const exact = rows.find(
+        (a) => a.tag.toUpperCase() === upper || a.shortNo?.toUpperCase() === upper,
+      );
+      const match = exact ?? (rows.length === 1 ? rows[0] : undefined);
+      if (match) {
+        await openTarget({ kind: 'animal', id: match.id });
+        return;
+      }
+      if (rows.length === 0) {
         setLookupError(t('qr.notFound'));
         return;
       }
-      await openTarget({ kind: 'animal', id: match.id });
+      setHits(rows);
     } catch (err) {
       setLookupError(err instanceof Error ? err.message : t('qr.notFound'));
     } finally {
@@ -201,6 +212,32 @@ export function ScanHubPage() {
           </form>
 
           {lookupError && <p className="error-text">{lookupError}</p>}
+
+          {hits.length > 0 && (
+            <div className="scan-hit-list">
+              <h3 className="scan-modal-subtitle">{t('qr.pickAnimal')}</h3>
+              {hits.map((hit) => (
+                <button
+                  key={hit.id}
+                  type="button"
+                  className="scan-hit scan-hit-photo"
+                  onClick={() => {
+                    setHits([]);
+                    void openTarget({ kind: 'animal', id: hit.id });
+                  }}
+                >
+                  <AnimalPhoto photoUrl={hit.photoUrl} species={hit.species} size={48} />
+                  <span className="scan-hit-body">
+                    <strong>{hit.shortNo ?? hit.tag}</strong>
+                    <span>
+                      {hit.name?.trim() || SPECIES_LABEL[hit.species as Species] || hit.species}
+                      {hit.penName ? ` · ${hit.penName}` : ''}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

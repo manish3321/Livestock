@@ -10,6 +10,7 @@ import type {
   RecordingRoundDto,
   RecordingRoundFinish,
   RoundRemainingDto,
+  RoundTodayDto,
   ScanCreate,
   ScanResolveDto,
 } from '@farm/contracts';
@@ -25,6 +26,13 @@ export function getActiveRound(): Promise<RecordingRoundDto | null> {
 
 export function getRoundRemaining(id: string): Promise<RoundRemainingDto> {
   return api(`/v1/rounds/${id}/remaining`);
+}
+
+/** Who is still not done today for a mode/session, even before a round is started. */
+export function getRoundToday(mode: RecordingMode, session?: MilkSession): Promise<RoundTodayDto> {
+  const qs = new URLSearchParams({ mode });
+  if (session) qs.set('session', session);
+  return api(`/v1/rounds/today?${qs.toString()}`);
 }
 
 export function finishRound(id: string, body: RecordingRoundFinish): Promise<RecordingRoundDto> {
