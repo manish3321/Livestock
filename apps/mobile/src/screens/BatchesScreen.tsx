@@ -3,6 +3,7 @@ import { FlatList, StyleSheet, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { PageResult } from '@farm/contracts';
+import { AnimalPhoto, batchPictureKind } from '../components/AnimalPhoto';
 import { AppShell } from '../components/AppShell';
 import {
   Button,
@@ -149,6 +150,7 @@ function BatchKindList({
             ListEmptyComponent={!loading ? <EmptyState /> : null}
         renderItem={({ item }) => (
           <ListRow
+            leading={<AnimalPhoto species={batchPictureKind(item.kind ?? kind, item.category)} size={48} />}
             title={item.name}
             subtitle={[item.kind, item.category].filter(Boolean).join(' · ')}
             meta={String(item.currentCount ?? item.initialCount ?? '')}

@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { PageResult, TaskDto } from '@farm/contracts';
 import { enqueueTaskComplete } from '../core/scan-round';
@@ -19,6 +19,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** Late work stays short so today's and tomorrow's lists are still on screen. */
 const SHOW: Record<Bucket, number> = { overdue: 3, today: 6, tomorrow: 4 };
 const SCAN_ONLY = new Set(['APPLY_MARKER', 'REMOVE_MARKER']);
+const REFRESH_MS = 30_000;
 
 function startOfLocalDay(d: Date): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
@@ -43,8 +44,15 @@ export function TodayTasks() {
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Bucket | null>(null);
+  const focused = useIsFocused();
+  const inFlight = useRef(false);
+  const lastLoadAt = useRef(0);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force: boolean) => {
+    if (inFlight.current) return;
+    if (!force && Date.now() - lastLoadAt.current < REFRESH_MS) return;
+    inFlight.current = true;
+    lastLoadAt.current = Date.now();
     setLoading(true);
     const endOfTomorrow = new Date(startOfLocalDay(new Date()) + 2 * DAY_MS - 1).toISOString();
     try {
@@ -56,15 +64,21 @@ export function TodayTasks() {
       const cached = [...store.tasks.values()] as unknown as TaskDto[];
       setTasks(cached.filter((task) => task.status === 'PENDING' || task.status === 'SNOOZED'));
     } finally {
+      inFlight.current = false;
       setLoading(false);
     }
   }, [api, store]);
 
   useFocusEffect(
     useCallback(() => {
-      void load();
-    }, [load, revision]),
+      void load(true);
+    }, [load]),
   );
+
+  // Background sync bumps the revision often; refresh quietly and not more than every REFRESH_MS.
+  useEffect(() => {
+    if (focused) void load(false);
+  }, [focused, load, revision]);
 
   const buckets = useMemo(() => {
     const today = startOfLocalDay(new Date());
@@ -231,7 +245,7 @@ export function TodayTasks() {
             {t('today.subtitle')}
           </Txt>
         </View>
-        {loading ? (
+        {loading && !tasks ? (
           <ActivityIndicator color={color.brand} />
         ) : tasks ? (
           <View style={[styles.count, leftToday > 0 ? styles.countLate : styles.countOk]}>

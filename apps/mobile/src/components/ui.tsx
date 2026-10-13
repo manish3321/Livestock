@@ -551,6 +551,7 @@ export function ListRow({
   onPress,
   zebra,
   rail,
+  leading,
 }: {
   title: string;
   subtitle?: string;
@@ -558,6 +559,7 @@ export function ListRow({
   onPress?: () => void;
   zebra?: 'a' | 'b';
   rail?: keyof typeof kharkaStatusRail;
+  leading?: ReactNode;
 }) {
   const body = (
     <View
@@ -568,6 +570,7 @@ export function ListRow({
       ]}
     >
       {rail ? <StatusRail tone={rail} /> : null}
+      {leading ? <View style={{ marginLeft: rail ? 10 : 0, marginRight: 12 }}>{leading}</View> : null}
       <View style={{ flex: 1, paddingLeft: rail ? 10 : 0 }}>
         <Txt weight="semibold">{title}</Txt>
         {subtitle ? (

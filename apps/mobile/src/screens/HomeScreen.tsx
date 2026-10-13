@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
-import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import {
+  useFocusEffect,
+  useIsFocused,
+  useNavigation,
+  useRoute,
+  type RouteProp,
+} from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   RECORDING_MODES,
@@ -24,6 +30,7 @@ import { color } from '../theme/tokens';
 type TodayProgress = Pick<RoundTodayDto, 'expected' | 'recorded' | 'remaining'> & { offline: boolean };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const TODAY_REFRESH_MS = 30_000;
 
 /** Round dates are UTC days and a Nepal morning starts before UTC midnight, so yesterday still counts. */
 function isCurrentRoundDate(date: string): boolean {
@@ -102,9 +109,13 @@ export function ShedScreen() {
   const [today, setToday] = useState<TodayProgress | null>(null);
   const [loadingToday, setLoadingToday] = useState(false);
   const deepLinked = useRef<string | null>(null);
+  const lastTodayLoad = useRef(0);
+  const focused = useIsFocused();
   void revision;
 
-  const loadToday = useCallback(async () => {
+  const loadToday = useCallback(async (force: boolean) => {
+    if (!force && Date.now() - lastTodayLoad.current < TODAY_REFRESH_MS) return;
+    lastTodayLoad.current = Date.now();
     setLoadingToday(true);
     try {
       const dto = await api.get<RoundTodayDto>(
@@ -120,9 +131,13 @@ export function ShedScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void loadToday();
-    }, [loadToday, revision]),
+      void loadToday(true);
+    }, [loadToday]),
   );
+
+  useEffect(() => {
+    if (focused) void loadToday(false);
+  }, [focused, loadToday, revision]);
 
   const remaining = today?.remaining ?? [];
   const pending = store.outbox.filter((o) => o.state === 'pending').length;
@@ -363,7 +378,7 @@ export function ShedScreen() {
             <Txt weight="display" style={styles.todoTitle}>
               {t('shed.notDoneTitle')}
             </Txt>
-            {loadingToday ? <ActivityIndicator color={color.brand} /> : null}
+            {loadingToday && !today ? <ActivityIndicator color={color.brand} /> : null}
           </View>
           <Txt muted style={styles.todoHint}>
             {t(`shed.mode.${mode}`)}

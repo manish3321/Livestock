@@ -20,6 +20,7 @@ import {
 } from '@farm/contracts';
 import { AppShell } from '../components/AppShell';
 import { AnimalActionGrid } from '../components/AnimalActionGrid';
+import { AnimalPhoto } from '../components/AnimalPhoto';
 import { speciesCode } from '../components/ModuleIcon';
 import {
   Button,
@@ -232,13 +233,16 @@ export function AnimalsScreen() {
         <View style={styles.pickGrid}>
           {SPECIES.map((s) => (
             <Pressable key={s} style={styles.speciesPick} onPress={() => setSpecies(s)}>
-              <Txt weight="display" style={styles.glyph}>
-                {speciesCode(s)}
-              </Txt>
-              <Txt weight="semibold">{SPECIES_LABEL[s]}</Txt>
-              <Txt weight="display" style={styles.pickCount}>
-                {speciesCounts[s] ?? 0}
-              </Txt>
+              <View style={{ flex: 1, gap: 4 }}>
+                <Txt weight="display" style={styles.glyph}>
+                  {speciesCode(s)}
+                </Txt>
+                <Txt weight="semibold">{SPECIES_LABEL[s]}</Txt>
+                <Txt weight="display" style={styles.pickCount}>
+                  {speciesCounts[s] ?? 0}
+                </Txt>
+              </View>
+              <AnimalPhoto species={s} size={56} />
             </Pressable>
           ))}
         </View>
@@ -337,6 +341,7 @@ const HerdRow = memo(function HerdRow({
         style={styles.herdToggle}
         accessibilityRole="button"
       >
+        <AnimalPhoto animalId={row.id} photoUrl={row.photoUrl} species={row.species} size={44} />
         <Txt weight="display" style={styles.herdId}>
           {label}
         </Txt>
@@ -404,7 +409,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: color.border,
     borderRadius: 14,
-    gap: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   glyph: { fontSize: 15, letterSpacing: 0.6, color: color.brand },
   pickCount: { fontSize: 22, color: color.brand },
