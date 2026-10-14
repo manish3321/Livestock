@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Kharka Farm OS — Work summary, 13 Oct 2026</title>
+  <style>
+    @page { margin: 16mm 14mm; size: A4; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", "Nirmala UI", "Helvetica Neue", Arial, sans-serif;
+      color: #1a2e22;
+      line-height: 1.45;
+      font-size: 10pt;
+      margin: 0;
+    }
+    h1 { font-size: 20pt; margin: 0 0 4px; letter-spacing: -0.02em; color: #14532d; }
+    h2 {
+      font-size: 12.5pt;
+      margin: 22px 0 8px;
+      padding-bottom: 4px;
+      border-bottom: 1.5px solid #c5d9cb;
+      color: #166534;
+      break-after: avoid;
+    }
+    h3 { font-size: 10.5pt; margin: 14px 0 6px; color: #1a2e22; break-after: avoid; }
+    p { margin: 6px 0; }
+    .meta { color: #4b6354; font-size: 9.5pt; margin-bottom: 16px; }
+    .banner {
+      background: #e8f5ec;
+      border: 1.5px solid #a7d4b5;
+      border-radius: 6px;
+      padding: 12px 14px;
+      margin-bottom: 8px;
+    }
+    .note {
+      background: #fff8e6;
+      border: 1.5px solid #f2d48a;
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin: 10px 0;
+      font-size: 9.5pt;
+    }
+    ul, ol { margin: 6px 0 10px; padding-left: 1.2em; }
+    li { margin-bottom: 4px; }
+    table { width: 100%; border-collapse: collapse; font-size: 8.8pt; margin: 6px 0 12px; }
+    tr { break-inside: avoid; }
+    th, td { border: 1px solid #c5d9cb; padding: 5px 7px; text-align: left; vertical-align: top; }
+    th { background: #e8f5ec; color: #14532d; }
+    .u {
+      display: inline-block;
+      font-size: 7.5pt;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      padding: 1px 6px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+    .done { background: #dcfce7; color: #14532d; }
+    .todo { background: #ffedd5; color: #9a3412; }
+    code {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 8.5pt;
+      background: #f0f7f2;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+    figure { margin: 10px 0 14px; break-inside: avoid; }
+    figure img { display: block; max-width: 100%; border: 1px solid #c5d9cb; border-radius: 6px; }
+    figcaption { font-size: 8.5pt; color: #4b6354; margin-top: 4px; }
+    .pair { display: flex; gap: 14px; align-items: flex-start; break-inside: avoid; }
+    .pair figure { flex: 1; margin: 0; }
+    .pair img.phone { width: 48mm; margin: 0 auto; }
+    .footer {
+      margin-top: 26px;
+      padding-top: 10px;
+      border-top: 1px solid #c5d9cb;
+      font-size: 8.5pt;
+      color: #4b6354;
+    }
+    .pb { break-before: page; }
+  </style>
+</head>
+<body>
+
+  <h1>Work summary</h1>
+  <p class="meta">
+    Kharka Farm OS · Livestock monorepo · 13 Oct 2026<br />
+    Live at <code>https://evoqedlivestockfarm.vercel.app</code> · Six commits pushed to <code>main</code>, from <code>53d7175</code> to <code>4ae3858</code>
+  </p>
+
+  <div class="banner">
+    <strong>In one paragraph.</strong> Yesterday was about making the daily shed work quicker and clearer for workers, on
+    the phone and on the website. The Shed page now shows <strong>which animals are not done yet</strong>. Scanning an
+    animal's QR asks <strong>what you want to record: Milk, Vaccine or Breeding</strong>. The home screen has a
+    <strong>Today's work</strong> list (late, today, tomorrow), which was then made <strong>bigger and simpler</strong>, with one
+    short, standard label per job in English and Nepali. <strong>Animal pictures</strong> now appear on the livestock,
+    batch, poultry and fish screens. Two bugs were fixed: an <strong>old milking round from 25 September</strong> that took
+    over the Shed page, and the <strong>"152 left" counter flickering</strong> on the phone.
+  </div>
+
+  <h2>1. Shed: "Not done yet" list</h2>
+  <ul>
+    <li>When no round is running, the Shed page shows today's session for the chosen work (for example morning milking):
+      progress such as "19 of 35 done", and every animal still waiting.</li>
+    <li>Waiting animals are shown in <strong>light red</strong> with their photo, so they stand out. Tapping one starts
+      the round and opens that animal straight away.</li>
+    <li>The phone keeps a copy of the list, so it still shows when offline.</li>
+    <li>New API endpoint: <code>GET /v1/rounds/today?mode=…&amp;session=…</code>.</li>
+    <li>Available on the phone and on the website.</li>
+  </ul>
+
+  <h2>2. Scan QR: choose what to record</h2>
+  <ul>
+    <li>After scanning an animal's QR code, or picking it by hand, a dialog shows the animal's photo, number, name and pen.</li>
+    <li>It then asks one question: <strong>Milk</strong>, <strong>Vaccine</strong> or <strong>Breeding</strong>. Breeding
+      opens a second choice: heat, service, pregnancy check or calving.</li>
+    <li>"Other records" still gives access to every other form (weight, treatment and so on).</li>
+    <li>Each choice only appears for people whose role is allowed to record it.</li>
+    <li>On the website, the Scan page's text search opens the same dialog when it finds one exact match, or shows a list
+      with photos when several animals match.</li>
+  </ul>
+
+  <h2>3. Today's work</h2>
+  <p>The home screen of the app and the website dashboard now start with the worker's list for the day, so nothing has to be remembered:</p>
+  <ul>
+    <li>Three groups: <strong>Late — do these first</strong> (light red), <strong>Today</strong> and <strong>Tomorrow</strong>.</li>
+    <li>Jobs assigned to the signed-in person come first and are marked <strong>For you</strong>.</li>
+    <li><strong>Do it</strong> opens the right form with the animal already filled in. <strong>Done</strong> ticks the job off.
+      Band jobs can only be completed by scanning.</li>
+    <li>Long groups are shortened, with a "Show more" link.</li>
+  </ul>
+  <h3>Bigger, simpler rows (afternoon change)</h3>
+  <p>Each job used to show the long sentence written by the reminder system, for example "C10 is 3 days past the due date".
+    Each row now shows:</p>
+  <ul>
+    <li>The <strong>animal number in big text</strong> and a bigger picture.</li>
+    <li><strong>One short standard label</strong> for the type of job, such as <em>Calving soon</em> (बियाउन लागेको),
+      <em>Give vaccine</em> (खोप दिने), <em>Watch for heat</em> (रजस्वला हेर्ने), <em>Pregnancy check</em> (गर्भ जाँच) or
+      <em>Dry off</em> (सुकाउने). All 35 job types have an English and a Nepali label, using the words the app already uses.</li>
+    <li>The <strong>time</strong> on the right. For late jobs, the <strong>date</strong> it was due ("7 Jun") instead of a
+      time that doesn't say which day.</li>
+    <li><strong>Bigger Do it / Done buttons.</strong> On the phone they fill the width of the row.</li>
+  </ul>
+  <div class="pair">
+    <figure>
+      <img class="phone" src="work-summary-2026-10-13/mobile-today-before.jpg" alt="Phone, before" />
+      <figcaption>Phone, before: long sentences and small buttons.</figcaption>
+    </figure>
+    <figure>
+      <img class="phone" src="work-summary-2026-10-13/mobile-today-after.jpg" alt="Phone, after" />
+      <figcaption>Phone, after: animal number, short label, time, big buttons.</figcaption>
+    </figure>
+  </div>
+  <figure>
+    <img src="work-summary-2026-10-13/web-today-nepali.jpg" alt="Website Today's work in Nepali" style="width: 85%;" />
+    <figcaption>Website dashboard in Nepali: late jobs show the due date, today's jobs show the time.</figcaption>
+  </figure>
+
+  <h2>4. Animal pictures everywhere</h2>
+  <ul>
+    <li><strong>Livestock:</strong> each species card (Buffalo, Cow, Pig, Goat) shows its picture, and each row in the herd
+      list shows the animal's own photo, or the species picture if no photo was uploaded.</li>
+    <li><strong>Batches, Poultry and Fish:</strong> each card shows a large picture: buffalo or cow for livestock batches;
+      chicken, rooster or duck for layer, broiler and duck flocks; a fish for Rohu, Catla and other ponds. The red "Sick"
+      badge stays on top.</li>
+    <li>The same pictures are used on the phone and the website, including in the scan dialog, the Shed list and Today's work.</li>
+  </ul>
+  <div class="pair">
+    <figure>
+      <img src="work-summary-2026-10-13/web-species-cards.jpg" alt="Livestock species cards" />
+      <figcaption>Livestock: species cards with pictures.</figcaption>
+    </figure>
+    <figure>
+      <img src="work-summary-2026-10-13/web-poultry.jpg" alt="Poultry cards" />
+      <figcaption>Poultry: broiler, duck and layer flocks.</figcaption>
+    </figure>
+  </div>
+  <figure>
+    <img src="work-summary-2026-10-13/web-batches.jpg" alt="Batches cards" style="width: 70%;" />
+    <figcaption>Batches: livestock groups, with the sick count still shown.</figcaption>
+  </figure>
+
+  <h2>5. Bugs fixed</h2>
+  <h3>An old milking round took over the Shed page</h3>
+  <p>A morning milking round from <strong>25 September</strong> (19 of 35 milked) was never finished. Because it was
+    still "active", the Shed page always reopened it instead of showing today's list.</p>
+  <ul>
+    <li>The API now closes ("abandons") any round still open from before yesterday, and records this in the audit log.
+      Yesterday's round is kept, because a Nepal morning starts before midnight UTC.</li>
+    <li>The website and the phone also ignore an old saved round.</li>
+    <li>The live database was cleaned: the old rounds were closed and today's morning list showed 0 of 35 done.</li>
+  </ul>
+  <h3>The "152 left" counter kept flickering on the phone</h3>
+  <p>Every background sync (saving data, caching photos) reloaded Today's work and showed a spinner in place of the
+    counter. Now the list refreshes when the screen opens, and at most every 30 seconds in the background without a
+    spinner. On the emulator the counter stayed steady for the whole test.</p>
+
+  <h2>6. Quality checks</h2>
+  <table>
+    <tr><th style="width:30%">Check</th><th>Result</th></tr>
+    <tr><td>Typecheck (all packages)</td><td><span class="u done">PASS</span></td></tr>
+    <tr><td>Tests</td><td><span class="u done">318 PASS</span> API 252 · web 30 · mobile 20 · contracts 16</td></tr>
+    <tr><td>Lint</td><td><span class="u done">0 ERRORS</span> 8 older warnings in other web pages; none in the new files</td></tr>
+    <tr><td>Checked by hand</td><td>Website in the browser (English and Nepali) and the app on the Android emulator</td></tr>
+  </table>
+  <p>New API tests cover the "not done yet" list and closing old rounds.</p>
+
+  <h2>7. Commits</h2>
+  <table>
+    <tr><th style="width:12%">Commit</th><th style="width:10%">Time</th><th>What it contains</th></tr>
+    <tr><td><code>53d7175</code></td><td>09:30</td><td>Phone: Shed "not done yet" list, scan choice dialog, Today's work, animal photos; API <code>/v1/rounds/today</code></td></tr>
+    <tr><td><code>e165c1e</code></td><td>09:45</td><td>Website: the same four features</td></tr>
+    <tr><td><code>91b13a1</code></td><td>09:54</td><td>Close milking rounds left open from an earlier day</td></tr>
+    <tr><td><code>194a16a</code></td><td>10:09</td><td>Phone: stop the counter flicker; pictures on livestock, batches, poultry and fish</td></tr>
+    <tr><td><code>24ac6ab</code></td><td>10:45</td><td>Website: pictures on livestock, batches, poultry and fish</td></tr>
+    <tr><td><code>4ae3858</code></td><td>11:59</td><td>Today's work: bigger rows, short standard labels, date for late work</td></tr>
+  </table>
+
+  <h2>8. Still to do</h2>
+  <table>
+    <tr><th style="width:12%">Status</th><th>Task</th></tr>
+    <tr><td><span class="u todo">TO DO</span></td><td>Build a new Android app so phones get these changes:
+      <code>cd apps\mobile; eas build -p android --profile preview</code>. The website is already live.</td></tr>
+    <tr><td><span class="u todo">TO DO</span></td><td>In Vercel, add <code>SPARROW_SMS_TOKEN</code>, <code>SPARROW_SMS_FROM</code>,
+      <code>FCM_SERVICE_ACCOUNT_JSON</code>, <code>NOTIFICATION_CRON_SECRET</code> and <code>CRON_SECRET</code>, then redeploy.</td></tr>
+    <tr><td><span class="u todo">TO DO</span></td><td>In GitHub, add the secrets <code>API_BASE_URL</code> and <code>NOTIFICATION_CRON_SECRET</code>
+      and the variable <code>ENABLE_NOTIFICATION_CRON=true</code>.</td></tr>
+    <tr><td><span class="u todo">TO DO</span></td><td>Rotate the Firebase (FCM) private key, because it was shared in chat.</td></tr>
+  </table>
+  <div class="note">
+    <strong>Found afterwards (14 Oct).</strong> Today's work showed 147 late jobs, some from June. The cause: on Vercel the
+    nightly job that expires old jobs and closes repeated reminder steps never ran. It now has a trigger (Vercel Cron, once
+    the secrets above are set). It was run once by hand: 100 old jobs expired and 20 repeated reminders were closed.
+  </div>
+
+  <div class="footer">
+    Kharka Farm OS · Work summary · 13 Oct 2026
+  </div>
+
+</body>
+</html>

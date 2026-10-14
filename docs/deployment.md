@@ -5,7 +5,7 @@ This monorepo deploys **web and Nest API together** on one Vercel project. No Do
 - Web: static files from `apps/web/dist`
 - API: serverless function at `/api/[...path]`
 - Routes: `/v1/*` and `/health/*` go to the API; everything else is the SPA
-- Nest `@Cron` does **not** run on Vercel — use GitHub Actions (`notification-dispatch.yml`) for push/SMS dispatch
+- Nest `@Cron` does **not** run on Vercel — the nightly job runs from Vercel Cron, the hourly job and push/SMS dispatch from GitHub Actions (see "Scheduled jobs" below)
 
 ## One-time setup
 
@@ -24,6 +24,7 @@ This monorepo deploys **web and Nest API together** on one Vercel project. No Do
 | `STORAGE_DRIVER` | `local` or `mongodb` / `r2` as needed |
 | `FCM_SERVICE_ACCOUNT_JSON` | One-line Firebase service-account JSON |
 | `NOTIFICATION_CRON_SECRET` | Random string; same value in GitHub Actions secret |
+| `CRON_SECRET` | Random string; Vercel Cron sends it to `/v1/jobs/nightly`. May equal `NOTIFICATION_CRON_SECRET` |
 | `SPARROW_SMS_TOKEN` / `SPARROW_SMS_FROM` | Recommended SMS for Nepal (NTC + Ncell). Used first when set |
 | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM_NUMBER` | Optional fallback SMS provider |
 | `SMS_MONTHLY_CAP` | Optional, default 40 |
@@ -54,14 +55,18 @@ EXPO_PUBLIC_WEB_URL=https://evoqedlivestockfarm.vercel.app
 
 No trailing slash. Paths already include `/v1/...`.
 
-## Notification cron (required on Vercel)
+## Scheduled jobs (required on Vercel)
 
-1. Set `NOTIFICATION_CRON_SECRET` in Vercel env (and locally).
+1. Set `NOTIFICATION_CRON_SECRET` and `CRON_SECRET` in Vercel env (the same value is fine), then redeploy.
 2. GitHub repo → **Settings → Secrets and variables → Actions**:
    - Secret `API_BASE_URL` = `https://evoqedlivestockfarm.vercel.app`
    - Secret `NOTIFICATION_CRON_SECRET` = same as Vercel
    - Variable `ENABLE_NOTIFICATION_CRON` = `true`
-3. Workflow `.github/workflows/notification-dispatch.yml` POSTs every 5 minutes to `/v1/notifications/dispatch`.
+3. What then runs:
+   - Vercel Cron (from `scripts/vercel-output.mjs`): `GET /v1/jobs/nightly` daily at 19:15 UTC (01:00 Nepal) — task cleanup and all nightly generators.
+   - `.github/workflows/scheduled-jobs.yml`: `POST /v1/jobs/hourly` every hour; "Run workflow" can also start `nightly` by hand.
+   - `.github/workflows/notification-dispatch.yml`: `POST /v1/notifications/dispatch` every 5 minutes.
+4. After the first night, check Vercel → Logs for `/v1/jobs/nightly` (status 200 and a `ms` field). The function limit is 60 s.
 
 ## Migrations
 

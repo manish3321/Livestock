@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Kharka Farm OS — Work summary, 6 Oct 2026</title>
+  <style>
+    @page { margin: 16mm 14mm; size: A4; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", "Nirmala UI", "Helvetica Neue", Arial, sans-serif;
+      color: #1a2e22;
+      line-height: 1.45;
+      font-size: 10pt;
+      margin: 0;
+    }
+    h1 { font-size: 20pt; margin: 0 0 4px; letter-spacing: -0.02em; color: #14532d; }
+    h2 {
+      font-size: 12.5pt;
+      margin: 22px 0 8px;
+      padding-bottom: 4px;
+      border-bottom: 1.5px solid #c5d9cb;
+      color: #166534;
+      break-after: avoid;
+    }
+    h3 { font-size: 10.5pt; margin: 14px 0 6px; color: #1a2e22; break-after: avoid; }
+    p { margin: 6px 0; }
+    .meta { color: #4b6354; font-size: 9.5pt; margin-bottom: 16px; }
+    .banner {
+      background: #e8f5ec;
+      border: 1.5px solid #a7d4b5;
+      border-radius: 6px;
+      padding: 12px 14px;
+      margin-bottom: 8px;
+    }
+    .note {
+      background: #fff8e6;
+      border: 1.5px solid #f2d48a;
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin: 10px 0;
+      font-size: 9.5pt;
+    }
+    ul, ol { margin: 6px 0 10px; padding-left: 1.2em; }
+    li { margin-bottom: 4px; }
+    table { width: 100%; border-collapse: collapse; font-size: 8.8pt; margin: 6px 0 12px; }
+    tr { break-inside: avoid; }
+    th, td { border: 1px solid #c5d9cb; padding: 5px 7px; text-align: left; vertical-align: top; }
+    th { background: #e8f5ec; color: #14532d; }
+    .u {
+      display: inline-block;
+      font-size: 7.5pt;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      padding: 1px 6px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+    .done { background: #dcfce7; color: #14532d; }
+    .todo { background: #ffedd5; color: #9a3412; }
+    code {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 8.5pt;
+      background: #f0f7f2;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+    .footer {
+      margin-top: 26px;
+      padding-top: 10px;
+      border-top: 1px solid #c5d9cb;
+      font-size: 8.5pt;
+      color: #4b6354;
+    }
+    .pb { break-before: page; }
+  </style>
+</head>
+<body>
+
+  <h1>Work summary</h1>
+  <p class="meta">
+    Kharka Farm OS · Livestock monorepo · 6 Oct 2026<br />
+    Live at <code>https://evoqedlivestockfarm.vercel.app</code> · Commit <code>f5a5bcd</code>, pushed to <code>main</code>
+  </p>
+
+  <div class="banner">
+    <strong>In one paragraph.</strong> Today the farm app gained four things. Each person can now save a
+    <strong>Nepali mobile number</strong> and receive urgent reminders by <strong>SMS through Sparrow SMS</strong>.
+    Reminders now go to the <strong>right people by role</strong>: crucial ones reach the admin and everyone else, and
+    day-to-day field jobs go only to workers. On mobile, tapping the round <strong>profile icon</strong> shows the
+    person's account details instead of logging them out. And the admin has a <strong>member management screen</strong>
+    (a small CMS) to edit, deactivate, reset passwords for, and remove the people on their farm. We also connected the
+    live Vercel address everywhere it was needed, fixed several Expo Go problems on the emulator, and produced the
+    notification-reminders PDF.
+  </div>
+
+  <h2>1. Deployment and the live address</h2>
+  <ul>
+    <li><strong>Production checked:</strong> the website and API at <code>evoqedlivestockfarm.vercel.app</code> respond and are healthy.</li>
+    <li><strong>Address set where needed:</strong> the API now allows requests from the live site (<code>CORS_ORIGIN</code>),
+      and <code>docs/deployment.md</code> uses the real URLs.</li>
+    <li><strong>Vercel settings list:</strong> a ready-to-paste list of environment variables was generated in
+      <code>apps/api/.env.vercel</code>. It holds secrets, so git ignores it and it is never committed.</li>
+    <li><strong>Git safety confirmed:</strong> <code>.gitignore</code> already excludes every <code>.env</code> file and the
+      <code>.vercel/</code> build folder, so <code>git add .</code> is safe. Only the <code>.env.example</code> templates are tracked.</li>
+  </ul>
+
+  <h2>2. SMS alerts with a phone number</h2>
+  <h3>Phone number field</h3>
+  <ul>
+    <li><strong>Web:</strong> an "SMS alerts" card at the top of the Inbox where each person saves their own number.</li>
+    <li><strong>Mobile:</strong> the same card in the Inbox and inside the new profile sheet.</li>
+    <li><strong>Admin:</strong> a phone field when adding a member and when editing one.</li>
+    <li><strong>Validation:</strong> only Nepali mobiles are accepted: 10 digits starting with 98, 97 or 96. People can type
+      <code>98XXXXXXXX</code>, <code>+977…</code> or with spaces; it is stored in the international form <code>+97798XXXXXXXX</code>.</li>
+  </ul>
+  <h3>Sparrow SMS</h3>
+  <p>Sparrow SMS was chosen as the best Nepali provider: it is cheaper and more reliable for NTC and Ncell numbers than an
+    international service. The API picks a provider automatically:</p>
+  <table>
+    <tr><th style="width:30%">When these are set</th><th>What happens</th></tr>
+    <tr><td><code>SPARROW_SMS_TOKEN</code> and <code>SPARROW_SMS_FROM</code></td><td>SMS is sent through Sparrow SMS.</td></tr>
+    <tr><td>Twilio settings only</td><td>SMS is sent through Twilio (kept as a backup option).</td></tr>
+    <tr><td>Neither</td><td>Nothing is sent; the message is only written to the server log. Push notifications still work.</td></tr>
+  </table>
+  <p>SMS is used only for the most urgent reminders, as described in the notification-reminders PDF.</p>
+
+  <h2>3. Who gets which reminder</h2>
+  <p>Before today every member received every reminder. Now each reminder is sent according to its priority and type:</p>
+  <table>
+    <tr><th style="width:32%">Reminder</th><th>Who receives it</th></tr>
+    <tr><td><strong>Critical</strong> (any type)</td><td>Everyone on the farm: admin, manager, workers, and the vet if it is a health task.</td></tr>
+    <tr><td><strong>Assigned to a person</strong></td><td>Only that person. They always receive their own task.</td></tr>
+    <tr><td><strong>Management</strong> (milk yield drop, stock reorder and expiry, tank variance, breeding decisions, expense approval, unpaid sales)</td><td>Admin and manager.</td></tr>
+    <tr><td><strong>Field work</strong> (everything else: colostrum, heat checks, feeding, calving follow-ups and similar)</td><td>Workers only. If the farm has no workers it goes to the manager, and if there is no manager, to the admin.</td></tr>
+    <tr><td><strong>Health tasks</strong> (urgent vet call, treatment follow-up, pregnancy check, calf health check, no-heat vet visit)</td><td>The vet, but only when the task is critical or nobody is assigned.</td></tr>
+    <tr><td>Cooperative accounts</td><td>Never receive farm reminders.</td></tr>
+    <tr><td>Deactivated people</td><td>Never receive reminders.</td></tr>
+  </table>
+
+  <h2>4. Mobile profile sheet</h2>
+  <p>Tapping the round initial icon in the top bar used to log the person out immediately. It now opens a sheet with
+    their name, email, role, farm and farm mode, connection status, and their SMS phone number. <strong>Sign out</strong>
+    is a separate red button inside the sheet, so nobody is logged out by accident.</p>
+
+  <h2 class="pb">5. Admin member management (CMS)</h2>
+  <p>On web this is <strong>Admin → Members</strong>; on mobile, the Admin screen. The admin can:</p>
+  <ul>
+    <li><strong>See everyone</strong> with their name, email, phone, role, active status and last sign-in, plus a count of total and active people.</li>
+    <li><strong>Search and filter</strong> by name, email or phone, by role, and by active or inactive.</li>
+    <li><strong>Edit a person:</strong> name, email, phone, role, whether they can sign in, and voice-call alerts.</li>
+    <li><strong>Reset a password:</strong> sets a new temporary password and signs the person out on every phone and computer.</li>
+    <li><strong>Remove from the farm:</strong> after a confirmation. Their past records stay; tasks assigned to them become unassigned.
+      If this was their only farm, their account is also deactivated.</li>
+    <li><strong>Add members</strong> with name, email, phone, role, temporary password and voice alerts.</li>
+  </ul>
+  <h3>Safety rules enforced by the server</h3>
+  <table>
+    <tr><th style="width:30%">Rule</th><th>What it prevents</th></tr>
+    <tr><td>No self-lockout</td><td>An admin cannot change their own role, deactivate themselves or remove themselves. Their row is marked "You".</td></tr>
+    <tr><td>Always one admin</td><td>The farm must keep at least one active admin.</td></tr>
+    <tr><td>Shared accounts</td><td>If a person also belongs to another farm, only they can change their email or password.</td></tr>
+    <tr><td>Unique email</td><td>Two people cannot share one email address.</td></tr>
+    <tr><td>Sessions revoked</td><td>A password reset or deactivation signs the person out everywhere straight away.</td></tr>
+    <tr><td>Audit log</td><td>Every add, edit, password reset and removal is recorded in Admin → Audit.</td></tr>
+  </table>
+  <h3>API endpoints</h3>
+  <table>
+    <tr><th style="width:38%">Endpoint</th><th>Purpose</th></tr>
+    <tr><td><code>GET /v1/farms/me/members</code></td><td>List the farm's people.</td></tr>
+    <tr><td><code>POST /v1/farms/me/members</code></td><td>Add a person.</td></tr>
+    <tr><td><code>PATCH /v1/farms/me/members/:userId</code></td><td>Edit details, role, status, or reset the password.</td></tr>
+    <tr><td><code>DELETE /v1/farms/me/members/:userId</code></td><td>Remove a person from the farm.</td></tr>
+    <tr><td><code>PATCH /v1/auth/me</code></td><td>Anyone updates their own name and phone number.</td></tr>
+  </table>
+
+  <h2>6. Expo Go fixes on the emulator</h2>
+  <ul>
+    <li><strong>"Unable to resolve expo-notifications" and an old API address:</strong> Metro was stuck waiting at an
+      "Install recommended Expo Go version?" prompt and kept serving an old bundle. Restarting it fixed this.</li>
+    <li><strong>"Something went wrong" in Expo Go:</strong> it was opening a saved project at an old Wi-Fi address.
+      The PC's address changes, so the app is now opened at <code>exp://10.0.2.2:8081</code>, the emulator's fixed
+      address for the PC.</li>
+  </ul>
+
+  <h2>7. Quality checks</h2>
+  <table>
+    <tr><th style="width:30%">Check</th><th>Result</th></tr>
+    <tr><td>Typecheck (all packages)</td><td><span class="u done">PASS</span></td></tr>
+    <tr><td>Tests</td><td><span class="u done">316 PASS</span> API 250 · web 30 · mobile 20 · contracts 16</td></tr>
+    <tr><td>Lint</td><td><span class="u done">0 ERRORS</span> 8 older warnings in other pages; none in the new files</td></tr>
+  </table>
+  <p>New tests cover member management (10), reminder routing by role (6), Sparrow SMS sending, and phone-number validation.</p>
+
+  <h2>8. Documents produced</h2>
+  <ul>
+    <li><code>docs/notification-reminders.pdf</code>: how reminders work, now including the "who gets which reminder" table and Sparrow SMS.</li>
+    <li><code>docs/work-summary-2026-10-06.pdf</code>: this document.</li>
+  </ul>
+
+  <h2>9. Still to do</h2>
+  <table>
+    <tr><th style="width:12%">Status</th><th>Task</th></tr>
+    <tr><td><span class="u done">DONE</span></td><td>Commit and push today's work (commit <code>f5a5bcd</code>).</td></tr>
+    <tr><td><span class="u todo">TO DO</span></td><td>In Vercel, add <code>SPARROW_SMS_TOKEN</code> and <code>SPARROW_SMS_FROM</code>, plus
+      <code>FCM_SERVICE_ACCOUNT_JSON</code> and <code>NOTIFICATION_CRON_SECRET</code>, then redeploy. Values are listed in <code>apps/api/.env.vercel</code>.</td></tr>
+    <tr><td><span class="u todo">TO DO</span></td><td>In GitHub, add secrets <code>API_BASE_URL</code> and <code>NOTIFICATION_CRON_SECRET</code>
+      and the variable <code>ENABLE_NOTIFICATION_CRON=true</code>, so reminders are dispatched on schedule.</td></tr>
+    <tr><td><span class="u todo">TO DO</span></td><td>Rotate the Firebase (FCM) private key, because it was shared in chat.</td></tr>
+    <tr><td><span class="u todo">TO DO</span></td><td>Sign in again on the emulator.</td></tr>
+  </table>
+  <div class="note">
+    <strong>Known limits on Vercel.</strong> The hourly and nightly checks have no automatic trigger yet, and uploaded
+    files (photos, receipts) are stored on the server's temporary disk, so they are lost on each redeploy. Both need a
+    follow-up: a scheduled trigger, and cloud file storage.
+  </div>
+
+  <div class="footer">
+    Kharka Farm OS · Work summary · 6 Oct 2026
+  </div>
+
+</body>
+</html>
