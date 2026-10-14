@@ -155,7 +155,8 @@ await writeFile(
       shouldAddHelpers: false,
       // Same AWS region as Supabase (ap-northeast-2). Default iad1 made every DB round-trip slow.
       regions: ['icn1'],
-      maxDuration: 30,
+      // The nightly cron runs every generator in one request.
+      maxDuration: 60,
       memory: 1024,
     },
     null,
@@ -167,6 +168,8 @@ await writeFile(
   `${JSON.stringify(
     {
       version: 3,
+      // 19:15 UTC = 01:00 Nepal. Hobby plans allow daily crons only; hourly runs from GitHub Actions.
+      crons: [{ path: '/v1/jobs/nightly', schedule: '15 19 * * *' }],
       routes: [
         { src: '^/(v1|health|api)(/.*)?$', dest: '/api/[...path]' },
         { handle: 'filesystem' },

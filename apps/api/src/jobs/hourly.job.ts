@@ -1,5 +1,4 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReminderEngineService } from '../breeding/reminder-engine.service';
 import { NotificationDispatchService } from '../notifications/notification-dispatch.service';
@@ -17,11 +16,6 @@ export class HourlyJob {
     @Optional() private readonly reminders?: ReminderEngineService,
     @Optional() private readonly dispatch?: NotificationDispatchService,
   ) {}
-
-  @Cron('0 * * * *', { timeZone: 'Asia/Kathmandu' })
-  async tick(): Promise<void> {
-    await this.run();
-  }
 
   async run(now = new Date()): Promise<void> {
     const farms = await this.prisma.farm.findMany({ select: { id: true } });

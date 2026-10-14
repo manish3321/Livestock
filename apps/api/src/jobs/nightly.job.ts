@@ -1,11 +1,11 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { SpeciesConfigService } from '../species-config/species-config.service';
 import { ProfitService } from '../profit/profit.service';
 import { VaccinationsService } from '../vaccinations/vaccinations.service';
 import { nepalSixAmOn } from '../withholds/withhold-rules';
 import { ensureTask } from './task-writer';
+import { MOMENT_TASK_TYPES, MOMENT_EXPIRY_DAYS, staleLadderStepIds } from './stale-tasks';
 import { nepalDayBounds } from '../notifications/notification-rules';
 import { atNepalHour } from '../common/nepal-time';
 import { ReproStageService } from '../breeding/repro-stage.service';
@@ -15,7 +15,8 @@ const DAY = 24 * 60 * 60 * 1000;
 const EXIT = ['SOLD', 'DEAD', 'CULLED'] as const;
 
 /**
- * Nightly generators run at 01:00 Nepal time. Running twice must change nothing
+ * Nightly generators run at 01:00 Nepal time (Nest cron on a long-lived host,
+ * `/v1/jobs/nightly` on Vercel). Running twice must change nothing
  * — every insert hits the pending-task unique index.
  */
 @Injectable()
@@ -30,11 +31,6 @@ export class NightlyJob {
     @Optional() private readonly reproStage?: ReproStageService,
     @Optional() private readonly reminders?: ReminderEngineService,
   ) {}
-
-  @Cron('0 1 * * *', { timeZone: 'Asia/Kathmandu' })
-  async tick(): Promise<void> {
-    await this.run();
-  }
 
   async run(now = new Date()): Promise<void> {
     const farms = await this.prisma.farm.findMany({ select: { id: true } });
@@ -53,12 +49,13 @@ export class NightlyJob {
   }
 
   private async generateForFarm(farmId: string, now: Date): Promise<void> {
+    // First, so a run cut short by the serverless time limit still clears old work.
+    await this.expireStaleTasks(farmId, now);
     await this.reproStage?.recomputeFarm(farmId, now);
     await this.reminders?.generateStageReminders(farmId, now);
     await this.reminders?.generateEventReminders(farmId, now);
     await this.reminders?.escalateAnestrus(farmId, now);
     await this.checkProtocolIntegrity(farmId, now);
-    await this.expireStaleTasks(farmId, now);
     await this.computeBreedingMetrics(farmId, now);
     await this.vaccinationTasks(farmId, now);
     await this.withholdEndTasks(farmId, now);
@@ -77,8 +74,31 @@ export class NightlyJob {
       },
       data: { status: 'EXPIRED' },
     });
-    const expired = (result as { count?: number }).count ?? 0;
+    const moments = await this.prisma.task.updateMany({
+      where: {
+        farmId,
+        type: { in: [...MOMENT_TASK_TYPES] },
+        status: { in: ['PENDING', 'SNOOZED'] },
+        dueAt: { lt: new Date(now.getTime() - MOMENT_EXPIRY_DAYS * DAY) },
+      },
+      data: { status: 'EXPIRED' },
+    });
+    const expired =
+      ((result as { count?: number }).count ?? 0) + ((moments as { count?: number }).count ?? 0);
     if (expired > 0) this.logger.log(`Expired ${expired} stale task(s) for farm ${farmId}`);
+
+    const open = (await this.prisma.task.findMany({
+      where: { farmId, status: { in: ['PENDING', 'SNOOZED'] } },
+      select: { id: true, animalId: true, type: true, sourceRefType: true, dueAt: true },
+    })) as Parameters<typeof staleLadderStepIds>[0];
+    const ids = staleLadderStepIds(open, now);
+    if (ids.length > 0) {
+      await this.prisma.task.updateMany({
+        where: { farmId, id: { in: ids } },
+        data: { status: 'SUPERSEDED' },
+      });
+      this.logger.log(`Superseded ${ids.length} older reminder step(s) for farm ${farmId}`);
+    }
   }
 
   private async computeBreedingMetrics(farmId: string, now: Date): Promise<void> {

@@ -19,6 +19,9 @@ import { GroupsModule } from './groups/groups.module';
 import { HealthModule } from './health/health.module';
 import { HealthRecordsModule } from './health-records/health-records.module';
 import { InventoryModule } from './inventory/inventory.module';
+import { HourlyJob } from './jobs/hourly.job';
+import { JobsController } from './jobs/jobs.controller';
+import { NightlyJob } from './jobs/nightly.job';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PnlModule } from './pnl/pnl.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -42,12 +45,10 @@ function cronSupport(): { imports: DynamicModule[]; providers: Provider[] } {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { ScheduleModule } = require('@nestjs/schedule') as typeof import('@nestjs/schedule');
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { NightlyJob } = require('./jobs/nightly.job') as typeof import('./jobs/nightly.job');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { HourlyJob } = require('./jobs/hourly.job') as typeof import('./jobs/hourly.job');
+  const { ScheduledJobs } = require('./jobs/jobs.cron') as typeof import('./jobs/jobs.cron');
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { NotificationCronJob } = require('./notifications/notification-cron.job') as typeof import('./notifications/notification-cron.job');
-  return { imports: [ScheduleModule.forRoot()], providers: [NightlyJob, HourlyJob, NotificationCronJob] };
+  return { imports: [ScheduleModule.forRoot()], providers: [ScheduledJobs, NotificationCronJob] };
 }
 
 const cron = cronSupport();
@@ -86,7 +87,10 @@ const cron = cronSupport();
     VaccinationsModule,
     ProfitModule,
   ],
+  controllers: [JobsController],
   providers: [
+    NightlyJob,
+    HourlyJob,
     ...cron.providers,
     { provide: APP_FILTER, useClass: AppExceptionFilter },
     { provide: APP_GUARD, useClass: ThrottlerGuard },

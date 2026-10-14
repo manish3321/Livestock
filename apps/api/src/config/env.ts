@@ -24,6 +24,7 @@ const envSchema = z.object({
   SPARROW_SMS_TOKEN: z.string().optional().default(''),
   SPARROW_SMS_FROM: z.string().optional().default(''),
   NOTIFICATION_CRON_SECRET: z.string().optional().default(''),
+  CRON_SECRET: z.string().optional().default(''),
 }).superRefine((data, ctx) => {
   if (data.STORAGE_DRIVER === 'mongodb' && !data.MONGODB_URI) {
     ctx.addIssue({
