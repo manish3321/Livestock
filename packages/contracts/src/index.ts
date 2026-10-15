@@ -6,3 +6,4 @@ export * from './sync';
 export * from './format';
 export * from './modules';
 export * from './dairy';
+export * from './change-requests';

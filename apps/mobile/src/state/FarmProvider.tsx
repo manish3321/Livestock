@@ -8,7 +8,9 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { Alert } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
+import { useLocale } from '../locale/LocaleProvider';
 import type { AuthUser, TokenPair } from '@farm/contracts';
 import { createStore, type FarmStore } from '../core/store';
 import { pendingMutations } from '../core/scan-round';
@@ -161,6 +163,9 @@ export function FarmProvider({ children }: { children: ReactNode }) {
     persist();
   }, [persist]);
 
+  const { t } = useLocale();
+  const tRef = useRef(t);
+  tRef.current = t;
   const api = useMemo(
     () =>
       createHttpFarmApi({
@@ -168,6 +173,8 @@ export function FarmProvider({ children }: { children: ReactNode }) {
         getRefreshToken: () => storeRef.current.refreshToken,
         onTokens,
         onAuthFailure,
+        onPendingApproval: () =>
+          Alert.alert(tRef.current('approvals.sentTitle'), tRef.current('approvals.sent')),
       }),
     [onAuthFailure, onTokens],
   );

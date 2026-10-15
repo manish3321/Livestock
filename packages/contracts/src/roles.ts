@@ -74,6 +74,8 @@ export const PERMISSIONS = [
   'tasks:manage',
   'rounds:read',
   'rounds:write',
+  // Edits/deletes by anyone without this are held for approval.
+  'changes:approve',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -113,6 +115,7 @@ const MANAGER_PERMISSIONS: Permission[] = [
   'reports:read',
   'export:data',
   'tasks:manage',
+  'changes:approve',
 ];
 
 const ADMIN_PERMISSIONS: Permission[] = [

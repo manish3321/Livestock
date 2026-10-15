@@ -17,6 +17,7 @@ import type {
   TaskDto,
   TokenPair,
 } from '@farm/contracts';
+import { isPendingApproval } from '@farm/contracts';
 import type { FarmApi } from '../core/sync-engine';
 import { apiBaseUrl, noteApiSuccess, noteWorkingOrigin } from './config';
 import { clearTokens, loginPlatform, saveTokens } from './secure-session';
@@ -49,6 +50,8 @@ export function createHttpFarmApi(options: {
   getRefreshToken: () => string | null;
   onTokens: (pair: TokenPair) => void | Promise<void>;
   onAuthFailure: () => void | Promise<void>;
+  /** A worker's edit/delete was held for admin approval instead of applied (HTTP 202). */
+  onPendingApproval?: () => void;
 }): FarmApi & {
   refresh: () => Promise<TokenPair>;
   logout: () => Promise<void>;
@@ -168,7 +171,9 @@ export function createHttpFarmApi(options: {
     noteApiSuccess();
     noteWorkingOrigin(base());
     if (res.status === 204) return undefined as T;
-    return (await parseJson(res)) as T;
+    const data = await parseJson(res);
+    if (res.status === 202 && isPendingApproval(data)) options.onPendingApproval?.();
+    return data as T;
   };
 
   return {

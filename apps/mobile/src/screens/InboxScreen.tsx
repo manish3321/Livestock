@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { PageResult, TaskDismissReason, TaskDto } from '@farm/contracts';
-import { formatDateTime } from '@farm/contracts';
+import { formatDateTime, hasPermission } from '@farm/contracts';
 import { enqueueTaskComplete } from '../core/scan-round';
 import { AppShell } from '../components/AppShell';
 import { SmsPhoneCard } from '../components/SmsPhoneCard';
@@ -52,6 +52,17 @@ export function InboxScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { api, store, persist, syncNow, revision, user } = useFarm();
   const { t, locale } = useLocale();
+  const [pendingChanges, setPendingChanges] = useState(0);
+  const approver = user ? hasPermission(user.role, 'changes:approve') : false;
+  useFocusEffect(
+    useCallback(() => {
+      if (!approver) return;
+      void api
+        .get<{ count: number }>('/v1/change-requests/pending-count')
+        .then((r) => setPendingChanges(r.count))
+        .catch(() => undefined);
+    }, [api, approver]),
+  );
   const [tasks, setTasks] = useState<TaskDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -159,6 +170,14 @@ export function InboxScreen() {
   return (
     <AppShell module="inbox">
       <PageHeader title={t('inbox.title')} subtitle={t('inbox.subtitle')} />
+      <View style={{ paddingHorizontal: 16, marginBottom: 8 }}>
+        <Button
+          label={pendingChanges > 0 ? `${t('approvals.title')} (${pendingChanges})` : t('approvals.title')}
+          variant={pendingChanges > 0 ? 'urgent' : 'secondary'}
+          block
+          onPress={() => navigation.navigate('Approvals')}
+        />
+      </View>
       <SmsPhoneCard />
 
       <View style={styles.tabs} accessibilityRole="tablist">

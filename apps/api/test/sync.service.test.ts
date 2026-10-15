@@ -81,11 +81,11 @@ describe('SyncService.push', () => {
 
   it('detects update conflicts via baseVersion and returns the current record', async () => {
     const create = createMutation();
-    const worker = user('WORKER');
-    await service.push(worker, { deviceId: 'd1', mutations: [create] });
+    const manager = user('MANAGER');
+    await service.push(manager, { deviceId: 'd1', mutations: [create] });
 
     // Server-side change bumps version to 2.
-    await service.push(worker, {
+    await service.push(manager, {
       deviceId: 'd2',
       mutations: [
         createMutation({
@@ -98,7 +98,7 @@ describe('SyncService.push', () => {
     });
 
     // Offline client still at version 1 pushes a stale update.
-    const stale = await service.push(worker, {
+    const stale = await service.push(manager, {
       deviceId: 'd1',
       mutations: [
         createMutation({
@@ -115,7 +115,7 @@ describe('SyncService.push', () => {
     expect(prisma.animals.get(create.entityId)?.color).toBe('Grey');
   });
 
-  it('denies delete for workers but allows it for managers', async () => {
+  it('sends worker edits and deletes to approval but applies them for managers', async () => {
     const create = createMutation();
     const worker = user('WORKER');
     await service.push(worker, { deviceId: 'd1', mutations: [create] });
@@ -125,7 +125,14 @@ describe('SyncService.push', () => {
       mutations: [createMutation({ op: 'delete', entityId: create.entityId, baseVersion: 1 })],
     });
     expect(denied.results[0]?.status).toBe('failed');
-    expect(denied.results[0]?.error).toContain('PERMISSION_DENIED');
+    expect(denied.results[0]?.error).toBe('NEEDS_APPROVAL');
+    expect(prisma.animals.get(create.entityId)?.deletedAt ?? null).toBeNull();
+
+    const edit = await service.push(worker, {
+      deviceId: 'd1',
+      mutations: [createMutation({ op: 'update', entityId: create.entityId, payload: { color: 'X' } })],
+    });
+    expect(edit.results[0]?.error).toBe('NEEDS_APPROVAL');
 
     const allowed = await service.push(user('MANAGER'), {
       deviceId: 'd2',
@@ -166,7 +173,7 @@ describe('SyncService.push', () => {
     const create = createMutation();
     await service.push(user('WORKER'), { deviceId: 'd1', mutations: [create] });
 
-    const foreign = await service.push(user('WORKER', OTHER_FARM_ID), {
+    const foreign = await service.push(user('MANAGER', OTHER_FARM_ID), {
       deviceId: 'd9',
       mutations: [
         createMutation({ op: 'update', entityId: create.entityId, payload: { color: 'X' } }),

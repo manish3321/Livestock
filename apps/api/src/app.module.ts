@@ -9,6 +9,7 @@ import { PermissionsGuard } from './auth/permissions.guard';
 import { TokenService } from './auth/token.service';
 import { BatchesModule } from './batches/batches.module';
 import { BreedingModule } from './breeding/breeding.module';
+import { ChangeRequestsModule } from './change-requests/change-requests.module';
 import { AppExceptionFilter } from './common/http-exception.filter';
 import { requestIdMiddleware } from './common/request-id.middleware';
 import { DashboardModule } from './dashboard/dashboard.module';
@@ -86,6 +87,7 @@ const cron = cronSupport();
     WithholdsModule,
     VaccinationsModule,
     ProfitModule,
+    ChangeRequestsModule,
   ],
   controllers: [JobsController],
   providers: [

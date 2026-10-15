@@ -58,6 +58,8 @@ model User {
   assignedTasks Task[] @relation("TaskAssignee")
   notificationLogs NotificationLog[]
   notificationPreferences NotificationPreference[]
+  changeRequests  ChangeRequest[] @relation("ChangeRequester")
+  changeReviews   ChangeRequest[] @relation("ChangeReviewer")
 }
 
 model Farm {
@@ -149,6 +151,46 @@ model Farm {
   syncEnrollments  SyncEnrollment[]
   reproStageHistory ReproStageHistory[]
   reminderRules    ReminderRule[]
+  changeRequests   ChangeRequest[]
+}
+
+enum ChangeRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  /// Approved, but replaying the edit failed (record gone, validation changed, ...).
+  FAILED
+  CANCELLED
+}
+
+/// An edit or delete by a worker/vet, held until an admin or manager approves it.
+/// Approval replays the original request as the approver, so normal validation applies.
+model ChangeRequest {
+  id            String              @id @default(uuid()) @db.Uuid
+  farmId        String              @db.Uuid
+  method        String
+  path          String
+  body          Json?
+  entityType    String
+  entityId      String?
+  /// The record as it was when the change was requested.
+  before        Json?
+  reason        String?
+  status        ChangeRequestStatus @default(PENDING)
+  requestedById String              @db.Uuid
+  reviewedById  String?             @db.Uuid
+  reviewedAt    DateTime?
+  reviewNote    String?
+  error         String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  farm        Farm  @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  requestedBy User  @relation("ChangeRequester", fields: [requestedById], references: [id], onDelete: Cascade)
+  reviewedBy  User? @relation("ChangeReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([farmId, status, createdAt])
+  @@index([requestedById, createdAt])
 }
 
 model FarmMembership {

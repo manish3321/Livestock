@@ -6,6 +6,7 @@ export type RootStackParamList = {
   TankDelivery: { milkRoundId: string };
   Conflicts: undefined;
   Inbox: undefined;
+  Approvals: undefined;
   Expenses: { animalId?: string } | undefined;
   Animals: { species?: string } | undefined;
   AnimalNew: { species?: string } | undefined;

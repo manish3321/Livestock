@@ -9,6 +9,7 @@ import { ShedScreen } from '../screens/HomeScreen';
 import { RoundScreen } from '../screens/RoundScreen';
 import { TankDeliveryScreen } from '../screens/TankDeliveryScreen';
 import { ConflictsScreen } from '../screens/ConflictsScreen';
+import { ApprovalsScreen } from '../screens/ApprovalsScreen';
 import { InboxScreen } from '../screens/InboxScreen';
 import { ExpensesScreen } from '../screens/ExpensesScreen';
 import { DashboardScreen } from '../screens/DashboardScreen';
@@ -94,6 +95,7 @@ export function RootNavigator() {
             <Stack.Screen name="TankDelivery" component={TankDeliveryScreen} />
             <Stack.Screen name="Conflicts" component={ConflictsScreen} />
             <Stack.Screen name="Inbox" component={InboxScreen} />
+            <Stack.Screen name="Approvals" component={ApprovalsScreen} />
             <Stack.Screen name="Expenses" component={ExpensesScreen} />
             <Stack.Screen name="Animals" component={AnimalsScreen} />
             <Stack.Screen name="AnimalNew" component={AnimalNewScreen} />

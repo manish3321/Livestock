@@ -472,9 +472,11 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
       return updateAnimal(id!, payload);
     },
     onSuccess: (animal) => {
+      // A worker's edit comes back as "sent for approval", without the animal.
+      const animalId = mode === 'edit' ? id! : animal.id;
       void qc.invalidateQueries({ queryKey: ['animals'] });
-      void qc.invalidateQueries({ queryKey: ['animal', animal.id] });
-      navigate(`/animals/${animal.id}`);
+      void qc.invalidateQueries({ queryKey: ['animal', animalId] });
+      navigate(`/animals/${animalId}`);
     },
   });
 

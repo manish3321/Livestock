@@ -31,6 +31,7 @@ import { ShedPage } from './pages/shed/ShedPage';
 import { CohortPage } from './pages/shed/CohortPage';
 import { DailySheetPage } from './pages/shed/DailySheetPage';
 import { InboxPage } from './pages/inbox/InboxPage';
+import { ApprovalsPage } from './pages/approvals/ApprovalsPage';
 import { ProfitPage } from './pages/money/ProfitPage';
 
 /**
@@ -89,6 +90,7 @@ export function App() {
 
             <Route element={<RequireModule module="inbox" />}>
               <Route path="/inbox" element={<InboxPage />} />
+              <Route path="/approvals" element={<ApprovalsPage />} />
             </Route>
 
             <Route element={<RequireModule module="scan" />}>

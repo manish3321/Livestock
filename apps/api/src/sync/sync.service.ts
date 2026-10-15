@@ -74,6 +74,10 @@ export class SyncService {
     deviceId: string,
     mutation: SyncMutation,
   ): Promise<SyncMutationResult> {
+    // Edits/deletes by non-approvers go through the REST routes, where they are held for approval.
+    if (mutation.op !== 'create' && !user.permissions.includes('changes:approve')) {
+      return { clientMutationId: mutation.clientMutationId, status: 'failed', error: 'NEEDS_APPROVAL' };
+    }
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.syncMutationRecord.findUnique({

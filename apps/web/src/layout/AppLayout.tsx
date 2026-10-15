@@ -1,5 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { pendingChangeCount } from '../api/change-requests';
 import { useTranslation } from 'react-i18next';
 import { modulesForRole, type ModuleKey } from '@farm/contracts';
 import { useAuth } from '../auth/auth-context';
@@ -105,6 +107,15 @@ function AppLayoutInner() {
     setMoreOpen(false);
   }, [location.pathname]);
 
+  const approver = can('changes:approve');
+  const pendingQuery = useQuery({
+    queryKey: ['change-requests-count'],
+    queryFn: pendingChangeCount,
+    enabled: Boolean(user) && approver,
+    refetchInterval: 60_000,
+  });
+  const pendingChanges = approver ? (pendingQuery.data?.count ?? 0) : 0;
+
   if (!user) return null;
   const allowed = new Set(modulesForRole(user.role));
   const groups = navGroups(livestockModuleOrder(livestockTrackingMode));
@@ -166,6 +177,12 @@ function AppLayoutInner() {
                   <NavLink to="/shed/cohort">{t('nav.cohort')}</NavLink>
                   <NavLink to="/shed/sheet">{t('nav.dailySheet')}</NavLink>
                 </>
+              )}
+              {group.labelKey === 'nav.group.home' && allowed.has('inbox') && (
+                <NavLink to="/approvals">
+                  {t('nav.approvals')}
+                  {pendingChanges > 0 && <span className="nav-badge">{pendingChanges}</span>}
+                </NavLink>
               )}
               {group.labelKey === 'nav.group.money' && can('finance:read') && !household && (
                 <NavLink to="/profit">{t('nav.profit')}</NavLink>
