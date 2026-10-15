@@ -49,16 +49,14 @@ export class DashboardService {
     const now = new Date();
     const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
     const canFinance = user.permissions.includes('finance:read');
+    const trendStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5, 1));
+    const in30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const yesterdayStart = new Date(dayStart.getTime() - 24 * 60 * 60 * 1000);
+    const weekAhead = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-    const [
-      batches,
-      revenueAgg,
-      expenseAgg,
-      healthOverdue,
-      inventory,
-      pendingApprovals,
-      recent,
-    ] = await Promise.all([
+    // All queries go out in one round: the DB is remote, so each sequential await costs a full round trip.
+    const coreBatch = Promise.all([
       this.prisma.herdBatch.findMany({
         where: { farmId, deletedAt: null },
         select: { kind: true, category: true, currentCount: true, deadCount: true },
@@ -113,67 +111,19 @@ export class DashboardService {
         take: 10,
       }),
     ]);
-
-    const speciesCounts: Record<string, number> = {};
-    let animalCount = 0;
-    for (const b of batches) {
-      animalCount += b.currentCount;
-      const key = `${b.kind}:${b.category}`;
-      speciesCounts[key] = (speciesCounts[key] ?? 0) + b.currentCount;
-    }
-    const speciesDistribution = Object.entries(speciesCounts)
-      .map(([species, count]) => ({ species, count }))
-      .sort((a, b) => b.count - a.count);
-
-    const inventoryCritical = inventory
-      .filter(
-        (i) =>
-          inventoryAlertLevel(Number(i.currentStock), Number(i.minimumStock)) ===
-          'CRITICAL',
-      )
-      .map((i) => ({
-        id: i.id,
-        title: i.name,
-        detail: `${Number(i.currentStock)} ${i.unit} (min ${Number(i.minimumStock)})`,
-        dueAt: null as string | null,
-      }));
-
-    const monthRevenue = Number(revenueAgg?._sum.amount ?? 0);
-    const monthExpenses = Number(expenseAgg?._sum.amount ?? 0);
-
-    let financeTrend: Array<{ month: string; revenue: number; expenses: number }> | undefined;
-    if (canFinance) {
-      financeTrend = [];
-      for (let i = 5; i >= 0; i--) {
-        const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
-        const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i + 1, 1));
-        const [rev, exp] = await Promise.all([
-          this.prisma.revenue.aggregate({
-            where: { farmId, revenueDate: { gte: start, lt: end } },
-            _sum: { amount: true },
+    const trendBatch = canFinance
+      ? Promise.all([
+          this.prisma.revenue.findMany({
+            where: { farmId, revenueDate: { gte: trendStart } },
+            select: { amount: true, revenueDate: true },
           }),
-          this.prisma.expense.aggregate({
-            where: {
-              farmId,
-              expenseDate: { gte: start, lt: end },
-              status: 'APPROVED',
-            },
-            _sum: { amount: true },
+          this.prisma.expense.findMany({
+            where: { farmId, expenseDate: { gte: trendStart }, status: 'APPROVED' },
+            select: { amount: true, expenseDate: true },
           }),
-        ]);
-        financeTrend.push({
-          month: `${start.getUTCFullYear()}-${String(start.getUTCMonth() + 1).padStart(2, '0')}`,
-          revenue: Number(rev._sum.amount ?? 0),
-          expenses: Number(exp._sum.amount ?? 0),
-        });
-      }
-    }
-
-    const in30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-    const yesterdayStart = new Date(dayStart.getTime() - 24 * 60 * 60 * 1000);
-    const weekAhead = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-    const [expiring, unpaidRev, yesterdayProd, dueCalving, vaccineToday] = await Promise.all([
+        ])
+      : Promise.resolve(null);
+    const alertBatch = Promise.all([
       this.prisma.inventoryItem.findMany({
         where: {
           farmId,
@@ -223,6 +173,59 @@ export class DashboardService {
         include: { animal: { select: { tag: true } } },
       }),
     ]);
+    const [
+      [batches, revenueAgg, expenseAgg, healthOverdue, inventory, pendingApprovals, recent],
+      trendRows,
+      [expiring, unpaidRev, yesterdayProd, dueCalving, vaccineToday],
+    ] = await Promise.all([coreBatch, trendBatch, alertBatch]);
+
+    const speciesCounts: Record<string, number> = {};
+    let animalCount = 0;
+    for (const b of batches) {
+      animalCount += b.currentCount;
+      const key = `${b.kind}:${b.category}`;
+      speciesCounts[key] = (speciesCounts[key] ?? 0) + b.currentCount;
+    }
+    const speciesDistribution = Object.entries(speciesCounts)
+      .map(([species, count]) => ({ species, count }))
+      .sort((a, b) => b.count - a.count);
+
+    const inventoryCritical = inventory
+      .filter(
+        (i) =>
+          inventoryAlertLevel(Number(i.currentStock), Number(i.minimumStock)) ===
+          'CRITICAL',
+      )
+      .map((i) => ({
+        id: i.id,
+        title: i.name,
+        detail: `${Number(i.currentStock)} ${i.unit} (min ${Number(i.minimumStock)})`,
+        dueAt: null as string | null,
+      }));
+
+    const monthRevenue = Number(revenueAgg?._sum.amount ?? 0);
+    const monthExpenses = Number(expenseAgg?._sum.amount ?? 0);
+
+    let financeTrend: Array<{ month: string; revenue: number; expenses: number }> | undefined;
+    if (canFinance && trendRows) {
+      const monthKey = (d: Date) =>
+        `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      const byMonth = new Map<string, { revenue: number; expenses: number }>();
+      for (let i = 5; i >= 0; i--) {
+        const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+        byMonth.set(monthKey(start), { revenue: 0, expenses: 0 });
+      }
+      const [revenueRows, expenseRows] = trendRows;
+      for (const r of revenueRows) {
+        const slot = byMonth.get(monthKey(r.revenueDate));
+        if (slot) slot.revenue += Number(r.amount);
+      }
+      for (const e of expenseRows) {
+        const slot = byMonth.get(monthKey(e.expenseDate));
+        if (slot) slot.expenses += Number(e.amount);
+      }
+      financeTrend = [...byMonth].map(([month, v]) => ({ month, ...v }));
+    }
 
     const prodByType = Object.fromEntries(
       yesterdayProd.map((p) => [p.type, Number(p._sum.quantity ?? 0)]),

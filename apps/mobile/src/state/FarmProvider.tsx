@@ -11,6 +11,7 @@ import {
 import NetInfo from '@react-native-community/netinfo';
 import type { AuthUser, TokenPair } from '@farm/contracts';
 import { createStore, type FarmStore } from '../core/store';
+import { pendingMutations } from '../core/scan-round';
 import { ensureTagBlocks, hydrateFromNetwork, runSync } from '../core/sync-engine';
 import type { NotificationEngine } from '../core/notify';
 import { createNotifeeEngine, MemoryNotificationEngine } from '../native/notifee-engine';
@@ -109,6 +110,8 @@ type FarmContextValue = {
 
 const FarmContext = createContext<FarmContextValue | null>(null);
 
+const MODULE_REFRESH_MS = 5 * 60_000;
+
 /** Push tokens need notification permission; works in Expo Go (Expo token) and EAS (FCM/APNs). */
 async function tryGetFcmToken(): Promise<string | undefined> {
   try {
@@ -128,6 +131,9 @@ export function FarmProvider({ children }: { children: ReactNode }) {
   const [syncing, setSyncing] = useState(false);
   const [revision, setRevision] = useState(0);
   const wasOffline = useRef(false);
+  const syncInFlightRef = useRef<Promise<number> | null>(null);
+  const moduleRefreshRef = useRef<Promise<void> | null>(null);
+  const lastModuleRefreshRef = useRef(0);
   const reachabilityRef = useRef(
     createReachabilityTracker((next) => {
       setOnline(next);
@@ -178,12 +184,32 @@ export function FarmProvider({ children }: { children: ReactNode }) {
     }
   }, [api]);
 
+  // Offline copies of every module screen (~18 requests). Refreshed in the background so
+  // "Syncing…" only covers sending and receiving changes; screens fetch live data when online.
+  const refreshModules = useCallback(
+    (force = false): Promise<void> => {
+      if (moduleRefreshRef.current) return moduleRefreshRef.current;
+      if (!force && Date.now() - lastModuleRefreshRef.current < MODULE_REFRESH_MS) {
+        return Promise.resolve();
+      }
+      lastModuleRefreshRef.current = Date.now();
+      const run = prefetchAllModules(storeRef.current, api)
+        .then(() => persist())
+        .finally(() => {
+          moduleRefreshRef.current = null;
+        });
+      moduleRefreshRef.current = run;
+      return run;
+    },
+    [api, persist],
+  );
+
   const hydrate = useCallback(async () => {
     if (!storeRef.current.accessToken) return;
     try {
       await hydrateFromNetwork(storeRef.current, api);
       await ensureTagBlocks(storeRef.current, api);
-      await prefetchAllModules(storeRef.current, api);
+      void refreshModules();
       void cacheAnimalPhotos(storeRef.current).then(() => persist());
       setOnline(true);
       persist();
@@ -191,26 +217,33 @@ export function FarmProvider({ children }: { children: ReactNode }) {
       // Data errors ≠ offline; only mark offline after stable probe failures.
       await reachabilityRef.current.probe();
     }
-  }, [api, persist]);
+  }, [api, persist, refreshModules]);
 
-  const syncNow = useCallback(async () => {
-    if (!storeRef.current.accessToken) return 0;
-    setSyncing(true);
-    try {
-      await flushModuleOutbox(storeRef.current, api);
-      const result = await runSync(storeRef.current, api, engineRef.current);
-      await prefetchAllModules(storeRef.current, api);
-      setOnline(true);
-      persist();
-      return result.conflicts;
-    } catch {
-      await reachabilityRef.current.probe();
-      persist();
-      return storeRef.current.conflicts.length;
-    } finally {
-      setSyncing(false);
-    }
-  }, [api, persist]);
+  const syncNow = useCallback((): Promise<number> => {
+    if (!storeRef.current.accessToken) return Promise.resolve(0);
+    if (syncInFlightRef.current) return syncInFlightRef.current;
+    const run = (async () => {
+      setSyncing(true);
+      try {
+        const hadLocalChanges = pendingMutations(storeRef.current).length > 0;
+        const flushed = await flushModuleOutbox(storeRef.current, api);
+        const result = await runSync(storeRef.current, api, engineRef.current);
+        setOnline(true);
+        persist();
+        void refreshModules(hadLocalChanges || flushed > 0);
+        return result.conflicts;
+      } catch {
+        await reachabilityRef.current.probe();
+        persist();
+        return storeRef.current.conflicts.length;
+      } finally {
+        setSyncing(false);
+        syncInFlightRef.current = null;
+      }
+    })();
+    syncInFlightRef.current = run;
+    return run;
+  }, [api, persist, refreshModules]);
 
   useEffect(() => {
     let cancelled = false;
@@ -233,7 +266,7 @@ export function FarmProvider({ children }: { children: ReactNode }) {
           if (!cancelled) setUser(me);
           await hydrateFromNetwork(storeRef.current, api);
           await ensureTagBlocks(storeRef.current, api);
-          await prefetchAllModules(storeRef.current, api);
+          void refreshModules(true);
           void cacheAnimalPhotos(storeRef.current);
           void registerPushDevice();
           persistStore(storeRef.current);
@@ -252,7 +285,7 @@ export function FarmProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [api, bump, registerPushDevice]);
+  }, [api, bump, refreshModules, registerPushDevice]);
 
   useEffect(() => {
     let cancelled = false;
@@ -290,7 +323,7 @@ export function FarmProvider({ children }: { children: ReactNode }) {
       try {
         await hydrateFromNetwork(storeRef.current, api);
         await ensureTagBlocks(storeRef.current, api);
-        await prefetchAllModules(storeRef.current, api);
+        void refreshModules(true);
         void cacheAnimalPhotos(storeRef.current);
         void registerPushDevice();
         setOnline(true);
@@ -300,7 +333,7 @@ export function FarmProvider({ children }: { children: ReactNode }) {
       }
       persist();
     },
-    [api, persist, registerPushDevice],
+    [api, persist, refreshModules, registerPushDevice],
   );
 
   const logout = useCallback(async () => {
