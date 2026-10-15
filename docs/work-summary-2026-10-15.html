@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Kharka Farm OS — Work summary, 15 Oct 2026</title>
+  <style>
+    @page { margin: 16mm 14mm; size: A4; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", "Nirmala UI", "Helvetica Neue", Arial, sans-serif;
+      color: #1a2e22;
+      line-height: 1.45;
+      font-size: 10pt;
+      margin: 0;
+    }
+    h1 { font-size: 20pt; margin: 0 0 4px; letter-spacing: -0.02em; color: #14532d; }
+    h2 {
+      font-size: 12.5pt;
+      margin: 22px 0 8px;
+      padding-bottom: 4px;
+      border-bottom: 1.5px solid #c5d9cb;
+      color: #166534;
+      break-after: avoid;
+    }
+    h3 { font-size: 10.5pt; margin: 14px 0 6px; color: #1a2e22; break-after: avoid; }
+    p { margin: 6px 0; }
+    .meta { color: #4b6354; font-size: 9.5pt; margin-bottom: 16px; }
+    .banner {
+      background: #e8f5ec;
+      border: 1.5px solid #a7d4b5;
+      border-radius: 6px;
+      padding: 12px 14px;
+      margin-bottom: 8px;
+    }
+    .note {
+      background: #fff8e6;
+      border: 1.5px solid #f2d48a;
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin: 10px 0;
+      font-size: 9.5pt;
+    }
+    ul, ol { margin: 6px 0 10px; padding-left: 1.2em; }
+    li { margin-bottom: 4px; }
+    table { width: 100%; border-collapse: collapse; font-size: 8.8pt; margin: 6px 0 12px; }
+    tr { break-inside: avoid; }
+    th, td { border: 1px solid #c5d9cb; padding: 5px 7px; text-align: left; vertical-align: top; }
+    th { background: #e8f5ec; color: #14532d; }
+    .u {
+      display: inline-block;
+      font-size: 7.5pt;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      padding: 1px 6px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+    .done { background: #dcfce7; color: #14532d; }
+    .todo { background: #ffedd5; color: #9a3412; }
+    code {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 8.5pt;
+      background: #f0f7f2;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+    .flow { display: flex; align-items: stretch; gap: 6px; margin: 10px 0 14px; break-inside: avoid; }
+    .step {
+      flex: 1;
+      border: 1.5px solid #a7d4b5;
+      border-radius: 6px;
+      padding: 8px 9px;
+      background: #f6fbf7;
+      font-size: 8.8pt;
+    }
+    .step b { display: block; color: #14532d; margin-bottom: 3px; font-size: 9.2pt; }
+    .arrow { align-self: center; color: #4b6354; font-size: 14pt; }
+    .footer {
+      margin-top: 26px;
+      padding-top: 10px;
+      border-top: 1px solid #c5d9cb;
+      font-size: 8.5pt;
+      color: #4b6354;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Work summary</h1>
+  <p class="meta">
+    Kharka Farm OS · Livestock monorepo · 15 Oct 2026<br />
+    Live at <code>https://evoqedlivestockfarm.vercel.app</code> · Three commits pushed to <code>main</code>, from <code>70260e5</code> to <code>c716c9d</code> · Three Android builds
+  </p>
+
+  <div class="banner">
+    <strong>In one paragraph.</strong> Today fixed three things people noticed while using the app. Syncing is
+    <strong>faster</strong>: "Syncing…" now clears in about half a second instead of waiting several seconds for every
+    screen to re-download, and the dashboard asks the database for everything at once. In the <strong>Shed</strong>,
+    picking Vaccination, Treatment, Evening or Midday now opens what you picked instead of morning milking, and
+    <strong>"waiting to sync: 2"</strong> no longer stays on screen while online. Finally, mistakes can now be corrected:
+    a worker can <strong>edit or delete a record</strong>, but the change is only applied after an
+    <strong>Admin or Manager approves it</strong>, on the phone or the website.
+  </div>
+
+  <h2>1. Faster syncing</h2>
+  <h3>Why it was slow</h3>
+  <ul>
+    <li><strong>Too much in each sync.</strong> "Syncing…" stayed on while the app sent your changes, fetched new ones,
+      and then re-downloaded the saved copies of all 18 screens (dashboard, animals, expenses, reports and so on).
+      Sending and fetching changes takes about half a second. The 18 screens took about 3 seconds from a PC, and
+      longer on mobile data.</li>
+    <li><strong>Slow dashboard.</strong> Its six-month money chart asked the database for one month at a time, so it
+      waited on six round trips in a row. On its own the dashboard took about 3 seconds.</li>
+    <li><strong>Repeated downloads.</strong> Coming back online ran the full download twice, and several screens could
+      start a sync at the same moment.</li>
+  </ul>
+  <h3>What changed</h3>
+  <ul>
+    <li><strong>App:</strong> "Syncing…" only covers sending and fetching changes. The saved screen copies refresh quietly
+      in the background, at most every 5 minutes, or straight away after you record something. Overlapping syncs share
+      one run. Login and app start no longer wait for the screen copies.</li>
+    <li><strong>API:</strong> the dashboard sends all its database queries at once, and the six-month chart uses 2 queries
+      instead of 6 rounds of 2. Every number was checked against the live site and came out the same.</li>
+  </ul>
+
+  <h2>2. Shed fixes</h2>
+  <h3>Every option opened morning milking</h3>
+  <ul>
+    <li><strong>Cause:</strong> while a morning milking round was open, the Shed screen kept copying that round's job and
+      session back over your choice, every few seconds during sync. The only button was "Resume round", which always
+      reopened the morning milking round.</li>
+    <li><strong>Fix:</strong> the open round's job and session are shown only when you first arrive; your taps are never
+      overridden. "Resume round" appears only when your choice matches the open round. Otherwise the button is
+      "Start this session" and opens what you picked. Starting a job that is already open just reopens it, so nothing is
+      duplicated.</li>
+  </ul>
+  <h3>"Waiting to sync: 2" while online</h3>
+  <ul>
+    <li><strong>Cause:</strong> each shed save queues two items (the record and a scan log), but saving never started a
+      sync, so they waited until the app went offline and back, or until another screen synced.</li>
+    <li><strong>Fix:</strong> every shed save sends right away, and finishing a round sends its entries first. If the
+      internet drops mid-send, the items stay queued and retry later; before, they were marked failed and never retried.
+      The new app also retries items that older versions gave up on.</li>
+  </ul>
+
+  <h2>3. Correcting mistakes with approval</h2>
+  <p>Anyone who can record data can now also correct it. Changes by workers wait for approval; Admins and Managers can
+    approve them, and their own edits apply straight away (still recorded in the audit log).</p>
+  <div class="flow">
+    <div class="step"><b>1. Worker edits</b>Changes a record or deletes it, optionally with a reason.</div>
+    <div class="arrow">→</div>
+    <div class="step"><b>2. Checked and held</b>Invalid data is refused at once. Valid changes are saved as a request and
+      the record stays as it was. The worker sees "Sent for approval".</div>
+    <div class="arrow">→</div>
+    <div class="step"><b>3. Admin or Manager reviews</b>Approvals shows what the value is now and what it will become,
+      with a note box.</div>
+    <div class="arrow">→</div>
+    <div class="step"><b>4. Approve or reject</b>Approve applies the change exactly as if the worker had been allowed;
+      Reject leaves the record untouched.</div>
+  </div>
+  <h3>What it covers</h3>
+  <ul>
+    <li><strong>Records:</strong> animal details and weights, health records, heat and breeding records, inventory,
+      groups, fish ponds, batches, revenue and milk entries.</li>
+    <li><strong>Milk in the shed:</strong> fixing a milk entry while its round is still open, or within 12 hours, applies
+      straight away, so the shed's "change if needed" step keeps working.</li>
+    <li><strong>Permissions don't change:</strong> a worker who isn't allowed to delete animals still can't, even with
+      approval.</li>
+    <li><strong>Corrections need the internet.</strong> A worker's edit saved offline on the phone is refused when it
+      syncs, so corrections should be made while online. New records still save offline and sync as before.</li>
+  </ul>
+  <h3>Where to find it</h3>
+  <ul>
+    <li><strong>Website:</strong> a new <strong>Approvals</strong> link in the menu, with a red count of waiting requests
+      for Admins and Managers. Tabs for <em>Waiting</em> and <em>Done</em>. Workers see their own requests there and
+      can withdraw one that is still waiting.</li>
+    <li><strong>Phone:</strong> an <strong>Approvals</strong> button in the Inbox with the waiting count, opening the same
+      list. After an edit the worker sees a "Sent for approval" message.</li>
+    <li>Both in English and Nepali.</li>
+  </ul>
+  <h3>Tested against the API</h3>
+  <p>An end-to-end run of 14 checks passed: invalid edits refused with nothing queued; a worker edit held (202) and
+    listed with the old value; workers can't approve (403); an Admin approval applies the change and a second approval
+    is refused (409); a rejection leaves the animal unchanged; workers can withdraw; Admin edits apply directly; other
+    worker screens are unaffected. The test requests were cleaned up afterwards.</p>
+
+  <h2>4. Quality checks</h2>
+  <table>
+    <tr><th style="width:30%">Check</th><th>Result</th></tr>
+    <tr><td>Typecheck (all packages)</td><td><span class="u done">PASS</span></td></tr>
+    <tr><td>Tests</td><td><span class="u done">328 PASS</span> API 259 · web 30 · mobile 23 · contracts 16</td></tr>
+    <tr><td>Lint</td><td><span class="u done">0 ERRORS</span> 8 older warnings in other web pages; none in the new files</td></tr>
+    <tr><td>Database</td><td>New table for change requests, already applied to the live database</td></tr>
+  </table>
+
+  <h2>5. Commits and builds</h2>
+  <table>
+    <tr><th style="width:12%">Commit</th><th style="width:10%">Time</th><th>What it contains</th></tr>
+    <tr><td><code>70260e5</code></td><td>10:19</td><td>Faster sync: background screen refresh, dashboard queries in one round</td></tr>
+    <tr><td><code>8635a34</code></td><td>13:44</td><td>Shed: open the picked job and session; send shed saves right away; retry after network drops</td></tr>
+    <tr><td><code>c716c9d</code></td><td>14:34</td><td>Edits and deletes by workers held for Admin or Manager approval, on web and phone</td></tr>
+  </table>
+  <table>
+    <tr><th style="width:16%">Android build</th><th style="width:16%">From commit</th><th>Contains</th></tr>
+    <tr><td><code>2d3be839</code></td><td><code>70260e5</code></td><td>Faster sync</td></tr>
+    <tr><td><code>ae949e0c</code></td><td><code>8635a34</code></td><td>Faster sync and shed fixes</td></tr>
+    <tr><td><code>55265a4a</code></td><td><code>c716c9d</code></td><td>Everything above plus approvals; <strong>install this one</strong></td></tr>
+  </table>
+
+  <h2>6. Still to do</h2>
+  <table>
+    <tr><th style="width:12%">Status</th><th>Task</th></tr>
+    <tr><td><span class="u todo">TO DO</span></td><td>Install the newest APK (build <code>55265a4a</code>) on the phones. If it won't
+      install over the current app, sync any waiting items first, then uninstall and reinstall.</td></tr>
+    <tr><td><span class="u todo">TO DO</span></td><td>In Vercel, add <code>SPARROW_SMS_TOKEN</code>, <code>SPARROW_SMS_FROM</code>,
+      <code>FCM_SERVICE_ACCOUNT_JSON</code>, <code>NOTIFICATION_CRON_SECRET</code> and <code>CRON_SECRET</code>, then redeploy.</td></tr>
+    <tr><td><span class="u todo">TO DO</span></td><td>In GitHub, add the secrets <code>API_BASE_URL</code> and <code>NOTIFICATION_CRON_SECRET</code>
+      and the variable <code>ENABLE_NOTIFICATION_CRON=true</code>.</td></tr>
+    <tr><td><span class="u todo">TO DO</span></td><td>Rotate the cron secret and the Firebase (FCM) private key, because they were shared in chat.</td></tr>
+  </table>
+
+  <div class="footer">
+    Kharka Farm OS · Work summary · 15 Oct 2026
+  </div>
+
+</body>
+</html>
