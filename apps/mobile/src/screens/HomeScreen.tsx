@@ -99,7 +99,12 @@ export function ShedScreen() {
   const { t } = useLocale();
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
-  const [serverActiveId, setServerActiveId] = useState<string | null>(null);
+  const [serverActive, setServerActive] = useState<{
+    id: string;
+    mode: string;
+    session?: string | null;
+  } | null>(null);
+  const pickedByUser = useRef(Boolean(route.params?.mode));
   const [mode, setMode] = useState<RecordingMode>(
     (route.params?.mode as RecordingMode) || 'MILKING',
   );
@@ -145,29 +150,54 @@ export function ShedScreen() {
     store.round?.status === 'ACTIVE' && isCurrentRoundDate(store.round.date) ? store.round : null;
   const conflicts = store.conflicts?.length ?? 0;
 
+  const pickMode = (next: RecordingMode) => {
+    pickedByUser.current = true;
+    setMode(next);
+  };
+  const pickSession = (next: MilkSession) => {
+    pickedByUser.current = true;
+    setSession(next);
+  };
+
+  // Show the open round's mode/session on arrival, but never override what the user tapped.
   useEffect(() => {
-    if (!store.accessToken) return;
+    if (!store.accessToken || !focused) return;
+    let cancelled = false;
     void api
       .activeRound()
       .then((round) => {
-        setServerActiveId(round?.id ?? null);
-        if (round?.mode) setMode(round.mode as RecordingMode);
-        if (round?.session) setSession(round.session as MilkSession);
+        if (cancelled) return;
+        setServerActive(round ? { id: round.id, mode: round.mode, session: round.session } : null);
+        if (round && !pickedByUser.current) {
+          setMode(round.mode as RecordingMode);
+          if (round.session) setSession(round.session as MilkSession);
+        }
       })
-      .catch(() => setServerActiveId(null));
-  }, [api, store.accessToken, revision]);
+      .catch(() => {
+        if (!cancelled) setServerActive(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, store.accessToken, focused]);
+
+  const matchesPick = (round: { mode: string; session?: string | null } | null) =>
+    Boolean(round && round.mode === mode && (mode !== 'MILKING' || round.session === session));
 
   const resume = async () => {
-    if (localActive) {
+    if (localActive && matchesPick(localActive)) {
       navigation.navigate('Round');
       return;
     }
-    if (!serverActiveId) return;
+    if (!serverActive || !matchesPick(serverActive)) {
+      await startMode(mode);
+      return;
+    }
     setStarting(true);
     try {
       const round = await api.activeRound();
-      if (!round) {
-        setServerActiveId(null);
+      if (!round || round.id !== serverActive.id) {
+        setServerActive(null);
         setError(t('shed.roundGone', { defaultValue: 'That round is no longer active' }));
         return;
       }
@@ -250,7 +280,7 @@ export function ShedScreen() {
     navigation.setParams({ animalId: undefined });
   }, [route.params?.animalId]);
 
-  const canResume = Boolean(localActive || serverActiveId);
+  const canResume = matchesPick(localActive) || matchesPick(serverActive);
   const bannerBg = modeBannerColor(mode, session);
   const expected = today?.expected ?? 0;
   const done = Math.min(today?.recorded ?? 0, expected);
@@ -294,7 +324,7 @@ export function ShedScreen() {
             {RECORDING_MODES.map((m) => (
               <Pressable
                 key={m}
-                onPress={() => setMode(m)}
+                onPress={() => pickMode(m)}
                 style={[styles.chip, mode === m && styles.chipOn]}
               >
                 <Txt
@@ -312,7 +342,7 @@ export function ShedScreen() {
               {SESSIONS.map((s) => (
                 <Pressable
                   key={s}
-                  onPress={() => setSession(s)}
+                  onPress={() => pickSession(s)}
                   style={[styles.chip, session === s && styles.chipOn]}
                 >
                   <Txt

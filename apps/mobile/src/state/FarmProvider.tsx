@@ -132,6 +132,8 @@ export function FarmProvider({ children }: { children: ReactNode }) {
   const [revision, setRevision] = useState(0);
   const wasOffline = useRef(false);
   const syncInFlightRef = useRef<Promise<number> | null>(null);
+  const syncAgainRef = useRef<Promise<number> | null>(null);
+  const syncNowRef = useRef<() => Promise<number>>(() => Promise.resolve(0));
   const moduleRefreshRef = useRef<Promise<void> | null>(null);
   const lastModuleRefreshRef = useRef(0);
   const reachabilityRef = useRef(
@@ -221,7 +223,17 @@ export function FarmProvider({ children }: { children: ReactNode }) {
 
   const syncNow = useCallback((): Promise<number> => {
     if (!storeRef.current.accessToken) return Promise.resolve(0);
-    if (syncInFlightRef.current) return syncInFlightRef.current;
+    if (syncInFlightRef.current) {
+      // Work queued during this run (e.g. the next shed save) must not wait for a later trigger.
+      const current = syncInFlightRef.current;
+      if (!syncAgainRef.current) {
+        syncAgainRef.current = current.then(() => {
+          syncAgainRef.current = null;
+          return syncNowRef.current();
+        });
+      }
+      return syncAgainRef.current;
+    }
     const run = (async () => {
       setSyncing(true);
       try {
@@ -244,6 +256,7 @@ export function FarmProvider({ children }: { children: ReactNode }) {
     syncInFlightRef.current = run;
     return run;
   }, [api, persist, refreshModules]);
+  syncNowRef.current = syncNow;
 
   useEffect(() => {
     let cancelled = false;

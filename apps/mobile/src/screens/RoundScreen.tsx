@@ -36,7 +36,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Round'>;
 const SKIP_REASONS: RoundSkipReason[] = ['NOT_MILKED', 'FORGOT'];
 
 export function RoundScreen({ navigation, route }: Props) {
-  const { store, api, revision, persist } = useFarm();
+  const { store, api, revision, persist, syncNow } = useFarm();
   const { t } = useLocale();
   const copy = {
     usual: t('shed.noUsual'),
@@ -213,6 +213,7 @@ export function RoundScreen({ navigation, route }: Props) {
     setConfirmRange(false);
     setError(null);
     persist();
+    void syncNow();
   };
 
   function notesLike(v: string) {
@@ -238,6 +239,8 @@ export function RoundScreen({ navigation, route }: Props) {
     setFinishBusy(true);
     const mode = store.round?.mode;
     const roundId = store.round?.id;
+    // Send this round's entries before the finish, so the server sees them in the round.
+    await syncNow();
     finishLocalRound(store, skips);
     persist();
     setFinishing(false);

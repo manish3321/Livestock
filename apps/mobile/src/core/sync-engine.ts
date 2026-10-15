@@ -129,6 +129,13 @@ export async function ensureTagBlocks(store: FarmStore, api: FarmApi): Promise<v
   }
 }
 
+/** No response, auth refresh failure, rate limit, or server error: worth retrying unchanged. */
+export function isTransientError(err: unknown): boolean {
+  const status = (err as { status?: unknown } | null)?.status;
+  if (typeof status !== 'number') return true;
+  return status === 0 || status === 401 || status === 408 || status === 429 || status >= 500;
+}
+
 export async function runSync(
   store: FarmStore,
   api: FarmApi,
@@ -136,6 +143,11 @@ export async function runSync(
 ): Promise<{ conflicts: number }> {
   const token = store.accessToken;
   if (!token) return { conflicts: 0 };
+
+  // Older builds marked network drops as failed and never retried them.
+  for (const item of store.outbox) {
+    if (item.state === 'failed' && item.rest && item.error === 'NETWORK') item.state = 'pending';
+  }
 
   const mutations = pendingMutations(store);
   if (mutations.length) {
@@ -170,6 +182,11 @@ export async function runSync(
       }
       item.state = 'synced';
     } catch (err) {
+      if (isTransientError(err)) {
+        // Keep it queued; the next sync retries. Later items would fail the same way.
+        store.outbox = store.outbox.filter((o) => o.state !== 'synced');
+        throw err;
+      }
       item.state = 'failed';
       item.error = err instanceof Error ? err.message : 'SYNC_FAILED';
     }
