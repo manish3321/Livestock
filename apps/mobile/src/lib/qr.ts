@@ -17,13 +17,24 @@ export function batchScanUrl(batchId: string): string {
   return `${webBaseUrl()}/scan/b/${batchId}`;
 }
 
+const QR_OPTS = {
+  errorCorrectionLevel: 'H' as const,
+  margin: 2,
+  width: 280,
+  color: { dark: '#1a2e1a', light: '#ffffff' },
+};
+
+/**
+ * SVG string for on-device display. Prefer this on React Native: `toDataURL`
+ * needs a canvas, which Expo Go / native apps do not provide.
+ */
+export async function qrSvg(text: string): Promise<string> {
+  return QRCode.toString(text, { type: 'svg', ...QR_OPTS });
+}
+
+/** PNG data URL — works in the browser; may throw on React Native. */
 export async function qrDataUrl(text: string): Promise<string> {
-  return QRCode.toDataURL(text, {
-    errorCorrectionLevel: 'H',
-    margin: 2,
-    width: 280,
-    color: { dark: '#1a2e1a', light: '#ffffff' },
-  });
+  return QRCode.toDataURL(text, QR_OPTS);
 }
 
 /** Parse printed QR text (full URL or path) into an animal/batch target. */

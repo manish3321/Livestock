@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
-import { animalScanUrl, qrDataUrl } from '../lib/qr';
+import { SvgXml } from 'react-native-svg';
+import { animalScanUrl, qrSvg } from '../lib/qr';
 import { printHtml } from '../lib/printHtml';
 import { useLocale } from '../locale/LocaleProvider';
 import { color, radius } from '../theme/tokens';
@@ -20,16 +21,17 @@ export function AnimalQrCard({
 }) {
   const { t } = useLocale();
   const url = animalScanUrl(animalId);
-  const [dataUrl, setDataUrl] = useState<string | null>(null);
+  const [svg, setSvg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setError(null);
-    void qrDataUrl(url)
-      .then((d) => {
-        if (!cancelled) setDataUrl(d);
+    setSvg(null);
+    void qrSvg(url)
+      .then((markup) => {
+        if (!cancelled) setSvg(markup);
       })
       .catch(() => {
         if (!cancelled) setError(t('errors.generic'));
@@ -40,14 +42,14 @@ export function AnimalQrCard({
   }, [url, t]);
 
   const print = async () => {
-    if (!dataUrl) return;
+    if (!svg) return;
     setBusy(true);
     try {
       await printHtml(
         title,
         `<div style="text-align:center">
           ${subtitle ? `<p style="color:#5C6B60">${escapeHtml(subtitle)}</p>` : ''}
-          <img src="${dataUrl}" width="260" height="260" alt="QR" />
+          <div style="display:inline-block;width:260px;height:260px">${svg}</div>
           <p style="font-size:10px;word-break:break-all;color:#666;margin-top:12px">${escapeHtml(url)}</p>
         </div>`,
       );
@@ -59,17 +61,16 @@ export function AnimalQrCard({
   };
 
   const share = async () => {
-    if (!dataUrl) return;
+    if (!svg) return;
     setBusy(true);
     try {
-      const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
-      const path = `${FileSystem.cacheDirectory ?? ''}animal-qr-${animalId.slice(0, 8)}.png`;
-      await FileSystem.writeAsStringAsync(path, base64, {
-        encoding: FileSystem.EncodingType.Base64,
+      const path = `${FileSystem.cacheDirectory ?? ''}animal-qr-${animalId.slice(0, 8)}.svg`;
+      await FileSystem.writeAsStringAsync(path, svg, {
+        encoding: FileSystem.EncodingType.UTF8,
       });
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(path, {
-          mimeType: 'image/png',
+          mimeType: 'image/svg+xml',
           dialogTitle: t('qr.download'),
         });
       } else {
@@ -87,8 +88,8 @@ export function AnimalQrCard({
       <Txt weight="display" style={styles.heading}>
         {t('qr.title')}
       </Txt>
-      {dataUrl ? (
-        <Image source={{ uri: dataUrl }} style={styles.qr} accessibilityLabel={t('qr.title')} />
+      {svg ? (
+        <SvgXml xml={svg} width={200} height={200} accessibilityLabel={t('qr.title')} />
       ) : (
         <Txt muted>{error ?? t('common.loading')}</Txt>
       )}
@@ -99,13 +100,13 @@ export function AnimalQrCard({
         <Button
           label={busy ? t('common.loading') : t('qr.print')}
           variant="secondary"
-          disabled={!dataUrl || busy}
+          disabled={!svg || busy}
           onPress={() => void print()}
         />
         <Button
           label={busy ? t('common.loading') : t('qr.download')}
           variant="secondary"
-          disabled={!dataUrl || busy}
+          disabled={!svg || busy}
           onPress={() => void share()}
         />
       </View>
@@ -134,7 +135,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   heading: { fontSize: 18, alignSelf: 'flex-start' },
-  qr: { width: 200, height: 200 },
   url: { fontSize: 11, textAlign: 'center' },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' },
 });
