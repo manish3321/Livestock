@@ -1,3 +1,4 @@
+import type { SyncBootstrapResponse } from '@farm/contracts';
 import { randomId } from '../core/id';
 import type { FarmStore, ModuleOutboxItem } from '../core/store';
 import type { HttpFarmApi } from '../api/http-farm-api';
@@ -38,7 +39,21 @@ export function getModuleCache<T>(store: FarmStore, key: string): T | null {
   return hit ? (hit.payload as T) : null;
 }
 
+/**
+ * Refresh every offline module screen. Prefers one bootstrap round trip;
+ * falls back to the old per-path GETs if the API is still on an older deploy.
+ */
 export async function prefetchAllModules(store: FarmStore, api: HttpFarmApi): Promise<void> {
+  try {
+    const snap = await api.get<SyncBootstrapResponse>('/v1/sync/bootstrap');
+    for (const [key, payload] of Object.entries(snap.modules ?? {})) {
+      if (payload != null) setModuleCache(store, key, payload);
+    }
+    return;
+  } catch {
+    /* older API or offline — try the legacy fan-out below */
+  }
+
   const entries: Array<[string, string]> = [
     ...Object.entries(MODULE_CACHE_PATHS),
     ['tasks', tasksCachePath()],
@@ -55,6 +70,10 @@ export async function prefetchAllModules(store: FarmStore, api: HttpFarmApi): Pr
   );
 }
 
+/**
+ * Stale-while-revalidate: return cache immediately when present, then refresh.
+ * Callers that need the network result should await the returned promise's refresh.
+ */
 export async function cachedGet<T>(
   store: FarmStore,
   api: HttpFarmApi,

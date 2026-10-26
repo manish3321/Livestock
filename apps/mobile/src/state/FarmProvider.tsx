@@ -13,7 +13,6 @@ import NetInfo from '@react-native-community/netinfo';
 import { useLocale } from '../locale/LocaleProvider';
 import type { AuthUser, TokenPair } from '@farm/contracts';
 import { createStore, type FarmStore } from '../core/store';
-import { pendingMutations } from '../core/scan-round';
 import { ensureTagBlocks, hydrateFromNetwork, runSync } from '../core/sync-engine';
 import type { NotificationEngine } from '../core/notify';
 import { createNotifeeEngine, MemoryNotificationEngine } from '../native/notifee-engine';
@@ -193,8 +192,8 @@ export function FarmProvider({ children }: { children: ReactNode }) {
     }
   }, [api]);
 
-  // Offline copies of every module screen (~18 requests). Refreshed in the background so
-  // "Syncing…" only covers sending and receiving changes; screens fetch live data when online.
+  // Offline copies of every module screen — one /v1/sync/bootstrap round trip (legacy
+  // fan-out only if the API is older). Background only; screens show cache then refresh.
   const refreshModules = useCallback(
     (force = false): Promise<void> => {
       if (moduleRefreshRef.current) return moduleRefreshRef.current;
@@ -203,14 +202,18 @@ export function FarmProvider({ children }: { children: ReactNode }) {
       }
       lastModuleRefreshRef.current = Date.now();
       const run = prefetchAllModules(storeRef.current, api)
-        .then(() => persist())
+        .then(() => {
+          persistStore(storeRef.current);
+          // Soft bump so open screens can pick up fresh cache without a loading flash.
+          bump();
+        })
         .finally(() => {
           moduleRefreshRef.current = null;
         });
       moduleRefreshRef.current = run;
       return run;
     },
-    [api, persist],
+    [api, bump],
   );
 
   const hydrate = useCallback(async () => {
@@ -244,12 +247,14 @@ export function FarmProvider({ children }: { children: ReactNode }) {
     const run = (async () => {
       setSyncing(true);
       try {
-        const hadLocalChanges = pendingMutations(storeRef.current).length > 0;
-        const flushed = await flushModuleOutbox(storeRef.current, api);
+        await flushModuleOutbox(storeRef.current, api);
         const result = await runSync(storeRef.current, api, engineRef.current);
         setOnline(true);
         persist();
-        void refreshModules(hadLocalChanges || flushed > 0);
+        // Do not force a full module re-download after every shed/task save — that
+        // used to saturate the phone's connection for ~a minute so the next screen
+        // looked stuck. Throttled background refresh is enough; open screens fetch live.
+        void refreshModules(false);
         return result.conflicts;
       } catch {
         await reachabilityRef.current.probe();

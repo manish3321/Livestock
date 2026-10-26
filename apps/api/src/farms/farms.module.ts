@@ -7,5 +7,6 @@ import { FarmsController } from './farms.controller';
   imports: [AuditModule],
   controllers: [FarmsController],
   providers: [FarmMembersService],
+  exports: [FarmMembersService],
 })
 export class FarmsModule {}

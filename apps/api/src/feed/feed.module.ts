@@ -7,5 +7,6 @@ import { FeedService } from './feed.service';
   imports: [AuditModule],
   controllers: [FeedController],
   providers: [FeedService],
+  exports: [FeedService],
 })
 export class FeedModule {}

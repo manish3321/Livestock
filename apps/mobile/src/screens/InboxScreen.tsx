@@ -73,7 +73,18 @@ export function InboxScreen() {
   void revision;
 
   const load = useCallback(async () => {
-    setLoading(true);
+    const cached = [...store.tasks.values()] as TaskDto[];
+    if (tab === 'active') {
+      const open = cached.filter((task) => task.status === 'PENDING' || task.status === 'SNOOZED');
+      if (open.length > 0) {
+        setTasks(open);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+    } else {
+      setLoading(true);
+    }
     try {
       if (tab === 'active') {
         const page = await api.listOpenTasks();
@@ -87,7 +98,6 @@ export function InboxScreen() {
       }
       setError(null);
     } catch {
-      const cached = [...store.tasks.values()] as TaskDto[];
       if (tab === 'active') {
         setTasks(cached.filter((task) => task.status === 'PENDING' || task.status === 'SNOOZED'));
       } else {

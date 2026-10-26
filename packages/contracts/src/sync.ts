@@ -83,6 +83,16 @@ export interface SyncPullResponse {
   hasMore: boolean;
 }
 
+/**
+ * One-shot offline snapshot for the mobile app. Replaces ~18 separate list GETs
+ * with a single round trip. Keys match the phone's moduleCache; missing permission
+ * or a failed sub-query yields null so the client keeps any older cache entry.
+ */
+export interface SyncBootstrapResponse {
+  fetchedAt: string;
+  modules: Record<string, unknown | null>;
+}
+
 /** Client-side outbox states for sync-capable clients. */
 export const OUTBOX_STATES = ['pending', 'syncing', 'synced', 'failed', 'conflict'] as const;
 export type OutboxState = (typeof OUTBOX_STATES)[number];

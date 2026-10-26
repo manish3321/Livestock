@@ -60,7 +60,14 @@ export function TodayTasks() {
     if (!force && Date.now() - lastLoadAt.current < REFRESH_MS) return;
     inFlight.current = true;
     lastLoadAt.current = Date.now();
-    setLoading(true);
+    // Show what we already have so coming back after a task is not a blank wait.
+    const cached = [...store.tasks.values()] as unknown as TaskDto[];
+    const open = cached.filter((task) => task.status === 'PENDING' || task.status === 'SNOOZED');
+    setTasks((prev) => {
+      if (prev && prev.length > 0) return prev;
+      return open;
+    });
+    if (open.length === 0) setLoading(true);
     const endOfTomorrow = new Date(startOfLocalDay(new Date()) + 2 * DAY_MS - 1).toISOString();
     try {
       const page = await api.get<PageResult<TaskDto>>(
@@ -68,13 +75,12 @@ export function TodayTasks() {
       );
       setTasks(page.items);
     } catch {
-      const cached = [...store.tasks.values()] as unknown as TaskDto[];
-      setTasks(cached.filter((task) => task.status === 'PENDING' || task.status === 'SNOOZED'));
+      setTasks(open);
     } finally {
       inFlight.current = false;
       setLoading(false);
     }
-  }, [api, store]);
+  }, [api, store.tasks]);
 
   useFocusEffect(
     useCallback(() => {
