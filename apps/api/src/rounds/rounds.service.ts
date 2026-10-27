@@ -24,6 +24,7 @@ import type { RequestUser } from '../common/types';
 import { ensureTask } from '../jobs/task-writer';
 import { DAY_MS, EXIT_STATUSES, parseScanPayload, rankAnimalMatch, startOfUtcDay } from '../milk/milk-rules';
 import { MilkService } from '../milk/milk.service';
+import { nepalDayBounds } from '../notifications/notification-rules';
 import { PrismaService } from '../prisma/prisma.service';
 
 const NEXT_ACTION: Record<RecordingMode, ScanResolveDto['nextAction']> = {
@@ -45,6 +46,7 @@ export class RoundsService {
   ) {}
 
   async create(user: RequestUser, input: RecordingRoundCreate): Promise<RecordingRoundDto> {
+    await this.abandonStale(user);
     const date = startOfUtcDay(new Date());
     const session = input.mode === 'MILKING' ? (input.session ?? inferSession()) : (input.session ?? null);
 
@@ -53,7 +55,6 @@ export class RoundsService {
         farmId: user.farmId,
         status: 'ACTIVE',
         mode: input.mode,
-        date,
         ...(session ? { session } : {}),
       },
       orderBy: { startedAt: 'desc' },
@@ -98,14 +99,12 @@ export class RoundsService {
     mode?: RecordingMode,
     session?: MilkSession | null,
   ): Promise<RecordingRoundDto | null> {
-    // Round dates are UTC days; a Nepal morning round starts before UTC midnight, so yesterday still counts.
-    const cutoff = new Date(startOfUtcDay(new Date()).getTime() - DAY_MS);
-    await this.abandonStale(user, cutoff);
+    await this.abandonStale(user);
+    // Nepal morning can start before UTC midnight, so keep anything still ACTIVE after cleanup.
     const row = await this.prisma.recordingRound.findFirst({
       where: {
         farmId: user.farmId,
         status: 'ACTIVE',
-        date: { gte: cutoff },
         ...(mode ? { mode } : {}),
         ...(mode === 'MILKING' && session ? { session } : {}),
       },
@@ -114,10 +113,19 @@ export class RoundsService {
     return row ? toRoundDto(row) : null;
   }
 
-  /** A round left open from an earlier day would otherwise hijack the shed screen forever. */
-  private async abandonStale(user: RequestUser, cutoff: Date): Promise<void> {
+  /**
+   * A round left open from an earlier Nepal day would hijack the shed forever.
+   * Cut off at Nepal midnight so yesterday's evening milking cannot block today's work,
+   * while a Nepal morning that started just before UTC midnight stays open.
+   */
+  private async abandonStale(user: RequestUser): Promise<void> {
+    const { start: nepalTodayStart } = nepalDayBounds(new Date());
     const stale = await this.prisma.recordingRound.findMany({
-      where: { farmId: user.farmId, status: 'ACTIVE', date: { lt: cutoff } },
+      where: {
+        farmId: user.farmId,
+        status: 'ACTIVE',
+        startedAt: { lt: nepalTodayStart },
+      },
       select: { id: true },
     });
     if (stale.length === 0) return;

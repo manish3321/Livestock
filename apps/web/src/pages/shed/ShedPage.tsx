@@ -157,6 +157,13 @@ export function ShedPage() {
     });
   }, [remainingQ.data]);
 
+  const attachRound = (active: { id: string; mode: RecordingMode; session: MilkSession | null }) => {
+    setRoundId(active.id);
+    setMode(active.mode);
+    if (active.session) setSession(active.session);
+    rememberActiveRound(active.id, active.mode, active.session);
+  };
+
   const pickMode = (next: RecordingMode) => {
     pickedByUser.current = true;
     setMode(next);
@@ -164,9 +171,13 @@ export function ShedPage() {
     setFinishing(false);
     setError(null);
     // Leaving an open milking/vax round must not trap the picker — clear local attach;
-    // startRound will resume the matching open round if one exists for the new pick.
+    // then re-attach any ACTIVE round for the new mode (any milking session).
     setRoundId(null);
     rememberActiveRound(null);
+    if (!navigator.onLine) return;
+    void getActiveRound(next).then((active) => {
+      if (active) attachRound(active);
+    });
   };
   const pickSession = (next: MilkSession) => {
     pickedByUser.current = true;
@@ -175,6 +186,10 @@ export function ShedPage() {
     setFinishing(false);
     setRoundId(null);
     rememberActiveRound(null);
+    if (!navigator.onLine) return;
+    void getActiveRound('MILKING', next).then((active) => {
+      if (active) attachRound(active);
+    });
   };
 
   useEffect(() => {
@@ -217,14 +232,17 @@ export function ShedPage() {
   }, []);
 
   // When the user picks a mode that already has an ACTIVE round today, re-attach it.
+  // For milking, match any open session first so Evening is not lost when the chip shows Morning.
   useEffect(() => {
     if (!activeRoundReady || roundId || milkDeepLink || !navigator.onLine) return;
     let cancelled = false;
-    void getActiveRound(mode, mode === 'MILKING' ? session : undefined).then((active) => {
-      if (cancelled || !active) return;
-      setRoundId(active.id);
-      rememberActiveRound(active.id, active.mode, active.session);
-    });
+    void getActiveRound(mode, mode === 'MILKING' ? session : undefined)
+      .then(async (active) => {
+        if (cancelled) return;
+        if (!active && mode === 'MILKING') active = await getActiveRound('MILKING');
+        if (cancelled || !active) return;
+        attachRound(active);
+      });
     return () => {
       cancelled = true;
     };
@@ -623,14 +641,21 @@ export function ShedPage() {
     },
   });
 
+  const milkRoundForTank = () => tankMilkRoundId ?? remainingQ.data?.round.milkRoundId ?? null;
+
   const tank = useMutation({
-    mutationFn: () => updateTank(remainingQ.data!.round.milkRoundId!, { actualLitres: Number(actual) }),
+    mutationFn: () => {
+      const id = milkRoundForTank();
+      if (!id) throw new Error('No milk round');
+      return updateTank(id, { actualLitres: Number(actual) });
+    },
     onSuccess: () => void tankQ.refetch(),
   });
 
   const delivery = useMutation({
     mutationFn: async () => {
-      const id = remainingQ.data!.round.milkRoundId!;
+      const id = milkRoundForTank();
+      if (!id) throw new Error('No milk round');
       await recordDelivery(id, {
         litresSent: Number(litresSent),
         receiptNumber: receiptNumber || undefined,
@@ -782,7 +807,7 @@ export function ShedPage() {
 
       {!milkDeepLink && (
         <div className="card shed-start">
-          <h1>{t('shed.title')}</h1>
+          <h1>{t(`shed.mode.${mode}`)}</h1>
           <p className="muted">{t('shed.subtitle')}</p>
           <p className="shed-extra-links">
             <Link to="/shed/cohort">{t('nav.cohort')}</Link>
@@ -1174,6 +1199,23 @@ export function ShedPage() {
         <div className="card shed-finish-sheet">
           <h2>{t('shed.unrecordedTitle', { n: remaining.length })}</h2>
           <p className="muted">{t('shed.unrecordedHint')}</p>
+          {remaining.length > 1 && (
+            <div className="shed-skip shed-skip-all">
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={() =>
+                  setSkipDraft((d) => {
+                    const next = { ...d };
+                    for (const a of remaining) next[a.id] = 'NOT_MILKED';
+                    return next;
+                  })
+                }
+              >
+                {t('shed.skipAllNotMilked')}
+              </button>
+            </div>
+          )}
           {remaining.map((a) => (
             <div key={a.id} className={`shed-finish-row${a.withholdActive ? ' shed-finish-hold' : ''}`}>
               <strong>{a.shortNo ?? a.tag}</strong>

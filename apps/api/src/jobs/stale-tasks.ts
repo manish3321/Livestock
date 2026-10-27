@@ -10,9 +10,28 @@ export const MOMENT_TASK_TYPES: ReadonlySet<TaskType> = new Set<TaskType>([
   'MEDICATION_DOSE',
   'SYNC_INJECTION',
   'SYNC_AI',
+  'MISSING_PRODUCTION',
 ]);
 
 export const MOMENT_EXPIRY_DAYS = 3;
+
+/**
+ * Watch / check reminders that pile up when cron was flaky (pregnancy, calving, vax).
+ * After a week overdue they only clutter Today's work — expire so the board stays usable.
+ */
+export const WATCH_TASK_TYPES: ReadonlySet<TaskType> = new Set<TaskType>([
+  'PREGNANCY_CHECK',
+  'CALVING_WATCH',
+  'DRY_OFF',
+  'POSTPARTUM_CHECK',
+  'VACCINATION_DUE',
+  'CALF_HEALTH_CHECK',
+  'ANESTRUS_VET',
+  'ANESTRUS_MINERAL',
+  'ANESTRUS_DECISION',
+]);
+
+export const WATCH_EXPIRY_DAYS = 7;
 
 export interface OpenTaskRow {
   id: string;

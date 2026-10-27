@@ -5,7 +5,13 @@ import { ProfitService } from '../profit/profit.service';
 import { VaccinationsService } from '../vaccinations/vaccinations.service';
 import { nepalSixAmOn } from '../withholds/withhold-rules';
 import { ensureTask } from './task-writer';
-import { MOMENT_TASK_TYPES, MOMENT_EXPIRY_DAYS, staleLadderStepIds } from './stale-tasks';
+import {
+  MOMENT_TASK_TYPES,
+  MOMENT_EXPIRY_DAYS,
+  WATCH_TASK_TYPES,
+  WATCH_EXPIRY_DAYS,
+  staleLadderStepIds,
+} from './stale-tasks';
 import { nepalDayBounds } from '../notifications/notification-rules';
 import { atNepalHour } from '../common/nepal-time';
 import { ReproStageService } from '../breeding/repro-stage.service';
@@ -83,8 +89,19 @@ export class NightlyJob {
       },
       data: { status: 'EXPIRED' },
     });
+    const watches = await this.prisma.task.updateMany({
+      where: {
+        farmId,
+        type: { in: [...WATCH_TASK_TYPES] },
+        status: { in: ['PENDING', 'SNOOZED'] },
+        dueAt: { lt: new Date(now.getTime() - WATCH_EXPIRY_DAYS * DAY) },
+      },
+      data: { status: 'EXPIRED' },
+    });
     const expired =
-      ((result as { count?: number }).count ?? 0) + ((moments as { count?: number }).count ?? 0);
+      ((result as { count?: number }).count ?? 0) +
+      ((moments as { count?: number }).count ?? 0) +
+      ((watches as { count?: number }).count ?? 0);
     if (expired > 0) this.logger.log(`Expired ${expired} stale task(s) for farm ${farmId}`);
 
     const open = (await this.prisma.task.findMany({

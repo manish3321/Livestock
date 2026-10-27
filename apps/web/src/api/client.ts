@@ -84,7 +84,9 @@ export async function api<T>(
   }
 
   if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  const text = await res.text();
+  if (!text) return null as T;
+  return JSON.parse(text) as T;
 }
 
 export async function login(email: string, password: string): Promise<LoginResponse> {

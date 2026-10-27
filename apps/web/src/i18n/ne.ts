@@ -977,7 +977,7 @@ export const ne = {
       },
     },
     shed: {
-      title: 'दुहुन',
+      title: 'गोठ',
       subtitle:
         'एक पटक सुरु गर्नुहोस्। नम्बर लेख्नुहोस् वा बाँकी नाम थिच्नुहोस् — क्यामेरा ऐच्छिक हो। सकाउँदा छुटेको पशु देखिन्छ।',
       openingPad: 'दूध प्याड खोल्दै…',
@@ -1065,6 +1065,7 @@ export const ne = {
       unrecordedTitle: '{{n}} पशु रेकर्ड भएनन्',
       unrecordedHint: 'पहेंलो = अझै खुला। छोड्ने वा अहिले रेकर्ड गर्नुहोस्।',
       confirmFinish: 'सकाएर छुटेका सेभ गर्नुहोस्',
+      skipAllNotMilked: 'सबैलाई दुहिएन भनी चिन्ह लगाउनुहोस्',
       secondsPerAnimal: 'प्रति पशु {{n}} सेकेन्ड',
       skip: { NOT_MILKED: 'दुहिएन', FORGOT: 'बिर्सियो' },
       confirmDose: 'खुराक पक्का',

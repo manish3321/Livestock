@@ -977,7 +977,7 @@ export const en = {
       },
     },
     shed: {
-      title: 'Milking',
+      title: 'Shed',
       subtitle:
         'Start once. Type the herd number or tap who is left — camera is optional. Finish to catch anyone still missing.',
       openingPad: 'Opening the milk pad…',
@@ -1065,6 +1065,7 @@ export const en = {
       unrecordedTitle: '{{n}} animals not recorded',
       unrecordedHint: 'Amber = still open. Mark skip or record now so the herd stays honest.',
       confirmFinish: 'Finish and save skips',
+      skipAllNotMilked: 'Mark all as not milked',
       secondsPerAnimal: '{{n}} seconds per animal',
       skip: { NOT_MILKED: 'Not milked', FORGOT: 'Forgot' },
       confirmDose: 'Confirm dose',
