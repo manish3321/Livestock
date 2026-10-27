@@ -171,7 +171,10 @@ await writeFile(
       // 19:15 UTC = 01:00 Nepal. Hobby plans allow daily crons only; hourly runs from GitHub Actions.
       crons: [{ path: '/v1/jobs/nightly', schedule: '15 19 * * *' }],
       routes: [
-        { src: '^/(v1|health|api)(/.*)?$', dest: '/api/[...path]' },
+        // Only probe paths hit the Nest health controllers without the /v1 prefix.
+        // Do NOT swallow bare /health — that is the SPA Health page.
+        { src: '^/health/(live|ready)$', dest: '/api/[...path]' },
+        { src: '^/(v1|api)(/.*)?$', dest: '/api/[...path]' },
         { handle: 'filesystem' },
         { src: '^/(?!assets/).*$', dest: '/index.html' },
       ],
