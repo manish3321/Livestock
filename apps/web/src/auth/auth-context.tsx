@@ -68,6 +68,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    apiClient.setAuthClearedListener(() => applyUser(null));
+    return () => apiClient.setAuthClearedListener(null);
+  }, [applyUser]);
+
+  useEffect(() => {
     if (!loading && apiClient.getAccessToken()) {
       void refreshUser();
     }

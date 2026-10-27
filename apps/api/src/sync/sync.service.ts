@@ -84,6 +84,22 @@ export class SyncService {
           where: { clientMutationId: mutation.clientMutationId },
         });
         if (existing) {
+          // Replay must not look like a successful sync when the first attempt failed —
+          // the phone drops outbox items on `duplicate` and the edit would never land.
+          if (existing.status === 'FAILED') {
+            return {
+              clientMutationId: mutation.clientMutationId,
+              status: 'failed' as const,
+              error: existing.error ?? 'FAILED',
+            };
+          }
+          if (existing.status === 'CONFLICT') {
+            return {
+              clientMutationId: mutation.clientMutationId,
+              status: 'conflict' as const,
+            };
+          }
+          // APPLIED (and legacy DUPLICATE rows): acknowledge without rewriting.
           return {
             clientMutationId: mutation.clientMutationId,
             status: 'duplicate' as const,

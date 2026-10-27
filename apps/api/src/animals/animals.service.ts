@@ -140,10 +140,11 @@ export class AnimalsService {
     const animal = await this.prisma.animal.findFirst({
       where: { id, farmId: user.farmId, deletedAt: null },
       include: {
-        weights: { orderBy: { recordedAt: 'desc' } },
+        // Cap history so a long-lived animal does not pull unbounded rows on every open.
+        weights: { orderBy: { recordedAt: 'desc' }, take: 100 },
         dam: { select: { tag: true } },
         sire: { select: { tag: true } },
-        statusHistory: { orderBy: { changedAt: 'desc' } },
+        statusHistory: { orderBy: { changedAt: 'desc' }, take: 50 },
       },
     });
     if (!animal) {

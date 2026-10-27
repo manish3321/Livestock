@@ -23,6 +23,19 @@ export function clearTokens(): void {
   localStorage.removeItem(REFRESH_KEY);
 }
 
+/** Fired when refresh fails and tokens are wiped — AuthProvider must drop the in-memory user. */
+type AuthClearedListener = () => void;
+let authClearedListener: AuthClearedListener | null = null;
+
+export function setAuthClearedListener(listener: AuthClearedListener | null): void {
+  authClearedListener = listener;
+}
+
+function clearSession(): void {
+  clearTokens();
+  authClearedListener?.();
+}
+
 export class ApiRequestError extends Error {
   constructor(public readonly error: ApiError) {
     super(error.message);
@@ -35,7 +48,10 @@ let refreshPromise: Promise<boolean> | null = null;
 async function tryRefresh(): Promise<boolean> {
   refreshPromise ??= (async () => {
     const refreshToken = localStorage.getItem(REFRESH_KEY);
-    if (!refreshToken) return false;
+    if (!refreshToken) {
+      clearSession();
+      return false;
+    }
     try {
       const res = await fetch('/v1/auth/refresh', {
         method: 'POST',
@@ -43,12 +59,13 @@ async function tryRefresh(): Promise<boolean> {
         body: JSON.stringify({ refreshToken }),
       });
       if (!res.ok) {
-        clearTokens();
+        clearSession();
         return false;
       }
       storeTokens((await res.json()) as TokenPair);
       return true;
     } catch {
+      // Network blip — keep tokens so a later retry can succeed.
       return false;
     } finally {
       refreshPromise = null;

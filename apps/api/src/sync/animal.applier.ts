@@ -247,6 +247,8 @@ export function toSnapshot(animal: Animal): Record<string, unknown> {
     reproStage: animal.reproStage ?? 'NOT_BREEDING',
     reproStageSince: animal.reproStageSince?.toISOString() ?? null,
     notes: animal.notes,
+    shed: animal.shed,
+    photoUrl: animal.photoUrl,
     version: animal.version,
     createdAt: animal.createdAt.toISOString(),
     updatedAt: animal.updatedAt.toISOString(),

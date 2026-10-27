@@ -43,12 +43,17 @@ describe('RBAC permission map', () => {
 
   it('limits the vet to health work and the cooperative to viewing', () => {
     expect(hasPermission('VET', 'health:write')).toBe(true);
+    expect(hasPermission('VET', 'inventory:read')).toBe(true);
     expect(hasPermission('VET', 'finance:read')).toBe(false);
     expect(hasPermission('COOP', 'production:read')).toBe(true);
     expect(hasPermission('COOP', 'animals:write')).toBe(false);
+    expect(hasPermission('COOP', 'finance:read')).toBe(true);
     expect(modulesForRole('VET')).toContain('health');
+    expect(modulesForRole('VET')).toContain('inventory');
     expect(modulesForRole('COOP')).toContain('reports');
     expect(modulesForRole('COOP')).not.toContain('shed');
+    // Profit lives under the pnl module route — COOP must not see a dead nav link.
+    expect(modulesForRole('COOP')).not.toContain('pnl');
   });
 
   it('lets workers record in the shed and read the inbox', () => {

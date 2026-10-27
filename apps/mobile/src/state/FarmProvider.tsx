@@ -289,11 +289,17 @@ export function FarmProvider({ children }: { children: ReactNode }) {
         try {
           const me = (await api.me()) as AuthUser;
           if (!cancelled) setUser(me);
+          // Prefer incremental: SQLite already has the herd + pull cursor from last session.
           await hydrateFromNetwork(storeRef.current, api);
           await ensureTagBlocks(storeRef.current, api);
           void refreshModules(true);
           void cacheAnimalPhotos(storeRef.current);
           void registerPushDevice();
+          // Flush anything queued while the app was killed — cold start used to skip push.
+          const pending =
+            storeRef.current.outbox.some((o) => o.state !== 'synced') ||
+            (storeRef.current.moduleOutbox?.length ?? 0) > 0;
+          if (pending) void syncNowRef.current();
           persistStore(storeRef.current);
           if (!cancelled) {
             setOnline(true);
@@ -320,7 +326,8 @@ export function FarmProvider({ children }: { children: ReactNode }) {
       const reachable = await reachabilityRef.current.probe();
       if (cancelled) return;
       if (reachable && wasOffline.current && storeRef.current.accessToken) {
-        void syncNow().then(() => hydrate());
+        // Pull already applied animal diffs; only refresh withholds/tasks (skip herd re-page).
+        void syncNow().then(() => hydrateFromNetwork(storeRef.current, api));
       }
       wasOffline.current = !reachabilityRef.current.online;
     };
@@ -337,7 +344,7 @@ export function FarmProvider({ children }: { children: ReactNode }) {
       unsub();
       clearInterval(poll);
     };
-  }, [hydrate, syncNow]);
+  }, [api, syncNow]);
 
   const login = useCallback(
     async (email: string, password: string) => {
@@ -346,7 +353,8 @@ export function FarmProvider({ children }: { children: ReactNode }) {
       storeRef.current.refreshToken = res.refreshToken;
       setUser(res.user);
       try {
-        await hydrateFromNetwork(storeRef.current, api);
+        // Always replace the herd on login in case the previous session was another farm.
+        await hydrateFromNetwork(storeRef.current, api, new Date(), { animals: 'full' });
         await ensureTagBlocks(storeRef.current, api);
         void refreshModules(true);
         void cacheAnimalPhotos(storeRef.current);

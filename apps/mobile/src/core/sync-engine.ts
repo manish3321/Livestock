@@ -13,7 +13,7 @@ import type {
   TaskDto,
 } from '@farm/contracts';
 import { SPECIES } from '@farm/contracts';
-import { applySnapshot, type FarmStore } from './store';
+import { applySnapshot, pruneTasks, type FarmStore } from './store';
 import { alertsFromStore, type NotificationEngine, syncLocalAlerts } from './notify';
 import { applyPullChanges, applyPushResults, pendingMutations, pendingRest } from './scan-round';
 import { needsClaim, rememberBlock } from './tag-blocks';
@@ -32,25 +32,80 @@ export interface FarmApi {
   patchRest(path: string, body: unknown, token: string): Promise<unknown>;
 }
 
+export type HydrateAnimalsMode = 'full' | 'skip';
+
+/**
+ * Refresh local farm data from the network.
+ * - `animals: 'full'` always re-pages the herd (login / first install).
+ * - `animals: 'skip'` (default when a cursor + herd already exist) only refreshes
+ *   withholds, markers, and tasks — incremental pull already keeps animals current.
+ */
 export async function hydrateFromNetwork(
   store: FarmStore,
   api: FarmApi,
   now = new Date(),
+  options?: { animals?: HydrateAnimalsMode },
 ): Promise<void> {
   const token = store.accessToken;
   if (!token) return;
-  const animals: AnimalDto[] = [];
-  for (let page = 1; page < 50; page += 1) {
-    const batch = await api.listAnimals(page, token);
-    animals.push(...batch.items);
-    if (animals.length >= batch.total || batch.items.length === 0) break;
-  }
+  const animalsMode: HydrateAnimalsMode =
+    options?.animals ??
+    (store.animals.size > 0 && store.pullCursor > 0 ? 'skip' : 'full');
+
   const dueBefore = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  const animals: AnimalDto[] = [];
+  if (animalsMode === 'full') {
+    for (let page = 1; page < 50; page += 1) {
+      const batch = await api.listAnimals(page, token);
+      animals.push(...batch.items);
+      if (animals.length >= batch.total || batch.items.length === 0) break;
+    }
+  }
+
   const [withholds, cohort, tasks] = await Promise.all([
     api.activeWithholds(token),
     api.markerCohort(token),
     api.listTasks(dueBefore, token),
   ]);
+
+  const mappedWithholds = withholds.map((w) => ({
+    id: w.id,
+    animalId: w.animalId,
+    drugName: w.drugName,
+    endDate: w.endDate,
+    messageNp: w.messageNp,
+  }));
+  const mappedMarkers = cohort.groups.flatMap((g) =>
+    g.animals.map((a) => ({
+      id: a.markerId,
+      animalId: a.animalId,
+      color: g.color,
+      meaning: g.meaning,
+      validUntil: a.validUntil,
+    })),
+  );
+  const mappedTasks = tasks.items.map((t) => ({
+    id: t.id,
+    animalId: t.animalId,
+    type: t.type,
+    titleEn: t.titleEn,
+    titleNp: t.titleNp,
+    dueAt: t.dueAt,
+    priority: t.priority,
+    status: t.status,
+  }));
+
+  if (animalsMode === 'skip') {
+    store.withholds.clear();
+    store.markers.clear();
+    store.tasks.clear();
+    for (const w of mappedWithholds) store.withholds.set(w.id, w);
+    for (const m of mappedMarkers) store.markers.set(m.id, m);
+    for (const t of mappedTasks) store.tasks.set(t.id, t);
+    pruneTasks(store, now);
+    return;
+  }
+
   applySnapshot(store, {
     pullCursor: store.pullCursor,
     tagBlocks: store.tagBlocks,
@@ -75,32 +130,9 @@ export async function hydrateFromNetwork(
       expectedCalvingDate: a.expectedCalvingDate,
       deletedAt: a.deletedAt,
     })),
-    withholds: withholds.map((w) => ({
-      id: w.id,
-      animalId: w.animalId,
-      drugName: w.drugName,
-      endDate: w.endDate,
-      messageNp: w.messageNp,
-    })),
-    markers: cohort.groups.flatMap((g) =>
-      g.animals.map((a) => ({
-        id: a.markerId,
-        animalId: a.animalId,
-        color: g.color,
-        meaning: g.meaning,
-        validUntil: a.validUntil,
-      })),
-    ),
-    tasks: tasks.items.map((t) => ({
-      id: t.id,
-      animalId: t.animalId,
-      type: t.type,
-      titleEn: t.titleEn,
-      titleNp: t.titleNp,
-      dueAt: t.dueAt,
-      priority: t.priority,
-      status: t.status,
-    })),
+    withholds: mappedWithholds,
+    markers: mappedMarkers,
+    tasks: mappedTasks,
   }, now);
 }
 

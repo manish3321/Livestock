@@ -182,9 +182,14 @@ export class RoundsService {
     date: Date;
     milkRoundId: string | null;
   }): Promise<Omit<RoundRemainingDto, 'round'>> {
-    const expected = await this.expectedAnimals(round.farmId, round.mode);
-    const recordedIds = round.id || round.mode === 'MILKING' ? await this.recordedAnimalIds(round) : new Set<string>();
-    const skipped = round.id ? await this.prisma.roundSkip.findMany({ where: { roundId: round.id } }) : [];
+    const needRecorded = Boolean(round.id) || round.mode === 'MILKING';
+    const [expected, recordedIds, skipped] = await Promise.all([
+      this.expectedAnimals(round.farmId, round.mode),
+      needRecorded ? this.recordedAnimalIds(round) : Promise.resolve(new Set<string>()),
+      round.id
+        ? this.prisma.roundSkip.findMany({ where: { roundId: round.id } })
+        : Promise.resolve([] as { animalId: string }[]),
+    ]);
     const skippedIds = new Set(skipped.map((s) => s.animalId));
     const remaining = expected.filter((a) => !recordedIds.has(a.id) && !skippedIds.has(a.id));
     return {

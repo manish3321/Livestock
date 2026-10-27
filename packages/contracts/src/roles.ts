@@ -133,6 +133,7 @@ const VET_PERMISSIONS: Permission[] = [
   'breeding:read',
   'breeding:write',
   'production:read',
+  'inventory:read',
   'tasks:read',
   'rounds:read',
   'rounds:write',

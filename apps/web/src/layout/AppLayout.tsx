@@ -184,7 +184,10 @@ function AppLayoutInner() {
                   {pendingChanges > 0 && <span className="nav-badge">{pendingChanges}</span>}
                 </NavLink>
               )}
-              {group.labelKey === 'nav.group.money' && can('finance:read') && !household && (
+              {group.labelKey === 'nav.group.money' &&
+                allowed.has('pnl') &&
+                can('finance:read') &&
+                !household && (
                 <NavLink to="/profit">{t('nav.profit')}</NavLink>
               )}
             </div>

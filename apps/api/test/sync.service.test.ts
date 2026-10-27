@@ -169,6 +169,36 @@ describe('SyncService.push', () => {
     expect(res.results[1]?.status).toBe('applied');
   });
 
+  it('replays a FAILED ledger row as failed (not duplicate) and does not create the animal', async () => {
+    const worker = user('WORKER');
+    const bad = createMutation({ payload: { tag: 'oops' } });
+
+    const first = await service.push(worker, { deviceId: 'd1', mutations: [bad] });
+    expect(first.results[0]?.status).toBe('failed');
+    expect(first.results[0]?.error).toContain('VALIDATION_ERROR');
+    expect(prisma.mutationRecords.get(bad.clientMutationId)).toMatchObject({ status: 'FAILED' });
+    expect(prisma.animals.has(bad.entityId)).toBe(false);
+
+    const replay = await service.push(worker, { deviceId: 'd1', mutations: [bad] });
+    expect(replay.results[0]?.status).toBe('failed');
+    expect(replay.results[0]?.error).toBe(first.results[0]?.error);
+    expect(prisma.animals.has(bad.entityId)).toBe(false);
+    expect(prisma.animals.size).toBe(0);
+  });
+
+  it('still returns duplicate for an APPLIED mutation and does not create a second animal', async () => {
+    const worker = user('WORKER');
+    const mutation = createMutation();
+    await service.push(worker, { deviceId: 'd1', mutations: [mutation] });
+    expect(prisma.animals.size).toBe(1);
+
+    const replay = await service.push(worker, { deviceId: 'd1', mutations: [mutation] });
+    expect(replay.results[0]?.status).toBe('duplicate');
+    expect(replay.results[0]?.serverVersion).toBe(1);
+    expect(prisma.animals.size).toBe(1);
+    expect(prisma.changeLog).toHaveLength(1);
+  });
+
   it('scopes updates to the caller farm', async () => {
     const create = createMutation();
     await service.push(user('WORKER'), { deviceId: 'd1', mutations: [create] });

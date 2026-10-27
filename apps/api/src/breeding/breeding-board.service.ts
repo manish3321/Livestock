@@ -89,6 +89,10 @@ export class BreedingBoardService {
     const boardTasks: BoardTaskRow[] = [];
     const animals: BoardAnimalRow[] = [];
     const seen = new Set<string>();
+    const speciesCache = new Map<
+      string,
+      Awaited<ReturnType<SpeciesConfigService['forSpecies']>>
+    >();
 
     for (const task of tasks) {
       const animal = task.animal;
@@ -96,14 +100,19 @@ export class BreedingBoardService {
       const lastHeat = animal.heatEvents[0];
       const lastService = animal.breedingServices[0];
       const enrollment = enrollmentByAnimal.get(animal.id);
+      let cfg = speciesCache.get(animal.species);
+      if (!cfg) {
+        cfg = await this.speciesConfig.forSpecies(animal.species);
+        speciesCache.set(animal.species, cfg);
+      }
       const metadata = await this.taskMetadata(task.type, {
         dueAt: task.dueAt,
         lastHeatAt: lastHeat?.observedAt ?? null,
         lastServiceAt: lastService?.serviceDate ?? null,
         expectedCalving: animal.expectedCalvingDate,
         lactationStart: animal.lactationStartDate,
-        estrusCycleDays: (await this.speciesConfig.forSpecies(animal.species)).estrusCycleDays,
-        serviceWindowEndHours: (await this.speciesConfig.forSpecies(animal.species)).serviceWindowEndHours,
+        estrusCycleDays: cfg.estrusCycleDays,
+        serviceWindowEndHours: cfg.serviceWindowEndHours,
         enrollment,
       });
       boardTasks.push({

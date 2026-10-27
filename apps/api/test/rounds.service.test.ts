@@ -290,6 +290,8 @@ function matchRound(r: any, where: any) {
   if (where.date instanceof Date && r.date.getTime() !== where.date.getTime()) return false;
   if (where.date?.gte && r.date < where.date.gte) return false;
   if (where.date?.lt && r.date >= where.date.lt) return false;
+  if (where.startedAt?.lt && !(r.startedAt < where.startedAt.lt)) return false;
+  if (where.startedAt?.gte && !(r.startedAt >= where.startedAt.gte)) return false;
   if (where.id?.in && !where.id.in.includes(r.id)) return false;
   if (where.session && r.session !== where.session) return false;
   return true;
@@ -484,7 +486,9 @@ describe('Phase 2 scan-to-record', () => {
     db.addAnimal({ herdNumber: 'B01', status: 'LACTATING' });
     const old = await rounds.create(actor, { mode: 'MILKING', session: 'MORNING' });
     const row = db.rounds.get(old.id);
+    // Stale cutoff is Nepal midnight via startedAt (not the UTC date column).
     row.date = new Date(row.date.getTime() - 18 * 86400000);
+    row.startedAt = new Date(row.startedAt.getTime() - 18 * 86400000);
 
     expect(await rounds.active(actor)).toBeNull();
     expect(db.rounds.get(old.id).status).toBe('ABANDONED');
