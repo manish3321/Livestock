@@ -82,7 +82,10 @@ export function ShedPage() {
   const [mode, setMode] = useState<RecordingMode>(() => shedModeFromParams(params));
   const [session, setSession] = useState<MilkSession>(() => defaultSession(5, 17));
   const [roundId, setRoundId] = useState<string | null>(null);
+  /** After milking finish, keep tank form without locking the mode picker. */
+  const [tankMilkRoundId, setTankMilkRoundId] = useState<string | null>(null);
   const [activeRoundReady, setActiveRoundReady] = useState(false);
+  const pickedByUser = useRef(Boolean(shedModeFromParams(params) !== 'MILKING' || milkDeepLink));
   const [deepLinkBootError, setDeepLinkBootError] = useState<string | null>(null);
   const [scan, setScan] = useState<ScanResolveDto | null>(null);
   const [digits, setDigits] = useState('');
@@ -120,7 +123,7 @@ export function ShedPage() {
   const scanAnimalIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (farmQ.data && !roundId) {
+    if (farmQ.data && !roundId && !pickedByUser.current) {
       setSession(defaultSession(farmQ.data.morningMilkingHour, farmQ.data.eveningMilkingHour));
     }
   }, [farmQ.data, roundId]);
@@ -134,14 +137,14 @@ export function ShedPage() {
   const todayQ = useQuery({
     queryKey: ['round-today', mode, mode === 'MILKING' ? session : null],
     queryFn: () => getRoundToday(mode, mode === 'MILKING' ? session : undefined),
-    enabled: !roundId && !milkDeepLink && activeRoundReady && navigator.onLine,
+    enabled: !milkDeepLink && activeRoundReady && navigator.onLine,
   });
   const [pendingAnimal, setPendingAnimal] = useState<string | null>(null);
 
   const tankQ = useQuery({
-    queryKey: ['milk-round', remainingQ.data?.round.milkRoundId],
-    queryFn: () => getMilkRound(remainingQ.data!.round.milkRoundId!),
-    enabled: remainingQ.data?.round.status === 'FINISHED' && !!remainingQ.data.round.milkRoundId,
+    queryKey: ['milk-round', tankMilkRoundId ?? remainingQ.data?.round.milkRoundId],
+    queryFn: () => getMilkRound((tankMilkRoundId ?? remainingQ.data!.round.milkRoundId)!),
+    enabled: Boolean(tankMilkRoundId || (remainingQ.data?.round.status === 'FINISHED' && remainingQ.data.round.milkRoundId)),
   });
 
   useEffect(() => {
@@ -154,6 +157,26 @@ export function ShedPage() {
     });
   }, [remainingQ.data]);
 
+  const pickMode = (next: RecordingMode) => {
+    pickedByUser.current = true;
+    setMode(next);
+    setScan(null);
+    setFinishing(false);
+    setError(null);
+    // Leaving an open milking/vax round must not trap the picker — clear local attach;
+    // startRound will resume the matching open round if one exists for the new pick.
+    setRoundId(null);
+    rememberActiveRound(null);
+  };
+  const pickSession = (next: MilkSession) => {
+    pickedByUser.current = true;
+    setSession(next);
+    setScan(null);
+    setFinishing(false);
+    setRoundId(null);
+    rememberActiveRound(null);
+  };
+
   useEffect(() => {
     let cancelled = false;
     const markReady = () => {
@@ -165,12 +188,12 @@ export function ShedPage() {
       void getActiveRound()
         .then((active) => {
           if (cancelled) return;
-          if (active) {
+          if (active && !pickedByUser.current) {
             setRoundId(active.id);
             setMode(active.mode);
             if (active.session) setSession(active.session);
             rememberActiveRound(active.id, active.mode, active.session);
-          } else {
+          } else if (!active) {
             rememberActiveRound(null);
           }
         })
@@ -180,7 +203,7 @@ export function ShedPage() {
         .finally(markReady);
     } else {
       const cached = readActiveRound();
-      if (cached) {
+      if (cached && !pickedByUser.current) {
         setRoundId(cached.id);
         if (cached.mode) setMode(cached.mode as RecordingMode);
         if (cached.session) setSession(cached.session as MilkSession);
@@ -193,11 +216,34 @@ export function ShedPage() {
     };
   }, []);
 
+  // When the user picks a mode that already has an ACTIVE round today, re-attach it.
+  useEffect(() => {
+    if (!activeRoundReady || roundId || milkDeepLink || !navigator.onLine) return;
+    let cancelled = false;
+    void getActiveRound(mode, mode === 'MILKING' ? session : undefined).then((active) => {
+      if (cancelled || !active) return;
+      setRoundId(active.id);
+      rememberActiveRound(active.id, active.mode, active.session);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeRoundReady, mode, session, roundId, milkDeepLink]);
+
   const inventoryQ = useQuery({
     queryKey: ['inventory', 'shed-vax'],
     queryFn: () => listInventory({ pageSize: 100 }),
     enabled: mode === 'VACCINATION' || mode === 'TREATMENT',
   });
+  const inventoryChoices = useMemo(
+    () =>
+      (inventoryQ.data?.items ?? []).filter((item) =>
+        mode === 'VACCINATION'
+          ? item.category === 'VACCINE' || item.category === 'MEDICINE'
+          : item.category === 'MEDICINE' || item.category === 'VACCINE',
+      ),
+    [inventoryQ.data, mode],
+  );
 
   // The shed flow has its own sound, flash, and inline error text; toasts would double up.
   const start = useMutation({
@@ -560,11 +606,20 @@ export function ShedPage() {
           .map((a) => ({ animalId: a.id, reason: skipDraft[a.id]! })),
       }),
     onSuccess: () => {
+      const milkId = remainingQ.data?.round.milkRoundId ?? null;
+      const wasMilking = mode === 'MILKING';
       setFinishing(false);
       setScan(null);
+      setRoundId(null);
       rememberActiveRound(null);
-      void remainingQ.refetch();
+      if (milkId) setTankMilkRoundId(milkId);
+      // After milking, go straight to vaccination so the picker is usable again.
+      if (wasMilking) {
+        pickedByUser.current = true;
+        setMode('VACCINATION');
+      }
       void qc.invalidateQueries({ queryKey: ['milk'] });
+      void qc.invalidateQueries({ queryKey: ['round-today'] });
     },
   });
 
@@ -725,7 +780,7 @@ export function ShedPage() {
         <span className="shed-count">{roundId ? `${recorded} / ${expected}` : '—'}</span>
       </div>
 
-      {!roundId && !milkDeepLink && (
+      {!milkDeepLink && (
         <div className="card shed-start">
           <h1>{t('shed.title')}</h1>
           <p className="muted">{t('shed.subtitle')}</p>
@@ -740,7 +795,7 @@ export function ShedPage() {
                 key={m}
                 type="button"
                 className={m === mode ? 'btn' : 'btn secondary'}
-                onClick={() => setMode(m)}
+                onClick={() => pickMode(m)}
               >
                 {t(`shed.mode.${m}`)}
               </button>
@@ -753,41 +808,45 @@ export function ShedPage() {
                   key={s}
                   type="button"
                   className={s === session ? 'btn' : 'btn secondary'}
-                  onClick={() => setSession(s)}
+                  onClick={() => pickSession(s)}
                 >
                   {t(`shed.session.${s}`)}
                 </button>
               ))}
             </div>
           )}
-          {mode === 'VACCINATION' && (
+          {(mode === 'VACCINATION' || mode === 'TREATMENT') && (
             <div className="form-grid">
-              <label>
-                {t('shed.vaxDisease')}
-                <select value={vaxDisease} onChange={(e) => setVaxDisease(e.target.value)}>
-                  {NEPAL_VACCINE_PROTOCOLS.map((p) => (
-                    <option key={p.key} value={p.key}>
-                      {p.titleEn}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {mode === 'VACCINATION' && (
+                <label>
+                  {t('shed.vaxDisease')}
+                  <select value={vaxDisease} onChange={(e) => setVaxDisease(e.target.value)}>
+                    {NEPAL_VACCINE_PROTOCOLS.map((p) => (
+                      <option key={p.key} value={p.key}>
+                        {p.titleEn}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label>
                 {t('health.medicine')}
                 <select value={vaxItemId} onChange={(e) => setVaxItemId(e.target.value)}>
-                  <option value="">—</option>
-                  {(inventoryQ.data?.items ?? []).map((item) => (
+                  <option value="">{t('shed.pickInventory')}</option>
+                  {inventoryChoices.map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.name}
+                      {item.name} ({item.currentStock} {item.unit})
                     </option>
                   ))}
                 </select>
               </label>
             </div>
           )}
-          <button type="button" className="btn shed-go" onClick={() => start.mutate()} disabled={start.isPending}>
-            {t('shed.start')}
-          </button>
+          {!roundId && (
+            <button type="button" className="btn shed-go" onClick={() => start.mutate()} disabled={start.isPending}>
+              {t('shed.start')}
+            </button>
+          )}
           {start.error && (
             <p className="error">
               {start.error instanceof ApiRequestError ? start.error.error.message : t('shed.saveFailed')}
@@ -1068,15 +1127,30 @@ export function ShedPage() {
             <p className="muted">{t(`shed.next.${scan.nextAction}`)}</p>
           )}
           {error && <p className="error-text">{error}</p>}
-          {mode === 'VACCINATION' && (
-            <button
-              type="button"
-              className="btn shed-save"
-              onClick={() => confirmDose.mutate()}
-              disabled={confirmDose.isPending}
-            >
-              {t('shed.confirmDose')}
-            </button>
+          {(mode === 'VACCINATION' || mode === 'TREATMENT') && (
+            <>
+              <label className="shed-inventory-pick">
+                {t('health.medicine')}
+                <select value={vaxItemId} onChange={(e) => setVaxItemId(e.target.value)}>
+                  <option value="">{t('shed.pickInventory')}</option>
+                  {inventoryChoices.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} ({item.currentStock} {item.unit})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {mode === 'VACCINATION' && (
+                <button
+                  type="button"
+                  className="btn shed-save"
+                  onClick={() => confirmDose.mutate()}
+                  disabled={confirmDose.isPending || !vaxItemId}
+                >
+                  {t('shed.confirmDose')}
+                </button>
+              )}
+            </>
           )}
           {mode === 'MILKING' && (
             <button
@@ -1134,9 +1208,16 @@ export function ShedPage() {
         </div>
       )}
 
-      {roundClosed && tankQ.data && (
+      {(tankMilkRoundId || roundClosed) && tankQ.data && (
         <div className="card">
-          <h2>{t('shed.tank')}</h2>
+          <div className="shed-tank-head">
+            <h2>{t('shed.tank')}</h2>
+            {tankMilkRoundId && (
+              <button type="button" className="btn secondary" onClick={() => setTankMilkRoundId(null)}>
+                {t('shed.continueVaccination')}
+              </button>
+            )}
+          </div>
           {remainingQ.data?.round.secondsPerAnimal != null && (
             <p>
               {t('shed.secondsPerAnimal', { n: remainingQ.data.round.secondsPerAnimal.toFixed(1) })}

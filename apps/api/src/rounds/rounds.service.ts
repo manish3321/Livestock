@@ -93,12 +93,22 @@ export class RoundsService {
     return toRoundDto(created);
   }
 
-  async active(user: RequestUser): Promise<RecordingRoundDto | null> {
+  async active(
+    user: RequestUser,
+    mode?: RecordingMode,
+    session?: MilkSession | null,
+  ): Promise<RecordingRoundDto | null> {
     // Round dates are UTC days; a Nepal morning round starts before UTC midnight, so yesterday still counts.
     const cutoff = new Date(startOfUtcDay(new Date()).getTime() - DAY_MS);
     await this.abandonStale(user, cutoff);
     const row = await this.prisma.recordingRound.findFirst({
-      where: { farmId: user.farmId, status: 'ACTIVE', date: { gte: cutoff } },
+      where: {
+        farmId: user.farmId,
+        status: 'ACTIVE',
+        date: { gte: cutoff },
+        ...(mode ? { mode } : {}),
+        ...(mode === 'MILKING' && session ? { session } : {}),
+      },
       orderBy: { startedAt: 'desc' },
     });
     return row ? toRoundDto(row) : null;
@@ -194,42 +204,55 @@ export class RoundsService {
       throw new BadRequestException({ code: 'ROUND_CLOSED', message: 'This round is already closed' });
     }
 
-    for (const skip of input.skips) {
-      await this.prisma.roundSkip.upsert({
-        where: { roundId_animalId: { roundId: round.id, animalId: skip.animalId } },
-        update: { reason: skip.reason, note: skip.note },
-        create: {
-          roundId: round.id,
-          animalId: skip.animalId,
-          reason: skip.reason,
-          note: skip.note,
-        },
-      });
-      if (round.milkRoundId && (skip.reason === 'NOT_MILKED' || skip.reason === 'FORGOT')) {
-        await this.prisma.milkRoundSkip.upsert({
-          where: { roundId_animalId: { roundId: round.milkRoundId, animalId: skip.animalId } },
-          update: { reason: skip.reason === 'FORGOT' ? 'FORGOT' : 'NOT_MILKED' },
+    // Apply skips in parallel — sequential upserts made finish feel slow on large leftovers.
+    await Promise.all(
+      input.skips.map((skip) =>
+        this.prisma.roundSkip.upsert({
+          where: { roundId_animalId: { roundId: round.id, animalId: skip.animalId } },
+          update: { reason: skip.reason, note: skip.note },
           create: {
-            roundId: round.milkRoundId,
+            roundId: round.id,
             animalId: skip.animalId,
-            reason: skip.reason === 'FORGOT' ? 'FORGOT' : 'NOT_MILKED',
+            reason: skip.reason,
+            note: skip.note,
           },
-        });
-      }
-      if (skip.reason === 'FORGOT') {
-        await ensureTask(this.prisma, {
-          farmId: user.farmId,
-          animalId: skip.animalId,
-          type: 'MISSING_PRODUCTION',
-          titleEn: 'Milk still not recorded',
-          titleNp: 'दूध रेकर्ड बाँकी',
-          dueAt: new Date(),
-          priority: 'LOW',
-          sourceRefType: 'recordingRound',
-          sourceRefId: round.id,
-        });
-      }
-    }
+        }),
+      ),
+    );
+    await Promise.all(
+      input.skips.flatMap((skip) => {
+        const jobs: Promise<unknown>[] = [];
+        if (round.milkRoundId && (skip.reason === 'NOT_MILKED' || skip.reason === 'FORGOT')) {
+          jobs.push(
+            this.prisma.milkRoundSkip.upsert({
+              where: { roundId_animalId: { roundId: round.milkRoundId, animalId: skip.animalId } },
+              update: { reason: skip.reason === 'FORGOT' ? 'FORGOT' : 'NOT_MILKED' },
+              create: {
+                roundId: round.milkRoundId,
+                animalId: skip.animalId,
+                reason: skip.reason === 'FORGOT' ? 'FORGOT' : 'NOT_MILKED',
+              },
+            }),
+          );
+        }
+        if (skip.reason === 'FORGOT') {
+          jobs.push(
+            ensureTask(this.prisma, {
+              farmId: user.farmId,
+              animalId: skip.animalId,
+              type: 'MISSING_PRODUCTION',
+              titleEn: 'Milk still not recorded',
+              titleNp: 'दूध रेकर्ड बाँकी',
+              dueAt: new Date(),
+              priority: 'LOW',
+              sourceRefType: 'recordingRound',
+              sourceRefId: round.id,
+            }),
+          );
+        }
+        return jobs;
+      }),
+    );
 
     const recordedIds = await this.recordedAnimalIds(round);
     const skippedCount = await this.prisma.roundSkip.count({ where: { roundId: round.id } });
@@ -479,25 +502,57 @@ export class RoundsService {
             deletedAt: null,
             status: { notIn: terminal },
           };
+
+    // Vaccination / treatment / weighing only need the roster — skip milk joins.
+    if (mode !== 'MILKING') {
+      const rows = await this.prisma.animal.findMany({
+        where,
+        select: {
+          id: true,
+          herdNumber: true,
+          tag: true,
+          name: true,
+          species: true,
+          shed: true,
+          photoUrl: true,
+          status: true,
+          isPregnant: true,
+        },
+        orderBy: [{ shed: 'asc' }, { herdNumber: 'asc' }],
+      });
+      return rows.map((a) => ({ ...a, withholdUntil: null, usualLitres: null }));
+    }
+
     const rows = await this.prisma.animal.findMany({
       where,
-      include: {
+      select: {
+        id: true,
+        herdNumber: true,
+        tag: true,
+        name: true,
+        species: true,
+        shed: true,
+        photoUrl: true,
+        status: true,
+        isPregnant: true,
         health: {
           where: { milkWithholdUntil: { gte: now } },
           orderBy: { milkWithholdUntil: 'desc' },
           take: 1,
+          select: { milkWithholdUntil: true },
         },
         production: {
           where: { type: 'MILK', entryDate: { gte: new Date(Date.now() - 7 * DAY_MS) } },
+          select: { quantity: true },
         },
       },
       orderBy: [{ shed: 'asc' }, { herdNumber: 'asc' }],
     });
     return rows.map((a) => ({
       ...a,
-      withholdUntil: a.health[0]?.milkWithholdUntil ?? null,
+      withholdUntil: a.health?.[0]?.milkWithholdUntil ?? null,
       usualLitres:
-        a.production.length > 0
+        a.production && a.production.length > 0
           ? a.production.reduce((s, p) => s + Number(p.quantity), 0) / a.production.length
           : null,
     }));

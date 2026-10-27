@@ -141,31 +141,9 @@ export function TodayTasks() {
     const kind = t(`today.kind.${task.type}`, { defaultValue: t('today.other') });
     const detail = locale === 'ne' ? task.titleNp || task.titleEn : task.titleEn;
     const animal = task.animalId ? task.animalHerdNumber || task.animalName : null;
-    const late = bucket === 'overdue';
+    const late = bucket === 'overdue' || bucket === 'today';
     return (
-      <View
-        key={task.id}
-        style={[
-          styles.row,
-          bucket === 'overdue' && styles.rowLate,
-          bucket === 'tomorrow' && styles.rowTomorrow,
-        ]}
-      >
-        <View
-          style={[
-            styles.stripe,
-            {
-              backgroundColor:
-                bucket === 'overdue'
-                  ? color.danger
-                  : task.priority === 'CRITICAL' || task.priority === 'HIGH'
-                    ? color.ember
-                    : bucket === 'tomorrow'
-                      ? color.outline
-                      : color.brand,
-            },
-          ]}
-        />
+      <View key={task.id} style={[styles.row, late ? styles.rowLate : styles.rowPlain]}>
         <Pressable style={styles.rowMain} onPress={() => open(task)} accessibilityRole="button">
           {task.animalId ? (
             <AnimalPhoto
@@ -323,16 +301,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: color.border,
     borderRadius: 8,
-    backgroundColor: color.surface,
+    backgroundColor: '#FFFFFF',
     paddingVertical: 14,
-    paddingLeft: 16,
-    paddingRight: 12,
+    paddingHorizontal: 12,
     gap: 12,
     overflow: 'hidden',
   },
+  rowPlain: { backgroundColor: '#FFFFFF' },
   rowLate: { backgroundColor: color.dangerSubtle, borderColor: '#F5C6C6' },
-  rowTomorrow: { backgroundColor: color.surfaceSubtle },
-  stripe: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 6 },
   rowMain: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   iconBox: {
     width: 68,
@@ -345,7 +321,7 @@ const styles = StyleSheet.create({
   rowTop: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
   rowNumber: { flex: 1, fontSize: 22, color: color.textPrimary },
   rowTime: { fontSize: 15, color: color.textSecondary },
-  rowKind: { fontSize: 17, color: color.brandStrong },
+  rowKind: { fontSize: 17, color: color.textSecondary },
   rowActions: { flexDirection: 'row', gap: 10 },
   mine: {
     alignSelf: 'flex-start',

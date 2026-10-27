@@ -34,8 +34,17 @@ export class RoundsController {
 
   @Get('active')
   @RequirePermissions('rounds:read')
-  active(@CurrentUser() user: RequestUser) {
-    return this.rounds.active(user);
+  @ApiOperation({ summary: 'Open shed round (optional mode/session so milking and vaccination can both stay open)' })
+  active(
+    @CurrentUser() user: RequestUser,
+    @Query('mode') mode?: string,
+    @Query('session') session?: string,
+  ) {
+    return this.rounds.active(
+      user,
+      mode as import('@farm/contracts').RecordingMode | undefined,
+      session as import('@farm/contracts').MilkSession | undefined,
+    );
   }
 
   @Get('today')

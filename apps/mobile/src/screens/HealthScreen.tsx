@@ -63,7 +63,7 @@ type DueFilter = 'all' | 'overdue' | 'due_soon';
 type FormMode = 'create' | 'group' | null;
 
 type BatchLite = { id: string; name: string; kind?: string };
-type InvLite = { id: string; name: string; category?: string };
+type InvLite = { id: string; name: string; category?: string; currentStock?: number; unit?: string };
 type CalendarRow = {
   id: string;
   title?: string;
@@ -196,7 +196,7 @@ export function HealthScreen() {
   }, [load]);
 
   useEffect(() => {
-    if (formMode === 'group') void loadInventory();
+    if (formMode === 'group' || formMode === 'create') void loadInventory();
   }, [formMode, loadInventory]);
 
   useEffect(() => {
@@ -495,6 +495,25 @@ export function HealthScreen() {
               value={cost}
               onChangeText={setCost}
               keyboardType="decimal-pad"
+            />
+            <ChipSelect
+              label={t('health.inventoryItem')}
+              options={['', ...inventory.map((i) => i.id)]}
+              value={inventoryItemId || null}
+              onChange={(id) => {
+                setInventoryItemId(id);
+                const hit = inventory.find((i) => i.id === id);
+                if (hit) setMedicine(hit.name);
+              }}
+              labels={{
+                '': t('health.noInventoryItem'),
+                ...Object.fromEntries(
+                  inventory.map((i) => [
+                    i.id,
+                    i.currentStock != null ? `${i.name} (${i.currentStock}${i.unit ? ` ${i.unit}` : ''})` : i.name,
+                  ]),
+                ),
+              }}
             />
             <Field label={t('health.medicine')} value={medicine} onChangeText={setMedicine} />
             <Field label={t('health.dosage')} value={dosage} onChangeText={setDosage} />

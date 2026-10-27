@@ -84,12 +84,12 @@ export function TodayTasks() {
     const kind = t(`today.kind.${task.type}`, { defaultValue: t('today.other') });
     const detail = i18n.language === 'ne' ? task.titleNp || task.titleEn : task.titleEn;
     const animal = task.animalId ? task.animalHerdNumber || task.animalName : null;
-    const urgent = task.priority === 'CRITICAL' || task.priority === 'HIGH';
+    const needsAttention = bucket === 'overdue' || bucket === 'today';
     const busy = done.isPending && done.variables?.id === task.id;
     return (
       <li
         key={task.id}
-        className={`today-row today-row-${bucket}${urgent && bucket === 'today' ? ' today-row-urgent' : ''}`}
+        className={`today-row${needsAttention ? ' today-row-due' : ' today-row-plain'}`}
       >
         <button type="button" className="today-row-main" onClick={() => open(task)}>
           {task.animalId ? (

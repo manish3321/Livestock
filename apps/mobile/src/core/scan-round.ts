@@ -274,6 +274,7 @@ export function saveHealthLocal(
     title: string;
     medicine?: string;
     dosage?: string;
+    inventoryItemId?: string;
   },
 ): { ok: true } | { ok: false; code: 'NO_ROUND' | 'TITLE' } {
   if (!store.round) return { ok: false, code: 'NO_ROUND' };
@@ -292,6 +293,7 @@ export function saveHealthLocal(
         animalId: input.animalId,
         medicine: input.medicine,
         dosage: input.dosage,
+        inventoryItemId: input.inventoryItemId,
         performedAt: new Date().toISOString(),
       },
     },

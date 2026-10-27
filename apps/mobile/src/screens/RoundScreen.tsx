@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { MilkDisposal, RoundSkipReason, ScanResolveDto } from '@farm/contracts';
+import type { MilkDisposal, PageResult, RoundSkipReason, ScanResolveDto } from '@farm/contracts';
 import {
   abandonLocalRound,
   finishLocalRound,
@@ -23,13 +23,17 @@ import {
   undoLastMilk,
 } from '../core/scan-round';
 import { AnimalPhoto } from '../components/AnimalPhoto';
+import { ChipSelect } from '../components/forms';
 import { Numpad } from '../components/Numpad';
 import { AppShell } from '../components/AppShell';
 import { EarTagBadge } from '../components/ui';
+import { toQuery } from '../api/query';
 import { useLocale } from '../locale/LocaleProvider';
 import { useFarm } from '../state/FarmProvider';
 import type { RootStackParamList } from '../navigation/types';
 import { color, fonts, tap as TAP } from '../theme/tokens';
+
+type InvLite = { id: string; name: string; category?: string; currentStock?: number; unit?: string };
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Round'>;
 
@@ -72,6 +76,8 @@ export function RoundScreen({ navigation, route }: Props) {
   const [medicine, setMedicine] = useState('');
   const [dosage, setDosage] = useState('');
   const [title, setTitle] = useState('');
+  const [inventoryItemId, setInventoryItemId] = useState('');
+  const [inventory, setInventory] = useState<InvLite[]>([]);
   const [permission, requestPermission] = useCameraPermissions();
   const [scanLock, setScanLock] = useState(false);
   const [finishing, setFinishing] = useState(false);
@@ -85,6 +91,25 @@ export function RoundScreen({ navigation, route }: Props) {
   useEffect(() => {
     if (permission && !permission.granted) void requestPermission();
   }, [permission, requestPermission]);
+
+  useEffect(() => {
+    if (mode !== 'VACCINATION' && mode !== 'TREATMENT') return;
+    let cancelled = false;
+    void api
+      .get<PageResult<InvLite>>(`/v1/inventory${toQuery({ pageSize: 100 })}`)
+      .then((page) => {
+        if (cancelled) return;
+        setInventory(
+          page.items.filter((i) => i.category === 'MEDICINE' || i.category === 'VACCINE'),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setInventory([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, mode]);
 
   const onScan = useCallback(
     (raw: string, method: 'CAMERA' | 'MANUAL_NUMBER' | 'LIST_TAP' | 'PHOTO_PICK') => {
@@ -159,6 +184,7 @@ export function RoundScreen({ navigation, route }: Props) {
         title: title || mode,
         medicine,
         dosage: dosage || digits,
+        inventoryItemId: inventoryItemId || undefined,
       });
       if (!result.ok) {
         setError(result.code);
@@ -210,6 +236,7 @@ export function RoundScreen({ navigation, route }: Props) {
     setMedicine('');
     setDosage('');
     setTitle('');
+    setInventoryItemId('');
     setConfirmRange(false);
     setError(null);
     persist();
@@ -387,6 +414,27 @@ export function RoundScreen({ navigation, route }: Props) {
                 value={title}
                 onChangeText={setTitle}
                 placeholder={copy.title}
+              />
+              <ChipSelect
+                label={t('health.inventoryItem')}
+                options={['', ...inventory.map((i) => i.id)]}
+                value={inventoryItemId || null}
+                onChange={(id) => {
+                  setInventoryItemId(id);
+                  const hit = inventory.find((i) => i.id === id);
+                  if (hit) setMedicine(hit.name);
+                }}
+                labels={{
+                  '': t('health.noInventoryItem'),
+                  ...Object.fromEntries(
+                    inventory.map((i) => [
+                      i.id,
+                      i.currentStock != null
+                        ? `${i.name} (${i.currentStock}${i.unit ? ` ${i.unit}` : ''})`
+                        : i.name,
+                    ]),
+                  ),
+                }}
               />
               <TextInput
                 style={styles.input}

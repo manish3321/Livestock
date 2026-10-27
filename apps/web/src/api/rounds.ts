@@ -20,8 +20,15 @@ export function startRound(body: RecordingRoundCreate): Promise<RecordingRoundDt
   return api('/v1/rounds', { method: 'POST', body: JSON.stringify(body) });
 }
 
-export function getActiveRound(): Promise<RecordingRoundDto | null> {
-  return api('/v1/rounds/active');
+export function getActiveRound(
+  mode?: RecordingMode,
+  session?: MilkSession,
+): Promise<RecordingRoundDto | null> {
+  const qs = new URLSearchParams();
+  if (mode) qs.set('mode', mode);
+  if (session) qs.set('session', session);
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  return api(`/v1/rounds/active${suffix}`);
 }
 
 export function getRoundRemaining(id: string): Promise<RoundRemainingDto> {
