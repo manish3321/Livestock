@@ -225,8 +225,12 @@ export function countdownFor(
         elapsed,
         labelEn:
           remaining < 0
-            ? `${Math.abs(remaining)} days overdue`
-            : `${remaining} days to calving`,
+            ? Math.abs(remaining) === 1
+              ? '1 day overdue'
+              : `${Math.abs(remaining)} days overdue`
+            : remaining === 1
+              ? '1 day to calving'
+              : `${remaining} days to calving`,
         labelNp: remaining < 0 ? `${Math.abs(remaining)} दिन ढिलो` : `ब्याउन ${remaining} दिन`,
       });
       return {
