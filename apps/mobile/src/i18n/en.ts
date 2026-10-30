@@ -611,6 +611,7 @@ export const en = {
       },
       walk: {
         breedToday: 'Breed today',
+        colostrum: 'Colostrum',
         checkHeat: 'Check for heat',
         pd: 'Pregnancy check',
         dryOff: 'Dry off',

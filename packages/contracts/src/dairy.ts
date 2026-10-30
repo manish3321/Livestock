@@ -880,6 +880,7 @@ export interface MilkEntryDto {
 
 export const BOARD_GROUP_KEYS = [
   'BREED_TODAY',
+  'COLOSTRUM',
   'CHECK_HEAT',
   'CALVING_WATCH',
   'PREGNANCY_CHECK',
@@ -956,6 +957,8 @@ export interface WatchItemDto {
   photoUrl: string | null;
   contextEn: string;
   contextNp: string;
+  /** ISO deadline when stage is IN_HEAT — mirrors Walk service-window clock. */
+  deadline: string | null;
   countdown: CountdownDto;
 }
 
@@ -1077,6 +1080,8 @@ export interface BoardActionDto {
   to?: string;
 }
 
+export type BoardUrgency = 'GREEN' | 'AMBER' | 'RED' | 'NORMAL';
+
 export interface BoardItemDto {
   taskId: string;
   taskType: TaskType;
@@ -1088,8 +1093,17 @@ export interface BoardItemDto {
   penSortOrder: number;
   seqNo: number;
   photoUrl: string | null;
+  /** Combined one-liner for older clients — prefer doBy/why/late. */
   contextEn: string;
   contextNp: string;
+  doByEn: string;
+  doByNp: string;
+  whyEn: string;
+  whyNp: string;
+  /** Short late consequence when past due; null if on time. */
+  lateEn: string | null;
+  lateNp: string | null;
+  urgency: BoardUrgency;
   deadline: string | null;
   actions: BoardActionDto[];
 }
@@ -1098,7 +1112,7 @@ export interface BoardGroupDto {
   key: BoardGroupKey;
   labelEn: string;
   labelNp: string;
-  colour: 'RED' | 'YELLOW' | 'BLUE' | 'PURPLE' | 'AMBER' | 'GREY';
+  colour: 'RED' | 'YELLOW' | 'BLUE' | 'PURPLE' | 'AMBER' | 'GREY' | 'GREEN';
   subLabelEn: string;
   subLabelNp: string;
   items: BoardItemDto[];

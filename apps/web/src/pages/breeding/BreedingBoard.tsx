@@ -14,6 +14,14 @@ const COLOUR: Record<BoardGroupDto['colour'], string> = {
   PURPLE: '#6941c6',
   AMBER: '#b54708',
   GREY: '#475467',
+  GREEN: '#027a48',
+};
+
+const URGENCY: Record<string, string> = {
+  GREEN: '#027a48',
+  AMBER: '#b54708',
+  RED: '#b42318',
+  NORMAL: '#475467',
 };
 
 function formForTask(type: string): string | undefined {
@@ -21,6 +29,7 @@ function formForTask(type: string): string | undefined {
   if (type === 'HEAT_WATCH' || type === 'SILENT_HEAT_CHECK') return 'heat';
   if (type === 'PREGNANCY_CHECK') return 'pd';
   if (type === 'CALVING_WATCH') return 'calving';
+  if (type === 'COLOSTRUM_FEED') return 'colostrum';
   return undefined;
 }
 
@@ -189,11 +198,29 @@ export function BreedingBoard({
                       })
                     }
                   >
+                    <span
+                      className="board-urgency"
+                      style={{ background: URGENCY[row.urgency] ?? URGENCY.NORMAL }}
+                      aria-hidden="true"
+                    />
                     <span className="board-tag">{row.shortNo}</span>
                     <span className="board-meta">
                       <strong>{row.name ?? t('breeding.board.unnamed')}</strong>
                       <span>{row.penName}</span>
-                      <span>{np ? row.contextNp : row.contextEn}</span>
+                      <span>
+                        {t('breeding.board.doBy')}:{' '}
+                        {(np ? row.doByNp : row.doByEn) || (np ? row.contextNp : row.contextEn) || '—'}
+                      </span>
+                      {(np ? row.whyNp : row.whyEn) ? (
+                        <span>
+                          {t('breeding.board.why')}: {np ? row.whyNp : row.whyEn}
+                        </span>
+                      ) : null}
+                      {(np ? row.lateNp : row.lateEn) ? (
+                        <span className="board-late" style={{ color: URGENCY.RED }}>
+                          {np ? row.lateNp : row.lateEn}
+                        </span>
+                      ) : null}
                     </span>
                   </button>
                   <div className="board-actions">
@@ -260,6 +287,13 @@ export function BreedingBoard({
                                 photoUrl: null,
                                 contextEn: '',
                                 contextNp: '',
+                                doByEn: '',
+                                doByNp: '',
+                                whyEn: '',
+                                whyNp: '',
+                                lateEn: null,
+                                lateNp: null,
+                                urgency: 'NORMAL',
                                 deadline: null,
                                 actions: row.actions ?? [],
                               },

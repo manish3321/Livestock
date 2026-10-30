@@ -2977,6 +2977,51 @@ button.kpi-hit {
   flex: 1;
   padding: 0;
 }
+.board-urgency {
+  width: 8px;
+  align-self: stretch;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.board-late {
+  font-weight: 600;
+}
+.breeding-next-step {
+  position: sticky;
+  top: 64px;
+  z-index: 20;
+  margin: 12px 0 16px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: #ecfdf3;
+  box-shadow: 0 4px 16px rgb(16 24 40 / 8%);
+}
+.breeding-next-step h3 {
+  margin: 0 0 6px;
+  font-size: 1.05rem;
+}
+.breeding-next-step p {
+  margin: 0 0 4px;
+}
+.breeding-next-step .btn {
+  margin-top: 12px;
+  min-height: 48px;
+  width: 100%;
+}
+.vwp-confirm {
+  margin: 8px 0 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #fffaeb;
+  border: 1px solid #fec84b;
+}
+.vwp-confirm p {
+  margin: 0 0 10px;
+}
+.vwp-confirm .choice-row {
+  gap: 8px;
+}
 .board-tag {
   background: #f5d90a;
   color: #111;

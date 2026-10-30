@@ -97,6 +97,27 @@ describe('breeding watch', () => {
     expect(watch.totalAnimals).toBe(1);
   });
 
+  it('mirrors Walk service-window clock on IN_HEAT items', () => {
+    // Still inside the 18h service window relative to `now`.
+    const heatAt = new Date(now.getTime() - 6 * 60 * 60 * 1000);
+    const watch = buildBreedingWatch({
+      now,
+      configBySpecies: cfg,
+      animals: [
+        animal({
+          id: 'heat',
+          tag: 'B12',
+          stage: 'IN_HEAT',
+          lastHeatAt: heatAt,
+        }),
+      ],
+    });
+    const row = watch.groups.find((g) => g.key === 'BREED_NOW')?.items[0];
+    expect(row?.deadline).toBeTruthy();
+    expect(row?.contextEn).toMatch(/window closes/i);
+    expect(row?.countdown.labelEn).toMatch(/closes/i);
+  });
+
   it('puts a populated countdown on every item with progressPct 0–100', () => {
     const watch = buildBreedingWatch({
       now,

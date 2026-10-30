@@ -18,6 +18,7 @@ import {
   recordColostrum,
   recordFarmCalving,
   recordFarmColostrum,
+  recordHeatObservation,
   updateBreeding,
   type BreedingDto,
   type HeatLogDto,
@@ -67,6 +68,13 @@ export function BreedingPage() {
   const watchTab = !herdTab && !walkTab;
   const sheetOpen = Boolean(formParam);
   const isWorker = user?.role === 'WORKER';
+  const [nextStep, setNextStep] = useState<{
+    kind: BreedingStage;
+    animalId: string;
+    breedingId?: string;
+    dueLabel: string;
+    form?: BreedingStage;
+  } | null>(null);
 
   const breedingQ = useQuery({
     queryKey: ['breeding'],
@@ -120,10 +128,17 @@ export function BreedingPage() {
     setSearchParams(next, { replace: true });
   };
 
-  const openSheet = (opts: { animalId?: string; form?: BreedingStage; breedingId?: string; taskId?: string }) => {
+  const openSheet = (opts: {
+    animalId?: string;
+    form?: BreedingStage;
+    breedingId?: string;
+    taskId?: string;
+    tab?: 'walk' | 'herd' | 'watch';
+  }) => {
     const next = new URLSearchParams();
-    if (herdTab) next.set('tab', 'herd');
-    if (walkTab) next.set('tab', 'walk');
+    const tab = opts.tab ?? (herdTab ? 'herd' : walkTab ? 'walk' : 'watch');
+    if (tab === 'herd') next.set('tab', 'herd');
+    if (tab === 'walk') next.set('tab', 'walk');
     const nextAnimal = opts.animalId ?? animalId;
     const nextForm = opts.form ?? stage;
     if (nextAnimal) next.set('animalId', nextAnimal);
@@ -136,9 +151,25 @@ export function BreedingPage() {
     setSearchParams(next, { replace: true });
   };
 
+  const showNextStep = (step: NonNullable<typeof nextStep>) => {
+    void qc.invalidateQueries({ queryKey: ['breeding'] });
+    closeSheet();
+    setNextStep(step);
+  };
+
   const afterSave = () => {
     void qc.invalidateQueries({ queryKey: ['breeding'] });
     closeSheet();
+  };
+
+  const formatDueClock = (iso?: string | null) => {
+    if (!iso) return t('breeding.nextStep.due');
+    return new Date(iso).toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
   };
 
   const damLabel = animalLabel(
@@ -166,12 +197,49 @@ export function BreedingPage() {
         )}
       </div>
 
+      {nextStep && (
+        <div className="breeding-next-step" role="status">
+          <h3>
+            {t('breeding.nextStep.saved')} → {t('breeding.nextStep.nextIs')}{' '}
+            {t(`breeding.nextStep.${nextStep.kind}`)}
+          </h3>
+          <p>
+            {t('breeding.nextStep.due')}: {nextStep.dueLabel}
+          </p>
+          {nextStep.form ? (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                const step = nextStep;
+                setNextStep(null);
+                openSheet({
+                  animalId: step.animalId,
+                  form: step.form,
+                  breedingId: step.breedingId,
+                  tab: step.form === 'service' || step.form === 'colostrum' ? 'walk' : undefined,
+                });
+              }}
+            >
+              {t('breeding.nextStep.open')}
+            </button>
+          ) : (
+            <button type="button" className="btn secondary" onClick={() => setNextStep(null)}>
+              {t('common.close')}
+            </button>
+          )}
+        </div>
+      )}
+
         <div className="choice-row breeding-tabs" role="tablist">
           <button
             type="button"
             role="tab"
             className={`choice-btn ${watchTab ? 'selected' : ''}`}
-            onClick={() => setSearchParams(new URLSearchParams(), { replace: true })}
+            onClick={() => {
+              setNextStep(null);
+              setSearchParams(new URLSearchParams(), { replace: true });
+            }}
           >
             {t('breeding.tabs.watch')}
           </button>
@@ -301,6 +369,7 @@ export function BreedingPage() {
             openSheet({
               animalId: item.animalId,
               form: parseBreedingStage(item.form ?? null) || undefined,
+              tab: item.tab,
             })
           }
         />
@@ -324,7 +393,18 @@ export function BreedingPage() {
             canWrite={can('breeding:write')}
             observerDefault={user?.name ?? ''}
             taskId={taskId}
-            onSaved={afterSave}
+            onSaved={(result) => {
+              if (!result) {
+                afterSave();
+                return;
+              }
+              showNextStep({
+                kind: 'heat',
+                animalId: result.animalId,
+                dueLabel: formatDueClock(result.serviceWindowEnd ?? result.serviceWindowStart),
+                form: 'service',
+              });
+            }}
           />
         )}
         {!animalsQ.isLoading && !breedingQ.isLoading && stage === 'service' && (
@@ -335,7 +415,25 @@ export function BreedingPage() {
             animalId={animalId}
             configBySpecies={configBySpecies}
             canWrite={can('breeding:write')}
-            onSaved={afterSave}
+            onSaved={(result) => {
+              if (!result) {
+                afterSave();
+                return;
+              }
+              const cfg = configBySpecies.get(
+                females.find((a) => a.id === result.motherId)?.species ?? '',
+              );
+              const days = cfg?.pregnancyCheckEarliestDays ?? 45;
+              const due = new Date(result.matingDate);
+              due.setDate(due.getDate() + days);
+              showNextStep({
+                kind: 'service',
+                animalId: result.motherId,
+                breedingId: result.id,
+                dueLabel: formatDueClock(due.toISOString()),
+                form: 'pd',
+              });
+            }}
           />
         )}
         {!animalsQ.isLoading && !breedingQ.isLoading && stage === 'pd' && (
@@ -344,7 +442,16 @@ export function BreedingPage() {
             breedingId={breedingId}
             animalId={animalId}
             canWrite={can('breeding:write')}
-            onSaved={afterSave}
+            onSaved={(result) => {
+              showNextStep({
+                kind: 'pd',
+                animalId: result?.motherId ?? animalId,
+                breedingId: result?.id,
+                dueLabel: result?.dueDate
+                  ? formatDueClock(result.dueDate)
+                  : t('breeding.nextStep.pd'),
+              });
+            }}
           />
         )}
         {!animalsQ.isLoading && !breedingQ.isLoading && stage === 'calving' && (
@@ -361,10 +468,14 @@ export function BreedingPage() {
                 closeSheet();
                 return;
               }
-              openSheet({
-                form: 'colostrum',
-                animalId: animalId || undefined,
+              const due = new Date();
+              due.setHours(due.getHours() + 2);
+              showNextStep({
+                kind: 'calving',
+                animalId: animalId || '',
                 breedingId: nextId,
+                dueLabel: formatDueClock(due.toISOString()),
+                form: 'colostrum',
               });
             }}
           />
@@ -376,7 +487,14 @@ export function BreedingPage() {
             animalId={animalId}
             taskId={taskId}
             canWrite={can('breeding:write')}
-            onSaved={afterSave}
+            onSaved={() => {
+              showNextStep({
+                kind: 'colostrum',
+                animalId,
+                breedingId: breedingId || undefined,
+                dueLabel: t('breeding.nextStep.colostrum'),
+              });
+            }}
           />
         )}
       </Modal>
@@ -419,7 +537,7 @@ function HeatForm({
   canWrite: boolean;
   observerDefault: string;
   taskId: string;
-  onSaved: () => void;
+  onSaved: (result?: HeatLogDto) => void;
 }) {
   const { t } = useTranslation();
   const [selected, setSelected] = useState(animalId);
@@ -428,6 +546,7 @@ function HeatForm({
   const [silent, setSilent] = useState(false);
   const [signs, setSigns] = useState<string[]>([]);
   const [more, setMore] = useState(false);
+  const [vwpMode, setVwpMode] = useState<'ask' | 'observe' | 'real' | null>(null);
   const { errors, validate, clearField, fieldProps } = useFieldErrors('heat');
 
   useEffect(() => {
@@ -439,17 +558,33 @@ function HeatForm({
   const tooSoon = animal && cfg ? daysUntilReady(animal.lactationStartDate, cfg.voluntaryWaitingDays) : null;
 
   const save = useMutation({
-    meta: { successKey: 'breeding.toast.heatSaved' },
-    mutationFn: () =>
-      createHeat({
+    // Silent: VWP observation must not toast "heat saved"; real heat uses the next-step banner.
+    meta: { silent: true },
+    mutationFn: async (mode?: 'observe' | 'real') => {
+      if (tooSoon != null && mode === 'observe') {
+        await recordHeatObservation({
+          animalId: selected,
+          observed: true,
+          taskId: taskId || undefined,
+        });
+        return undefined;
+      }
+      return createHeat({
         animalId: selected,
         observedAt: fromDateTimeLocal(observedAt),
         intensity: silent ? 'SILENT_SUSPECTED' : intensity,
         observerName: observerDefault || undefined,
         signs: [...(silent ? ['SILENT_SUSPECTED'] : []), ...signs].join(','),
         taskId: taskId || undefined,
-      }),
-    onSuccess: onSaved,
+      });
+    },
+    onSuccess: (result, mode) => {
+      if (mode === 'observe') {
+        onSaved(undefined);
+        return;
+      }
+      onSaved(result);
+    },
   });
 
   return (
@@ -463,7 +598,12 @@ function HeatForm({
             required(observedAt, t('common.requiredField')) ||
             notFuture(fromDateTimeLocal(observedAt), t('common.futureDate')),
         });
-        if (ok) save.mutate();
+        if (!ok) return;
+        if (tooSoon != null && vwpMode == null) {
+          setVwpMode('ask');
+          return;
+        }
+        save.mutate(vwpMode === 'observe' ? 'observe' : vwpMode === 'real' ? 'real' : undefined);
       }}
     >
       {!animalId && (
@@ -473,6 +613,7 @@ function HeatForm({
           onChange={(id) => {
             clearField('animalId');
             setSelected(id);
+            setVwpMode(null);
           }}
           error={errors.animalId}
           fieldProps={fieldProps('animalId')}
@@ -480,6 +621,33 @@ function HeatForm({
       )}
       {animal?.isPregnant && <div className="hold-banner hold-banner-red">{t('breeding.heatOnPregnant')}</div>}
       {tooSoon != null && <p className="warn-text">{t('breeding.tooSoon', { n: tooSoon })}</p>}
+      {tooSoon != null && vwpMode === 'ask' && (
+        <div className="vwp-confirm">
+          <p>{t('breeding.vwp.confirmHeat', { n: tooSoon })}</p>
+          <div className="choice-row">
+            <button
+              type="button"
+              className="btn secondary"
+              onClick={() => {
+                setVwpMode('observe');
+                save.mutate('observe');
+              }}
+            >
+              {t('breeding.vwp.observationOnly')}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setVwpMode('real');
+                save.mutate('real');
+              }}
+            >
+              {t('breeding.vwp.confirmRealHeat')}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="field">
         <label htmlFor="heat-observedAt">{t('breeding.observedAt')}</label>
@@ -588,7 +756,7 @@ function ServiceForm({
   animalId: string;
   configBySpecies: Map<string, SpeciesConfigDto>;
   canWrite: boolean;
-  onSaved: () => void;
+  onSaved: (result?: BreedingDto) => void;
 }) {
   const { t } = useTranslation();
   const [motherId, setMotherId] = useState(animalId);
@@ -597,6 +765,7 @@ function ServiceForm({
   const [sireId, setSireId] = useState('');
   const [matingDate, setMatingDate] = useState(toDateInput(new Date()));
   const [more, setMore] = useState(false);
+  const [vwpConfirm, setVwpConfirm] = useState(false);
   const { errors, validate, clearField, fieldProps } = useFieldErrors('svc');
 
   useEffect(() => {
@@ -654,7 +823,12 @@ function ServiceForm({
         };
         // The date lives behind "more"; open it so the error is visible.
         if (rules.matingDate) setMore(true);
-        if (validate(rules)) save.mutate();
+        if (!validate(rules)) return;
+        if (tooSoon != null && !vwpConfirm) {
+          setVwpConfirm(true);
+          return;
+        }
+        save.mutate();
       }}
     >
       {!animalId && (
@@ -671,6 +845,19 @@ function ServiceForm({
       )}
       {animal?.isPregnant && <div className="hold-banner hold-banner-red">{t('breeding.alreadyPregnant')}</div>}
       {tooSoon != null && <p className="warn-text">{t('breeding.tooSoon', { n: tooSoon })}</p>}
+      {tooSoon != null && vwpConfirm && (
+        <div className="vwp-confirm">
+          <p>{t('breeding.vwp.confirmService', { n: tooSoon })}</p>
+          <div className="choice-row">
+            <button type="button" className="btn secondary" onClick={() => setVwpConfirm(false)}>
+              {t('breeding.vwp.cancel')}
+            </button>
+            <button type="button" className="btn" onClick={() => save.mutate()}>
+              {t('breeding.vwp.continueService')}
+            </button>
+          </div>
+        </div>
+      )}
       {serviceNo >= 3 && <p className="warn-text">{t('breeding.repeatWarn', { n: serviceNo })}</p>}
       {related && <p className="warn-text">{t('breeding.inbreedingWarn')}</p>}
 
@@ -750,7 +937,7 @@ function PdForm({
   breedingId: string;
   animalId: string;
   canWrite: boolean;
-  onSaved: () => void;
+  onSaved: (result?: BreedingDto) => void;
 }) {
   const { t } = useTranslation();
   const scoped = animalId ? records.filter((r) => r.motherId === animalId) : records;
@@ -773,7 +960,7 @@ function PdForm({
         estimatedDaysPregnant: daysPregnant ? Number(daysPregnant) : undefined,
         checkDate: new Date(),
       }),
-    onSuccess: onSaved,
+    onSuccess: (row) => onSaved(row),
   });
 
   return (

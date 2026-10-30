@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -14,6 +15,8 @@ import {
   formatDate,
   formatNPR,
   type AnimalDto,
+  type BoardItemDto,
+  type BreedingBoardDto,
   type BreedingCreate,
   type BreedingMetricsDto,
   type PageResult,
@@ -126,6 +129,7 @@ export function BreedingScreen() {
   const [females, setFemales] = useState<AnimalDto[]>([]);
   const [males, setMales] = useState<AnimalDto[]>([]);
   const [tasks, setTasks] = useState<TaskDto[]>([]);
+  const [board, setBoard] = useState<BreedingBoardDto | null>(null);
   const [config, setConfig] = useState<SpeciesConfigDto[]>([]);
   const [metrics, setMetrics] = useState<BreedingMetricsDto | null>(null);
   const [loading, setLoading] = useState(true);
@@ -172,7 +176,7 @@ export function BreedingScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [page, m, heatPage, femalePage, malePage, taskPage, cfg] = await Promise.all([
+      const [page, m, heatPage, femalePage, malePage, taskPage, cfg, boardDto] = await Promise.all([
         api.get<PageResult<BreedingRecordLite>>(`/v1/breeding${toQuery({ page: 1, pageSize: 200 })}`),
         api.get<BreedingMetricsDto>('/v1/breeding/metrics').catch(() => null),
         api.get<PageResult<Heat>>(`/v1/breeding/heat${toQuery({ page: 1, pageSize: 50 })}`).catch(() => null),
@@ -180,6 +184,7 @@ export function BreedingScreen() {
         api.get<PageResult<AnimalDto>>(`/v1/animals${toQuery({ gender: 'MALE', pageSize: 200 })}`).catch(() => null),
         api.get<PageResult<TaskDto>>('/v1/tasks?page=1&pageSize=100').catch(() => null),
         api.get<SpeciesConfigDto[]>('/v1/species-config').catch(() => null),
+        api.get<BreedingBoardDto>('/v1/breeding/board').catch(() => null),
       ]);
       setRecords(page.items);
       setMetrics(m);
@@ -189,6 +194,7 @@ export function BreedingScreen() {
       setTasks(
         (taskPage?.items ?? []).filter((x) => x.status === 'PENDING' || x.status === 'SNOOZED'),
       );
+      setBoard(boardDto);
       setConfig(cfg ?? []);
       setModuleCache(store, 'breeding', page);
       persist();
@@ -382,6 +388,41 @@ export function BreedingScreen() {
 
   const watchTitle = (kind: WatchKind) => t(`breeding.watch.${kind}`);
   const walkTitle = (kind: WalkKind) => t(`breeding.walk.${kind}`);
+  const runBoardAction = (item: BoardItemDto, actionKey: string) => {
+    const action = item.actions.find((a) => a.key === actionKey);
+    if (!action) return;
+    if (action.phone) {
+      void Linking.openURL(`tel:${action.phone}`);
+      return;
+    }
+    if (action.key === 'NOTHING') {
+      void dismissTask({ id: item.taskId } as TaskDto);
+      return;
+    }
+    if (action.key === 'SAW_HEAT' || action.to?.includes('form=heat')) {
+      openForm('heat', item.animalId);
+      return;
+    }
+    if (action.to?.includes('form=service')) {
+      openForm('service', item.animalId);
+      return;
+    }
+    if (action.to?.includes('form=pd')) {
+      openForm('pd', item.animalId);
+      return;
+    }
+    if (action.to?.includes('form=calving')) {
+      openForm('calving', item.animalId);
+      return;
+    }
+    if (action.to?.includes('form=colostrum')) {
+      openForm('colostrum', item.animalId);
+      return;
+    }
+    if (action.key === 'RECORD_CHECK' && item.animalId) {
+      openAnimal(item.animalId);
+    }
+  };
 
   return (
     <AppShell module="breeding">
@@ -458,82 +499,193 @@ export function BreedingScreen() {
 
           {mainTab === 'walk' ? (
             <View>
-              {walkGroups.length === 0 && !loading ? (
-                <EmptyState message={t('breeding.walkEmpty')} />
-              ) : null}
-              {walkGroups.map((group) => (
-                <View key={group.kind} style={styles.section}>
-                  <SectionTitle>
-                    {walkTitle(group.kind)} ({group.items.length})
-                  </SectionTitle>
-                  {group.items.map((row) => (
-                    <Card key={row.key} style={styles.rowCard}>
-                      <Pressable
-                        onPress={() => (row.animalId ? openAnimal(row.animalId) : undefined)}
-                      >
-                        <Txt weight="semibold" style={styles.rowTitle}>
-                          {row.label}
-                        </Txt>
-                        <Muted>{row.subtitle}</Muted>
-                      </Pressable>
-                      {canWrite ? (
-                        <View style={styles.rowActions}>
-                          {group.kind === 'checkHeat' ? (
-                            <>
-                              <PrimaryButton
-                                label={t('breeding.sawHeat')}
-                                onPress={() => openForm('heat', row.animalId)}
-                              />
-                              <SecondaryButton
-                                label={t('breeding.nothing')}
-                                onPress={() => void dismissTask(row.task)}
-                              />
-                            </>
+              {board ? (
+                <>
+                  <Muted>
+                    {board.summary.totalActions} · {board.summary.overdue} late
+                  </Muted>
+                  {board.groups.length === 0 && !loading ? (
+                    <EmptyState message={t('breeding.walkEmpty')} />
+                  ) : null}
+                  {board.groups.map((group) => (
+                    <View key={group.key} style={styles.section}>
+                      <SectionTitle>
+                        {group.labelEn} ({group.items.length})
+                      </SectionTitle>
+                      <Muted>{group.subLabelEn}</Muted>
+                      {group.items.map((row) => (
+                        <Card key={row.taskId} style={styles.rowCard}>
+                          <Pressable onPress={() => openAnimal(row.animalId)}>
+                            <Txt weight="semibold" style={styles.rowTitle}>
+                              {row.shortNo} · {row.name ?? '—'}
+                            </Txt>
+                            <Muted>{row.penName}</Muted>
+                            <Muted>
+                              Do by: {row.doByEn}
+                            </Muted>
+                            <Muted>Why: {row.whyEn}</Muted>
+                            {row.lateEn ? <Muted>{row.lateEn}</Muted> : null}
+                          </Pressable>
+                          {canWrite ? (
+                            <View style={styles.rowActions}>
+                              {row.actions.slice(0, 2).map((action) =>
+                                action.primary ? (
+                                  <PrimaryButton
+                                    key={action.key}
+                                    label={action.labelEn}
+                                    onPress={() => runBoardAction(row, action.key)}
+                                  />
+                                ) : (
+                                  <SecondaryButton
+                                    key={action.key}
+                                    label={action.labelEn}
+                                    onPress={() => runBoardAction(row, action.key)}
+                                  />
+                                ),
+                              )}
+                            </View>
                           ) : null}
-                          {group.kind === 'breedToday' ? (
-                            <PrimaryButton
-                              label={t('breeding.add')}
-                              onPress={() => openForm('service', row.animalId)}
-                            />
-                          ) : null}
-                          {group.kind === 'pd' ? (
-                            <PrimaryButton
-                              label={t('breeding.savePd')}
-                              onPress={() => openForm('pd', row.animalId, row.breedingId)}
-                            />
-                          ) : null}
-                          {group.kind === 'dryOff' ? (
-                            <PrimaryButton
-                              label={t('breeding.walk.dryOff')}
-                              onPress={() => (row.animalId ? openAnimal(row.animalId) : undefined)}
-                            />
-                          ) : null}
-                          {group.kind === 'postCalving' ? (
-                            <PrimaryButton
-                              label={
-                                row.task.type === 'COLOSTRUM_FEED'
-                                  ? t('breeding.tab.colostrum')
-                                  : row.task.type === 'CALVING_WATCH'
-                                    ? t('breeding.tab.calving')
-                                    : t('breeding.recordAction')
-                              }
-                              onPress={() => {
-                                if (row.task.type === 'COLOSTRUM_FEED') {
-                                  openForm('colostrum', row.animalId, row.breedingId);
-                                } else if (row.task.type === 'CALVING_WATCH') {
-                                  openForm('calving', row.animalId, row.breedingId);
-                                } else if (row.animalId) {
-                                  openAnimal(row.animalId);
-                                }
-                              }}
-                            />
-                          ) : null}
-                        </View>
-                      ) : null}
-                    </Card>
+                        </Card>
+                      ))}
+                    </View>
                   ))}
-                </View>
-              ))}
+                  {board.decisionQueue.count > 0 ? (
+                    <View style={styles.section}>
+                      <SectionTitle>
+                        Needs a decision ({board.decisionQueue.count})
+                      </SectionTitle>
+                      {board.decisionQueue.items.map((row) => (
+                        <Card key={row.taskId} style={styles.rowCard}>
+                          <Txt weight="semibold" style={styles.rowTitle}>
+                            {row.shortNo} · {row.titleEn}
+                          </Txt>
+                          {canWrite ? (
+                            <View style={styles.rowActions}>
+                              {(row.actions ?? []).slice(0, 2).map((action) => (
+                                <PrimaryButton
+                                  key={action.key}
+                                  label={action.labelEn}
+                                  onPress={() =>
+                                    runBoardAction(
+                                      {
+                                        taskId: row.taskId,
+                                        taskType: row.kind,
+                                        animalId: row.animalId,
+                                        shortNo: row.shortNo,
+                                        name: row.name,
+                                        species: 'BUFFALO',
+                                        penName: '',
+                                        penSortOrder: 0,
+                                        seqNo: 0,
+                                        photoUrl: null,
+                                        contextEn: '',
+                                        contextNp: '',
+                                        doByEn: '',
+                                        doByNp: '',
+                                        whyEn: '',
+                                        whyNp: '',
+                                        lateEn: null,
+                                        lateNp: null,
+                                        urgency: 'NORMAL',
+                                        deadline: null,
+                                        actions: row.actions ?? [],
+                                      },
+                                      action.key,
+                                    )
+                                  }
+                                />
+                              ))}
+                            </View>
+                          ) : null}
+                        </Card>
+                      ))}
+                    </View>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  {walkGroups.length === 0 && !loading ? (
+                    <EmptyState message={t('breeding.walkEmpty')} />
+                  ) : null}
+                  {walkGroups.map((group) => (
+                    <View key={group.kind} style={styles.section}>
+                      <SectionTitle>
+                        {walkTitle(group.kind)} ({group.items.length})
+                      </SectionTitle>
+                      {group.items.map((row) => (
+                        <Card key={row.key} style={styles.rowCard}>
+                          <Pressable
+                            onPress={() => (row.animalId ? openAnimal(row.animalId) : undefined)}
+                          >
+                            <Txt weight="semibold" style={styles.rowTitle}>
+                              {row.label}
+                            </Txt>
+                            <Muted>{row.subtitle}</Muted>
+                          </Pressable>
+                          {canWrite ? (
+                            <View style={styles.rowActions}>
+                              {group.kind === 'checkHeat' ? (
+                                <>
+                                  <PrimaryButton
+                                    label={t('breeding.sawHeat')}
+                                    onPress={() => openForm('heat', row.animalId)}
+                                  />
+                                  <SecondaryButton
+                                    label={t('breeding.nothing')}
+                                    onPress={() => void dismissTask(row.task)}
+                                  />
+                                </>
+                              ) : null}
+                              {group.kind === 'breedToday' ? (
+                                <PrimaryButton
+                                  label={t('breeding.add')}
+                                  onPress={() => openForm('service', row.animalId)}
+                                />
+                              ) : null}
+                              {group.kind === 'colostrum' ? (
+                                <PrimaryButton
+                                  label={t('breeding.tab.colostrum')}
+                                  onPress={() => openForm('colostrum', row.animalId, row.breedingId)}
+                                />
+                              ) : null}
+                              {group.kind === 'pd' ? (
+                                <PrimaryButton
+                                  label={t('breeding.savePd')}
+                                  onPress={() => openForm('pd', row.animalId, row.breedingId)}
+                                />
+                              ) : null}
+                              {group.kind === 'dryOff' ? (
+                                <PrimaryButton
+                                  label={t('breeding.walk.dryOff')}
+                                  onPress={() =>
+                                    row.animalId ? openAnimal(row.animalId) : undefined
+                                  }
+                                />
+                              ) : null}
+                              {group.kind === 'postCalving' ? (
+                                <PrimaryButton
+                                  label={
+                                    row.task.type === 'CALVING_WATCH'
+                                      ? t('breeding.tab.calving')
+                                      : t('breeding.recordAction')
+                                  }
+                                  onPress={() => {
+                                    if (row.task.type === 'CALVING_WATCH') {
+                                      openForm('calving', row.animalId, row.breedingId);
+                                    } else if (row.animalId) {
+                                      openAnimal(row.animalId);
+                                    }
+                                  }}
+                                />
+                              ) : null}
+                            </View>
+                          ) : null}
+                        </Card>
+                      ))}
+                    </View>
+                  ))}
+                </>
+              )}
             </View>
           ) : null}
 

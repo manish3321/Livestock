@@ -36,7 +36,7 @@ function formForStage(stage: string): string | undefined {
 export function BreedingWatch({
   onOpen,
 }: {
-  onOpen: (opts: { animalId: string; form?: string }) => void;
+  onOpen: (opts: { animalId: string; form?: string; tab?: 'walk' }) => void;
 }) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
@@ -55,6 +55,11 @@ export function BreedingWatch({
   const offline = watchQ.isError && Boolean(cached);
 
   const openItem = (row: WatchItemDto) => {
+    // Open service windows on Walk — one mental model with the breed-today clock.
+    if (row.stage === 'IN_HEAT') {
+      onOpen({ animalId: row.animalId, form: 'service', tab: 'walk' });
+      return;
+    }
     onOpen({ animalId: row.animalId, form: formForStage(row.stage) });
   };
 
@@ -79,7 +84,9 @@ export function BreedingWatch({
               <span className="board-sub">{group.items.length}</span>
             </h3>
             <ul>
-              {group.items.map((row) => (
+              {group.items.map((row) => {
+                const nextForm = formForStage(row.stage);
+                return (
                 <li key={row.animalId} className="watch-row">
                   <button type="button" className="board-animal" onClick={() => openItem(row)}>
                     {row.photoUrl ? (
@@ -91,7 +98,11 @@ export function BreedingWatch({
                     <span className="board-meta">
                       <strong>{row.name ?? t('breeding.board.unnamed')}</strong>
                       <span>{row.penName}</span>
-                      <span>{np ? row.contextNp : row.contextEn}</span>
+                      {/* Skip context when it duplicates the countdown label. */}
+                      {(np ? row.contextNp : row.contextEn) !==
+                        (np ? row.countdown.labelNp : row.countdown.labelEn) && (
+                        <span>{np ? row.contextNp : row.contextEn}</span>
+                      )}
                     </span>
                   </button>
                   <div className="watch-count">
@@ -105,18 +116,28 @@ export function BreedingWatch({
                     />
                     <span style={{ color: URGENCY[row.countdown.urgency] }}>
                       {np ? row.countdown.labelNp : row.countdown.labelEn}
-                      {row.countdown.urgency === 'OVERDUE' ? ` · ${t('breeding.watch.overdue')}` : ''}
                     </span>
-                    <button
-                      type="button"
-                      className="board-btn"
-                      onClick={() => void navigate(`/animals/${row.animalId}`)}
-                    >
-                      {t('breeding.watch.openRecord')}
-                    </button>
+                    {row.stage === 'IN_HEAT' ? (
+                      <button type="button" className="board-btn primary" onClick={() => openItem(row)}>
+                        {t('breeding.watch.openWalk')}
+                      </button>
+                    ) : nextForm ? (
+                      <button type="button" className="board-btn" onClick={() => openItem(row)}>
+                        {t(`breeding.watch.action.${nextForm}`)}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="board-btn"
+                        onClick={() => void navigate(`/animals/${row.animalId}`)}
+                      >
+                        {t('breeding.watch.openRecord')}
+                      </button>
+                    )}
                   </div>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           </section>
         ))

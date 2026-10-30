@@ -6,6 +6,7 @@ import type {
   HeatObservationInput,
   ProtocolSuggestDto,
   Role,
+  Species,
   SyncEnrollInput,
   TaskType,
 } from '@farm/contracts';
@@ -78,21 +79,34 @@ export class BreedingBoardService {
     });
 
     const animalIds = [...new Set(tasks.map((row) => row.animalId).filter(Boolean))] as string[];
-    const enrollments = animalIds.length
-      ? await this.prisma.syncEnrollment.findMany({
-          where: { farmId: user.farmId, animalId: { in: animalIds }, status: 'ACTIVE' },
-          include: { protocol: true },
-        })
-      : [];
+    const speciesNeeded = [
+      ...new Set(
+        tasks
+          .map((row) => row.animal?.species)
+          .filter((species): species is Species => Boolean(species)),
+      ),
+    ];
+    const [enrollments, speciesRows] = await Promise.all([
+      animalIds.length
+        ? this.prisma.syncEnrollment.findMany({
+            where: { farmId: user.farmId, animalId: { in: animalIds }, status: 'ACTIVE' },
+            include: { protocol: true },
+          })
+        : Promise.resolve(
+            [] as Array<{
+              animalId: string;
+              startDate: Date;
+              protocol: { code: string; nameEn: string; steps: unknown };
+            }>,
+          ),
+      Promise.all(speciesNeeded.map((species) => this.speciesConfig.forSpecies(species))),
+    ]);
     const enrollmentByAnimal = new Map(enrollments.map((row) => [row.animalId, row]));
+    const speciesCache = new Map(speciesNeeded.map((species, i) => [species, speciesRows[i]!]));
 
     const boardTasks: BoardTaskRow[] = [];
     const animals: BoardAnimalRow[] = [];
     const seen = new Set<string>();
-    const speciesCache = new Map<
-      string,
-      Awaited<ReturnType<SpeciesConfigService['forSpecies']>>
-    >();
 
     for (const task of tasks) {
       const animal = task.animal;
@@ -100,20 +114,22 @@ export class BreedingBoardService {
       const lastHeat = animal.heatEvents[0];
       const lastService = animal.breedingServices[0];
       const enrollment = enrollmentByAnimal.get(animal.id);
-      let cfg = speciesCache.get(animal.species);
-      if (!cfg) {
-        cfg = await this.speciesConfig.forSpecies(animal.species);
-        speciesCache.set(animal.species, cfg);
-      }
-      const metadata = await this.taskMetadata(task.type, {
+      const cfg = speciesCache.get(animal.species)!;
+      const metadata = this.taskMetadata(task.type, {
         dueAt: task.dueAt,
         lastHeatAt: lastHeat?.observedAt ?? null,
         lastServiceAt: lastService?.serviceDate ?? null,
         expectedCalving: animal.expectedCalvingDate,
-        lactationStart: animal.lactationStartDate,
+        // COLOSTRUM_FEED tasks hang on the calf — use DOB for hours since birth.
+        lactationStart:
+          task.type === 'COLOSTRUM_FEED'
+            ? (animal.dateOfBirth ?? animal.lactationStartDate)
+            : animal.lactationStartDate,
         estrusCycleDays: cfg.estrusCycleDays,
         serviceWindowEndHours: cfg.serviceWindowEndHours,
-        enrollment,
+        enrollment: enrollment
+          ? { startDate: enrollment.startDate, protocol: enrollment.protocol }
+          : undefined,
       });
       boardTasks.push({
         id: task.id,
@@ -627,7 +643,7 @@ export class BreedingBoardService {
     return { animalId: animal.id, status: 'OPEN', driedOff: false, pregnancyCleared: true };
   }
 
-  private async taskMetadata(
+  private taskMetadata(
     type: TaskType,
     args: {
       dueAt: Date;
@@ -639,7 +655,7 @@ export class BreedingBoardService {
       serviceWindowEndHours: number;
       enrollment?: { startDate: Date; protocol: { code: string; nameEn: string; steps: unknown } };
     },
-  ): Promise<Record<string, string | number | null | undefined>> {
+  ): Record<string, string | number | null | undefined> {
     const now = new Date();
     if (type === 'SERVICE_WINDOW' || type === 'SYNC_AI') {
       const heat = args.lastHeatAt ?? args.dueAt;
@@ -669,6 +685,9 @@ export class BreedingBoardService {
     }
     if (type === 'POSTPARTUM_CHECK' && args.lactationStart) {
       return { n: Math.floor((now.getTime() - args.lactationStart.getTime()) / DAY_MS) };
+    }
+    if (type === 'COLOSTRUM_FEED' && args.lactationStart) {
+      return { n: Math.max(0, Math.round((now.getTime() - args.lactationStart.getTime()) / (60 * 60 * 1000))) };
     }
     if (type === 'SYNC_INJECTION' && args.enrollment) {
       const day = Math.round((args.dueAt.getTime() - args.enrollment.startDate.getTime()) / DAY_MS);

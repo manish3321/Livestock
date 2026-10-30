@@ -25,7 +25,13 @@ export type WatchKind =
   | 'carrying'
   | 'heifers';
 
-export type WalkKind = 'breedToday' | 'checkHeat' | 'pd' | 'dryOff' | 'postCalving';
+export type WalkKind =
+  | 'breedToday'
+  | 'colostrum'
+  | 'checkHeat'
+  | 'pd'
+  | 'dryOff'
+  | 'postCalving';
 
 export type WatchRow = {
   key: string;
@@ -295,23 +301,32 @@ export function buildWatchRows(
 }
 
 const WALK_TYPES: Record<WalkKind, string[]> = {
-  breedToday: ['SERVICE_WINDOW'],
+  breedToday: ['SERVICE_WINDOW', 'SYNC_AI'],
+  colostrum: ['COLOSTRUM_FEED'],
   checkHeat: ['HEAT_WATCH', 'SILENT_HEAT_CHECK'],
   pd: ['PREGNANCY_CHECK'],
   dryOff: ['DRY_OFF'],
-  postCalving: ['COLOSTRUM_FEED', 'POSTPARTUM_CHECK', 'CALVING_WATCH'],
+  postCalving: ['POSTPARTUM_CHECK', 'CALVING_WATCH'],
 };
 
-/** Walk board — today's breeding tasks, grouped like the web walk list. */
+const WALK_ORDER: WalkKind[] = [
+  'breedToday',
+  'colostrum',
+  'checkHeat',
+  'pd',
+  'dryOff',
+  'postCalving',
+];
+
+/** Walk board — today only (local calendar day) + overdue, matching web Nepal-day rule. */
 export function buildWalkRows(tasks: TaskDto[], now = new Date()): WalkRow[] {
-  const endOfTomorrow = new Date(now);
-  endOfTomorrow.setHours(23, 59, 59, 999);
-  endOfTomorrow.setDate(endOfTomorrow.getDate() + 1);
+  const endOfToday = new Date(now);
+  endOfToday.setHours(23, 59, 59, 999);
 
   const open = tasks.filter(
     (t) =>
       (t.status === 'PENDING' || t.status === 'SNOOZED') &&
-      new Date(t.dueAt).getTime() <= endOfTomorrow.getTime(),
+      new Date(t.dueAt).getTime() <= endOfToday.getTime(),
   );
 
   const rows: WalkRow[] = [];
@@ -338,8 +353,7 @@ export function buildWalkRows(tasks: TaskDto[], now = new Date()): WalkRow[] {
     }
   }
 
-  const order: WalkKind[] = ['breedToday', 'checkHeat', 'pd', 'dryOff', 'postCalving'];
-  rows.sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
+  rows.sort((a, b) => WALK_ORDER.indexOf(a.kind) - WALK_ORDER.indexOf(b.kind));
   return rows;
 }
 
@@ -359,8 +373,7 @@ export function groupWatchByKind(rows: WatchRow[]): Array<{ kind: WatchKind; ite
 }
 
 export function groupWalkByKind(rows: WalkRow[]): Array<{ kind: WalkKind; items: WalkRow[] }> {
-  const order: WalkKind[] = ['breedToday', 'checkHeat', 'pd', 'dryOff', 'postCalving'];
-  return order
+  return WALK_ORDER
     .map((kind) => ({ kind, items: rows.filter((r) => r.kind === kind) }))
     .filter((g) => g.items.length > 0);
 }

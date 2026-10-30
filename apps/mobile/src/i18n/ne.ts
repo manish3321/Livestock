@@ -611,6 +611,7 @@ export const ne = {
       },
       walk: {
         breedToday: 'आज सेवा',
+        colostrum: 'बिगौती',
         checkHeat: 'रजस्वला जाँच',
         pd: 'गर्भ जाँच',
         dryOff: 'सुकाउने',

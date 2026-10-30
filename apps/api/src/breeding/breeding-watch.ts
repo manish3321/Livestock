@@ -202,7 +202,13 @@ export function countdownFor(
     | 'ageFirstServiceMonths'
   >,
   now: Date,
-): { countdown: CountdownDto; contextEn: string; contextNp: string; sortKey: number } {
+): {
+  countdown: CountdownDto;
+  contextEn: string;
+  contextNp: string;
+  sortKey: number;
+  deadline?: string | null;
+} {
   const dim = dimOf(animal, now);
   const quiet = daysQuietOf(animal, now);
   const toCalving = daysToCalving(animal, now);
@@ -282,6 +288,11 @@ export function countdownFor(
         : now;
       const remaining = Math.ceil((end.getTime() - now.getTime()) / HOUR_MS);
       const elapsed = cfg.serviceWindowEndHours - remaining;
+      const clock = end.toLocaleTimeString('en-GB', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      });
       const cd = countdown({
         kind: 'HOURS_TO_DEADLINE',
         eventEn: 'service window',
@@ -294,10 +305,22 @@ export function countdownFor(
         labelEn:
           remaining < 0
             ? 'service window closed'
-            : `${remaining} hours remaining`,
-        labelNp: remaining < 0 ? 'सेवा समय सकियो' : `${remaining} घण्टा बाँकी`,
+            : `${remaining}h left · closes ${clock}`,
+        labelNp: remaining < 0 ? 'सेवा समय सकियो' : `${remaining} घण्टा · ${clock} मा बन्द`,
       });
-      return { countdown: cd, contextEn: cd.labelEn, contextNp: cd.labelNp, sortKey: remaining };
+      return {
+        countdown: cd,
+        contextEn:
+          remaining < 0
+            ? 'Walk: window closed — record or dismiss'
+            : `Walk owns this · window closes ${clock}`,
+        contextNp:
+          remaining < 0
+            ? 'हिँडाइ: झ्याल बन्द — लेख्नुहोस् वा हटाउनुहोस्'
+            : `हिँडाइमा · झ्याल ${clock} मा बन्द`,
+        sortKey: remaining,
+        deadline: end.toISOString(),
+      };
     }
     case 'ANESTRUS_SUSPECTED': {
       const cd = countdown({
@@ -437,6 +460,7 @@ export function toWatchItem(
     photoUrl: animal.photoUrl,
     contextEn: built.contextEn,
     contextNp: built.contextNp,
+    deadline: built.deadline ?? null,
     countdown: built.countdown,
     sortKey: built.sortKey,
   };

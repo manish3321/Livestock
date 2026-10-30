@@ -3,6 +3,7 @@ import type {
   BoardGroupDto,
   BoardGroupKey,
   BoardItemDto,
+  BoardUrgency,
   BreedingBoardDto,
   Role,
   TaskPriority,
@@ -13,6 +14,7 @@ export type { BoardItemDto, BoardGroupDto, BreedingBoardDto } from '@farm/contra
 
 export const BOARD_GROUP_ORDER: BoardGroupKey[] = [
   'BREED_TODAY',
+  'COLOSTRUM',
   'CHECK_HEAT',
   'CALVING_WATCH',
   'PREGNANCY_CHECK',
@@ -24,6 +26,7 @@ export const BOARD_GROUP_ORDER: BoardGroupKey[] = [
 export const BOARD_TASK_GROUP: Partial<Record<TaskType, BoardGroupKey>> = {
   SERVICE_WINDOW: 'BREED_TODAY',
   SYNC_AI: 'BREED_TODAY',
+  COLOSTRUM_FEED: 'COLOSTRUM',
   HEAT_WATCH: 'CHECK_HEAT',
   SILENT_HEAT_CHECK: 'CHECK_HEAT',
   CALVING_WATCH: 'CALVING_WATCH',
@@ -53,6 +56,13 @@ const GROUP_META: Record<
     colour: 'RED',
     subEn: 'window closes {time}',
     subNp: 'झ्याल {time} मा बन्द',
+  },
+  COLOSTRUM: {
+    labelEn: 'Colostrum',
+    labelNp: 'पहिलो दूध',
+    colour: 'RED',
+    subEn: 'within 2 hours of birth',
+    subNp: 'जन्मको २ घण्टाभित्र',
   },
   CHECK_HEAT: {
     labelEn: 'Check for heat',
@@ -134,57 +144,153 @@ export function boardContext(
   type: TaskType,
   meta: Record<string, string | number | null | undefined> = {},
 ): { contextEn: string; contextNp: string } {
+  const t = boardTiming(type, meta, false);
+  return { contextEn: t.contextEn, contextNp: t.contextNp };
+}
+
+/** Human timing line: Do by / Why / late consequence + urgency for Walk rows. */
+export function boardTiming(
+  type: TaskType,
+  meta: Record<string, string | number | null | undefined> = {},
+  late: boolean,
+): {
+  doByEn: string;
+  doByNp: string;
+  whyEn: string;
+  whyNp: string;
+  lateEn: string | null;
+  lateNp: string | null;
+  urgency: BoardUrgency;
+  contextEn: string;
+  contextNp: string;
+} {
   const n = Number(meta.n ?? 0);
   const time = String(meta.time ?? '');
   const deadline = String(meta.deadline ?? '');
   const protocol = String(meta.protocol ?? '');
   const drug = String(meta.drug ?? '');
   const dose = String(meta.dose ?? '');
+
+  let doByEn = 'today before evening';
+  let doByNp = 'आज साँझ अघि';
+  let whyEn = '';
+  let whyNp = '';
+  let lateEn: string | null = null;
+  let lateNp: string | null = null;
+  let urgency: BoardUrgency = late ? 'AMBER' : 'NORMAL';
+
   switch (type) {
     case 'SERVICE_WINDOW':
     case 'SYNC_AI':
-      return {
-        contextEn: `heat ${time}, breed before ${deadline}`,
-        contextNp: `गर्मी ${time}, ${deadline} अघि गर्भाधान`,
-      };
+      doByEn = deadline ? `before ${deadline}` : 'today before evening';
+      doByNp = deadline ? `${deadline} अघि` : 'आज साँझ अघि';
+      whyEn = time ? `12–18h after standing heat (${time})` : '12–18h after standing heat';
+      whyNp = time ? `उभिएको रजस्वलापछि १२–१८ घण्टा (${time})` : 'उभिएको रजस्वलापछि १२–१८ घण्टा';
+      lateEn = 'window closing';
+      lateNp = 'झ्याल बन्द हुँदै';
+      urgency = late ? 'RED' : 'AMBER';
+      break;
     case 'HEAT_WATCH':
-      return {
-        contextEn: `due today, cycle day ${n}`,
-        contextNp: `आज आउने सम्भावना, चक्र दिन ${n}`,
-      };
+      doByEn = 'today 4–7 am';
+      doByNp = 'आज बिहान ४–७';
+      whyEn = `cycle day ${n}`;
+      whyNp = `चक्र दिन ${n}`;
+      lateEn = 'heat may be missed';
+      lateNp = 'रजस्वला छुट्न सक्छ';
+      break;
     case 'SILENT_HEAT_CHECK':
-      return {
-        contextEn: `${n} days quiet — silent heat likely`,
-        contextNp: `${n} दिन शान्त — लुकेको गर्मी हुनसक्छ`,
-      };
+      doByEn = 'today before evening';
+      doByNp = 'आज साँझ अघि';
+      whyEn = `${n} days quiet — silent heat likely`;
+      whyNp = `${n} दिन शान्त — लुकेको गर्मी हुनसक्छ`;
+      lateEn = 'anestrus risk rising';
+      lateNp = 'अनिस्ट्रस जोखिम बढ्दै';
+      break;
     case 'PREGNANCY_CHECK':
-      return {
-        contextEn: `bred ${n} days ago`,
-        contextNp: `${n} दिन अघि गर्भाधान`,
-      };
+      doByEn = 'today before evening';
+      doByNp = 'आज साँझ अघि';
+      whyEn = `PD day ${n}`;
+      whyNp = `गर्भ जाँच दिन ${n}`;
+      lateEn = 'recheck overdue';
+      lateNp = 'पुनः जाँच ढिलो';
+      break;
     case 'CALVING_WATCH':
-      return {
-        contextEn: `calves in ${n} days`,
-        contextNp: `${n} दिनमा ब्याउँछ`,
-      };
+      doByEn = n <= 0 ? 'today — watch closely' : `watch — calves in ${n} days`;
+      doByNp = n <= 0 ? 'आज — नजिकबाट हेर्नुहोस्' : `${n} दिनमा ब्याउने — हेर्नुहोस्`;
+      whyEn = 'calving window';
+      whyNp = 'बियाइ झ्याल';
+      // Task due can lag before the real EDD — only say “calving overdue” when n ≤ 0.
+      lateEn = n <= 0 ? 'calving overdue' : 'watch check overdue';
+      lateNp = n <= 0 ? 'बियाइ ढिलो' : 'हेर्ने जाँच ढिलो';
+      urgency = n <= 0 ? 'RED' : late ? 'AMBER' : 'NORMAL';
+      break;
     case 'SYNC_INJECTION':
-      return {
-        contextEn: `${protocol} day ${n} — ${drug}, ${dose}`,
-        contextNp: `${protocol} दिन ${n} — ${drug}, ${dose}`,
-      };
+      doByEn = 'today before evening';
+      doByNp = 'आज साँझ अघि';
+      whyEn = `${protocol} day ${n} — ${drug}, ${dose}`.replace(/ — , $/, '').trim();
+      whyNp = `${protocol} दिन ${n} — ${drug}, ${dose}`.replace(/ — , $/, '').trim();
+      lateEn = 'protocol will break';
+      lateNp = 'प्रोटोकल बिग्रन्छ';
+      urgency = late ? 'RED' : 'AMBER';
+      break;
     case 'DRY_OFF':
-      return {
-        contextEn: `calves in ${n} days, stop milking`,
-        contextNp: `${n} दिनमा ब्याउँछ, दूध बन्द गर्नुहोस्`,
-      };
+      doByEn = 'today before evening';
+      doByNp = 'आज साँझ अघि';
+      whyEn = `calves in ${n} days — stop milking`;
+      whyNp = `${n} दिनमा ब्याउँछ — दूध बन्द`;
+      lateEn = 'dry-off late';
+      lateNp = 'दूध बन्द ढिलो';
+      break;
     case 'POSTPARTUM_CHECK':
-      return {
-        contextEn: `${n} days after calving`,
-        contextNp: `ब्याएको ${n} दिन`,
-      };
+      doByEn = 'today before evening';
+      doByNp = 'आज साँझ अघि';
+      whyEn = `${n} days after calving`;
+      whyNp = `ब्याएको ${n} दिन`;
+      lateEn = 'check overdue';
+      lateNp = 'जाँच ढिलो';
+      break;
+    case 'COLOSTRUM_FEED': {
+      doByEn = 'within 2 hours of birth';
+      doByNp = 'जन्मको २ घण्टाभित्र';
+      whyEn = n > 0 ? `${n}h after birth` : 'first feed';
+      whyNp = n > 0 ? `जन्मपछि ${n} घण्टा` : 'पहिलो खुराक';
+      if (n <= 2) urgency = 'GREEN';
+      else if (n <= 6) urgency = 'AMBER';
+      else urgency = 'RED';
+      lateEn = n > 6 ? 'antibodies dropping — FPT risk' : 'window closing';
+      lateNp = n > 6 ? 'अन्टिबडी झर्दै — FPT जोखिम' : 'झ्याल बन्द हुँदै';
+      break;
+    }
     default:
-      return { contextEn: '', contextNp: '' };
+      break;
   }
+
+  if (!late) {
+    lateEn = null;
+    lateNp = null;
+  } else if (!lateEn) {
+    lateEn = 'late';
+    lateNp = 'ढिलो';
+  }
+
+  const whyPartEn = whyEn;
+  const whyPartNp = whyNp;
+  const latePartEn = lateEn ? ` · ${lateEn}` : '';
+  const latePartNp = lateNp ? ` · ${lateNp}` : '';
+  const contextEn = `Do by: ${doByEn}. Why: ${whyPartEn}${latePartEn}`;
+  const contextNp = `कहिले: ${doByNp}. किन: ${whyPartNp}${latePartNp}`;
+
+  return {
+    doByEn,
+    doByNp,
+    whyEn: whyPartEn,
+    whyNp: whyPartNp,
+    lateEn,
+    lateNp,
+    urgency,
+    contextEn,
+    contextNp,
+  };
 }
 
 export function boardActions(
@@ -248,6 +354,17 @@ export function boardActions(
       },
     ];
   }
+  if (type === 'COLOSTRUM_FEED') {
+    return [
+      {
+        key: 'RECORD_COLOSTRUM',
+        labelEn: 'Record colostrum',
+        labelNp: 'पहिलो दूध लेख्नुहोस्',
+        primary: true,
+        to: cycle('colostrum'),
+      },
+    ];
+  }
   return [];
 }
 
@@ -292,7 +409,10 @@ export function compareWalkOrder(a: BoardItemDto, b: BoardItemDto): number {
   return a.shortNo.localeCompare(b.shortNo);
 }
 
-/** One animal per group — extra calving/heat watches collapse to the closest due. */
+/**
+ * One animal per group. Prefer today's heat watch over quiet/anestrus spam;
+ * quiet details stay on Watch. Sync AI beats a plain service window.
+ */
 export function collapseByAnimal(
   items: BoardItemDto[],
   tasks: BoardTaskRow[],
@@ -306,8 +426,12 @@ export function collapseByAnimal(
       best.set(item.animalId, item);
       continue;
     }
-    if (item.taskType === 'SILENT_HEAT_CHECK' && current.taskType === 'HEAT_WATCH') {
+    // Walk keeps one quiet/heat row — prefer HEAT_WATCH (today's work).
+    if (item.taskType === 'HEAT_WATCH' && current.taskType === 'SILENT_HEAT_CHECK') {
       best.set(item.animalId, item);
+      continue;
+    }
+    if (item.taskType === 'SILENT_HEAT_CHECK' && current.taskType === 'HEAT_WATCH') {
       continue;
     }
     if (item.taskType === 'SYNC_AI' && current.taskType === 'SERVICE_WINDOW') {
@@ -340,7 +464,8 @@ export function buildBreedingBoard(input: {
     if (!task.animalId) continue;
     const animal = byId.get(task.animalId);
     if (!animal) continue;
-    if (task.dueAt.getTime() < start.getTime()) overdue += 1;
+    const late = task.dueAt.getTime() < start.getTime();
+    if (late) overdue += 1;
     if (DECISION_TASK_TYPES.includes(task.type)) {
       decisions.push({
         taskId: task.id,
@@ -357,7 +482,7 @@ export function buildBreedingBoard(input: {
     const group = BOARD_TASK_GROUP[task.type];
     if (!group) continue;
     const shortNo = animal.herdNumber ?? animal.tag;
-    const ctx = boardContext(task.type, task.metadata);
+    const timing = boardTiming(task.type, task.metadata, late);
     const item: BoardItemDto = {
       taskId: task.id,
       taskType: task.type,
@@ -369,14 +494,23 @@ export function buildBreedingBoard(input: {
       penSortOrder: animal.penSortOrder ?? 999,
       seqNo: animal.seqNo ?? seqFromHerd(animal.herdNumber),
       photoUrl: animal.photoUrl,
-      contextEn: ctx.contextEn,
-      contextNp: ctx.contextNp,
+      contextEn: timing.contextEn,
+      contextNp: timing.contextNp,
+      doByEn: timing.doByEn,
+      doByNp: timing.doByNp,
+      whyEn: timing.whyEn,
+      whyNp: timing.whyNp,
+      lateEn: timing.lateEn,
+      lateNp: timing.lateNp,
+      urgency: timing.urgency,
       deadline:
         task.type === 'SERVICE_WINDOW' || task.type === 'SYNC_AI'
           ? task.metadata?.deadlineIso
             ? String(task.metadata.deadlineIso)
             : task.dueAt.toISOString()
-          : null,
+          : task.type === 'COLOSTRUM_FEED'
+            ? task.dueAt.toISOString()
+            : null,
       actions: boardActions(task.type, animal, { animalId: animal.id, taskId: task.id }),
     };
     const list = buckets.get(group) ?? [];
@@ -391,6 +525,7 @@ export function buildBreedingBoard(input: {
     const meta = GROUP_META[key]!;
     let subEn = meta.subEn;
     let subNp = meta.subNp;
+    let colour = meta.colour;
     if (key === 'BREED_TODAY') {
       const latest = items
         .map((row) => row.deadline)
@@ -403,11 +538,39 @@ export function buildBreedingBoard(input: {
       subEn = `window closes ${time}`;
       subNp = `झ्याल ${time} मा बन्द`;
     }
+    if (key === 'CALVING_WATCH') {
+      const soonest = Math.min(
+        ...items.map((row) => {
+          const match = row.whyEn.match(/calving window/) ? row.doByEn.match(/(\d+) days/) : null;
+          if (row.doByEn.includes('today')) return 0;
+          return match ? Number(match[1]) : 999;
+        }),
+      );
+      const label = soonest <= 0 ? 'today' : `in ${soonest} days`;
+      const labelNp = soonest <= 0 ? 'आज' : `${soonest} दिनमा`;
+      subEn = `due ${label}`;
+      subNp = `${labelNp} ब्याउने`;
+    }
+    if (key === 'COLOSTRUM') {
+      if (items.some((row) => row.urgency === 'RED')) {
+        colour = 'RED';
+        subEn = 'over 6 hours — FPT risk';
+        subNp = '६ घण्टा नाघ्यो — FPT जोखिम';
+      } else if (items.some((row) => row.urgency === 'AMBER')) {
+        colour = 'AMBER';
+        subEn = '2–6 hours — antibodies falling';
+        subNp = '२–६ घण्टा — अन्टिबडी झर्दै';
+      } else {
+        colour = 'GREEN';
+        subEn = 'within 2 hours — still on time';
+        subNp = '२ घण्टाभित्र — अझै समय छ';
+      }
+    }
     groups.push({
       key,
       labelEn: meta.labelEn,
       labelNp: meta.labelNp,
-      colour: meta.colour,
+      colour,
       subLabelEn: subEn,
       subLabelNp: subNp,
       items,
