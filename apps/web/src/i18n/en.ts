@@ -640,6 +640,8 @@ export const en = {
       calvingHelp: 'Saving registers each live calf, moves the dam to lactating, and creates colostrum reminders at +2, +8 and +16 hours.',
       noService: 'No service on file — a bull ran with the herd',
       noPendingCalving: 'No pending pregnancy to calve.',
+      calvingWithoutRecord:
+        'No breeding record on file for this animal — saving calving directly (Walk calving watch).',
       calvingAt: 'Calved at',
       complications: 'Complications',
       placenta12h: 'Placenta expelled within 12 hours',

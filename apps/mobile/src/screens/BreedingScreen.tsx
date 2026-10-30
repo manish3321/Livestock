@@ -345,17 +345,24 @@ export function BreedingScreen() {
   };
 
   const submitCalving = async () => {
-    if (!calvingId.trim()) {
+    const damId = motherId.trim() || heatAnimalId.trim();
+    if (!calvingId.trim() && !damId) {
       setError(t('breeding.noPendingCalving'));
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      await api.post(`/v1/breeding/${calvingId.trim()}/calving`, {
+      const body = {
         birthDate: new Date(),
         calves: [{ sex: calfSex }],
-      });
+      };
+      if (calvingId.trim()) {
+        await api.post(`/v1/breeding/${calvingId.trim()}/calving`, body);
+      } else {
+        // Walk CALVING_WATCH often has no breeding row — farm calving by dam.
+        await api.post('/v1/breeding/calving', { ...body, damId });
+      }
       closeForm();
       await load();
     } catch (err) {
@@ -1053,7 +1060,13 @@ export function BreedingScreen() {
 
             {form === 'calving' ? (
               <>
-                {calvingId ? <Muted>{calvingId.slice(0, 8)}…</Muted> : <Muted>{t('breeding.noPendingCalving')}</Muted>}
+                {calvingId ? (
+                  <Muted>{calvingId.slice(0, 8)}…</Muted>
+                ) : motherId || heatAnimalId ? (
+                  <Muted>{t('breeding.calvingWithoutRecord')}</Muted>
+                ) : (
+                  <Muted>{t('breeding.noPendingCalving')}</Muted>
+                )}
                 <ChipSelect
                   label={t('animals.gender')}
                   options={['FEMALE', 'MALE']}
@@ -1064,7 +1077,7 @@ export function BreedingScreen() {
                 {canWrite ? (
                   <PrimaryButton
                     label={t('breeding.saveCalving')}
-                    disabled={busy || !calvingId}
+                    disabled={busy || (!calvingId && !motherId && !heatAnimalId)}
                     onPress={() => void submitCalving()}
                   />
                 ) : null}

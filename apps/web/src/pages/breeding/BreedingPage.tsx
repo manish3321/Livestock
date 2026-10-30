@@ -1060,10 +1060,13 @@ function CalvingForm({
   onSaved: (breedingId?: string, opts?: { aborted?: boolean }) => void;
 }) {
   const { t } = useTranslation();
-  const scoped = animalId ? records.filter((r) => r.motherId === animalId) : records;
-  const pending = scoped.filter((r) => r.pregnancyStatus !== 'DELIVERED' && r.pregnancyStatus !== 'FAILED');
+  const pending = useMemo(() => {
+    const scoped = animalId ? records.filter((r) => r.motherId === animalId) : records;
+    return scoped.filter((r) => r.pregnancyStatus !== 'DELIVERED' && r.pregnancyStatus !== 'FAILED');
+  }, [records, animalId]);
   const [id, setId] = useState(breedingId || pending.find((r) => r.motherId === animalId)?.id || pending[0]?.id || '');
-  const [noService, setNoService] = useState(false);
+  // Walk opens calving with animalId only — many dams have CALVING_WATCH but no open breeding row.
+  const [noService, setNoService] = useState(() => pending.length === 0);
   const [motherId, setMotherId] = useState(animalId);
   const [birthDate, setBirthDate] = useState(toDateTimeLocal(new Date()));
   const [difficulty, setDifficulty] = useState<(typeof DIFFICULTY)[number]>('EASY');
@@ -1076,6 +1079,24 @@ function CalvingForm({
   ]);
   const [more, setMore] = useState(false);
   const { errors, validate, clearField, fieldProps } = useFieldErrors('calve');
+
+  useEffect(() => {
+    if (animalId) setMotherId(animalId);
+  }, [animalId]);
+
+  useEffect(() => {
+    if (pending.length === 0) {
+      setNoService(true);
+      return;
+    }
+    if (breedingId) setId(breedingId);
+    else if (!id && pending[0]?.id) setId(pending[0].id);
+    // pending is memoized; id intentional — only seed empty selection
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [animalId, breedingId, pending]);
+
+  /** Farm calving when no linked pregnancy row (or abort / explicit “no service”). */
+  const useFarmPath = noService || outcome === 'ABORTED' || pending.length === 0;
 
   const save = useMutation({
     meta: { successKey: 'breeding.toast.calvingSaved' },
@@ -1099,11 +1120,12 @@ function CalvingForm({
                 name: c.name || undefined,
               })),
       };
-      if (noService || outcome === 'ABORTED') {
-        if (!motherId && !id) throw new Error(t('breeding.requiredFields'));
+      if (useFarmPath) {
+        const damId = motherId || records.find((r) => r.id === id)?.motherId || animalId;
+        if (!damId) throw new Error(t('breeding.requiredFields'));
         return recordFarmCalving({
           ...body,
-          damId: motherId || records.find((r) => r.id === id)?.motherId,
+          damId,
         });
       }
       return recordCalving(id, body);
@@ -1119,11 +1141,11 @@ function CalvingForm({
       className="sheet-form"
       onSubmit={(e) => {
         e.preventDefault();
-        const needsRecord = !noService && outcome !== 'ABORTED';
+        const needsRecord = !useFarmPath;
         const badWeight = calves.some((c) => c.weightKg !== '' && Number(c.weightKg) < 0);
         const rules = {
           record: needsRecord ? required(id, t('common.requiredField')) : '',
-          animalId: needsRecord ? '' : required(motherId || id, t('errors.damRequired')),
+          animalId: needsRecord ? '' : required(motherId || animalId || id, t('errors.damRequired')),
           birthDate:
             required(birthDate, t('common.requiredField')) ||
             notFuture(fromDateTimeLocal(birthDate), t('common.futureDate')),
@@ -1133,7 +1155,12 @@ function CalvingForm({
         if (validate(rules)) save.mutate();
       }}
     >
-      {pending.length !== 1 && !noService && (
+      {pending.length === 0 && (
+        <p className="empty-note" role="status">
+          {t('breeding.calvingWithoutRecord')}
+        </p>
+      )}
+      {pending.length > 1 && !useFarmPath && (
         <RecordField
           records={pending}
           value={id}
@@ -1146,7 +1173,7 @@ function CalvingForm({
           fieldProps={fieldProps('record')}
         />
       )}
-      {!animalId && noService && (
+      {!animalId && useFarmPath && (
         <AnimalField
           females={females}
           value={motherId}
@@ -1841,8 +1868,15 @@ function RecordField({
   fieldProps?: FieldA11yProps;
 }) {
   const { t } = useTranslation();
-  if (records.length === 0) return <p className="empty-note">{empty}</p>;
   const props = fieldProps ?? { id: 'breeding-record' };
+  if (records.length === 0) {
+    return (
+      <div className="field" data-invalid={error ? 'true' : undefined}>
+        <p className="empty-note">{empty}</p>
+        <FieldError id={`${props.id}-error`} message={error} />
+      </div>
+    );
+  }
   return (
     <div className="field">
       <label htmlFor={props.id}>{t('breeding.record')}</label>
