@@ -318,15 +318,30 @@ const WALK_ORDER: WalkKind[] = [
   'postCalving',
 ];
 
-/** Walk board — today only (local calendar day) + overdue, matching web Nepal-day rule. */
+/** Nepal calendar date YYYY-MM-DD (Asia/Kathmandu), same as API board day. */
+function nepalCalendarDate(now: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kathmandu',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+}
+
+/** Exclusive end of Nepal day (next Nepal midnight). Machine TZ must not affect Walk. */
+function nepalDayEndExclusive(now: Date): Date {
+  const start = new Date(`${nepalCalendarDate(now)}T00:00:00+05:45`);
+  return new Date(start.getTime() + DAY_MS);
+}
+
+/** Walk board — today only (Nepal calendar day) + overdue, matching web/API. */
 export function buildWalkRows(tasks: TaskDto[], now = new Date()): WalkRow[] {
-  const endOfToday = new Date(now);
-  endOfToday.setHours(23, 59, 59, 999);
+  const endExclusive = nepalDayEndExclusive(now);
 
   const open = tasks.filter(
     (t) =>
       (t.status === 'PENDING' || t.status === 'SNOOZED') &&
-      new Date(t.dueAt).getTime() <= endOfToday.getTime(),
+      new Date(t.dueAt).getTime() < endExclusive.getTime(),
   );
 
   const rows: WalkRow[] = [];
