@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Linking,
   Modal,
@@ -36,7 +36,6 @@ import {
   PrimaryButton,
   SecondaryButton,
   SectionTitle,
-  Stat,
   Txt,
 } from '../components/ui';
 import { useLocale } from '../locale/LocaleProvider';
@@ -67,12 +66,88 @@ const GROUP_COLOUR: Record<string, string> = {
   GREEN: '#2A6A4A',
 };
 
+const WATCH_GROUP_COLOUR: Record<string, string> = {
+  calvingSoon: '#C62828',
+  fresh: '#2A6A4A',
+  watchingHeat: '#E65100',
+  pdWait: '#2A6A4A',
+  tooSoon: '#6B6F68',
+  carrying: '#1F4D38',
+  heifers: '#6B6F68',
+};
+
 const URGENCY: Record<string, { fg: string; bg: string }> = {
   GREEN: { fg: '#2A6A4A', bg: 'rgba(42, 106, 74, 0.08)' },
   AMBER: { fg: '#E65100', bg: 'rgba(230, 81, 0, 0.1)' },
   RED: { fg: '#C62828', bg: 'rgba(198, 40, 40, 0.1)' },
   NORMAL: { fg: '#6B6F68', bg: color.surface },
 };
+
+const CALVING_DIFFICULTY = ['EASY', 'ASSISTED', 'EMERGENCY', 'STILLBIRTH'] as const;
+
+function splitAnimalLabel(label: string): { shortNo: string; name: string } {
+  const parts = label.split(' · ');
+  if (parts.length >= 2) return { shortNo: parts[0]!, name: parts.slice(1).join(' · ') };
+  return { shortNo: label, name: '' };
+}
+
+function SheetStep({
+  n,
+  title,
+  children,
+}: {
+  n: number | string;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <View style={styles.sheetStep}>
+      <View style={styles.sheetStepTitleRow}>
+        <View style={styles.sheetStepNum}>
+          <Txt weight="bold" style={styles.sheetStepNumText}>
+            {String(n)}
+          </Txt>
+        </View>
+        <Txt weight="semibold" style={styles.sheetStepTitle}>
+          {title}
+        </Txt>
+      </View>
+      {children}
+    </View>
+  );
+}
+
+function DamHero({ shortNo, name }: { shortNo: string; name?: string | null }) {
+  return (
+    <View style={styles.damHero}>
+      <Txt weight="bold" style={styles.damHeroTag}>
+        {shortNo || '—'}
+      </Txt>
+      {name ? <Muted>{name}</Muted> : null}
+    </View>
+  );
+}
+
+function KpiTile({
+  label,
+  value,
+  miss,
+}: {
+  label: string;
+  value: string;
+  miss?: boolean;
+}) {
+  return (
+    <View style={[styles.kpiTile, miss && styles.kpiTileMiss]}>
+      <Txt muted style={styles.kpiLabel}>
+        {label}
+      </Txt>
+      <Txt weight="bold" style={[styles.kpiValue, miss && styles.kpiValueMiss]}>
+        {value}
+      </Txt>
+    </View>
+  );
+}
 
 type Heat = {
   id: string;
@@ -171,6 +246,9 @@ export function BreedingScreen() {
   const [pdResult, setPdResult] = useState<'CONFIRMED' | 'OPEN' | 'INCONCLUSIVE'>('CONFIRMED');
   const [calvingId, setCalvingId] = useState(route.params?.breedingId ?? '');
   const [calfSex, setCalfSex] = useState<'FEMALE' | 'MALE'>('FEMALE');
+  const [calvingOutcome, setCalvingOutcome] = useState<'LIVE' | 'ABORTED'>('LIVE');
+  const [calvingDifficulty, setCalvingDifficulty] =
+    useState<(typeof CALVING_DIFFICULTY)[number]>('EASY');
   const [coloId, setColoId] = useState(route.params?.breedingId ?? '');
   const [coloLiters, setColoLiters] = useState('2');
 
@@ -370,7 +448,9 @@ export function BreedingScreen() {
     try {
       const body = {
         birthDate: new Date(),
-        calves: [{ sex: calfSex }],
+        difficulty: calvingDifficulty,
+        outcome: calvingOutcome === 'ABORTED' ? ('ABORTED' as const) : undefined,
+        calves: calvingOutcome === 'ABORTED' ? [] : [{ sex: calfSex }],
       };
       if (calvingId.trim()) {
         await api.post(`/v1/breeding/${calvingId.trim()}/calving`, body);
@@ -482,46 +562,92 @@ export function BreedingScreen() {
           {mainTab === 'watch' ? (
             <View>
               {watchGroups.length === 0 && !loading ? <EmptyState /> : null}
-              {watchGroups.map((group) => (
-                <View key={group.kind} style={styles.section}>
-                  <SectionTitle>
-                    {watchTitle(group.kind)} ({group.items.length})
-                  </SectionTitle>
-                  {group.items.map((row) => (
-                    <Card key={row.key} style={styles.rowCard}>
-                      <Pressable onPress={() => openAnimal(row.animalId)}>
-                        <Txt weight="semibold" style={styles.rowTitle}>
-                          {row.label}
-                        </Txt>
-                        <Muted>{row.subtitle}</Muted>
-                      </Pressable>
-                      {row.progress != null ? (
-                        <View style={styles.progressWrap}>
-                          <View style={styles.progressTrack}>
-                            <View
-                              style={[
-                                styles.progressFill,
-                                { width: `${Math.round(row.progress * 100)}%` },
-                              ]}
-                            />
+              {watchGroups.map((group) => {
+                const tint = WATCH_GROUP_COLOUR[group.kind] ?? color.brandStrong;
+                return (
+                  <View
+                    key={group.kind}
+                    style={[
+                      styles.walkGroup,
+                      { borderColor: `${tint}44`, backgroundColor: `${tint}12` },
+                    ]}
+                  >
+                    <Txt weight="semibold" style={[styles.walkGroupTitle, { color: tint }]}>
+                      {watchTitle(group.kind)}
+                    </Txt>
+                    <Muted>{group.items.length}</Muted>
+                    {group.items.map((row) => {
+                      const { shortNo, name } = splitAnimalLabel(row.label);
+                      const hot =
+                        row.kind === 'calvingSoon' ||
+                        (row.progress != null && row.progress >= 0.85);
+                      const urg = hot ? URGENCY.RED! : URGENCY.NORMAL!;
+                      return (
+                        <View
+                          key={row.key}
+                          style={[
+                            styles.walkRowCard,
+                            {
+                              borderColor: `${urg.fg}33`,
+                              backgroundColor: urg.bg,
+                              borderWidth: 1,
+                              borderRadius: 14,
+                              marginBottom: 8,
+                              overflow: 'hidden',
+                            },
+                          ]}
+                        >
+                          <View style={styles.walkRowInner}>
+                            <View style={[styles.urgencyRail, { backgroundColor: urg.fg }]} />
+                            <Pressable
+                              style={styles.walkRowBody}
+                              onPress={() => openAnimal(row.animalId)}
+                            >
+                              <Txt weight="bold" style={styles.walkShortNo}>
+                                {shortNo}
+                              </Txt>
+                              {name ? (
+                                <Txt weight="semibold" style={styles.walkName}>
+                                  {name}
+                                </Txt>
+                              ) : null}
+                              <Muted>{row.subtitle}</Muted>
+                              {row.progressLabel ? (
+                                <Txt weight="semibold" style={{ color: urg.fg, marginTop: 4 }}>
+                                  {row.progressLabel}
+                                </Txt>
+                              ) : null}
+                            </Pressable>
                           </View>
-                          {row.progressLabel ? <Muted>{row.progressLabel}</Muted> : null}
+                          {row.progress != null ? (
+                            <View style={[styles.progressWrap, { paddingHorizontal: 12 }]}>
+                              <View style={styles.progressTrack}>
+                                <View
+                                  style={[
+                                    styles.progressFill,
+                                    {
+                                      width: `${Math.round(row.progress * 100)}%`,
+                                      backgroundColor: urg.fg,
+                                    },
+                                  ]}
+                                />
+                              </View>
+                            </View>
+                          ) : null}
+                          {canWrite ? (
+                            <View style={styles.rowActions}>
+                              <PrimaryButton
+                                label={t('breeding.recordAction')}
+                                onPress={() => onWatchRecord(row)}
+                              />
+                            </View>
+                          ) : null}
                         </View>
-                      ) : row.progressLabel ? (
-                        <Muted>{row.progressLabel}</Muted>
-                      ) : null}
-                      {canWrite ? (
-                        <View style={styles.rowActions}>
-                          <PrimaryButton
-                            label={t('breeding.recordAction')}
-                            onPress={() => onWatchRecord(row)}
-                          />
-                        </View>
-                      ) : null}
-                    </Card>
-                  ))}
-                </View>
-              ))}
+                      );
+                    })}
+                  </View>
+                );
+              })}
             </View>
           ) : null}
 
@@ -757,14 +883,38 @@ export function BreedingScreen() {
             <View>
               {metrics ? (
                 <View style={styles.metrics}>
-                  <Stat label={t('breeding.kpi.conception')} value={fmtPct(metrics.conceptionRatePct)} />
-                  <Stat
+                  <KpiTile
+                    label={t('breeding.kpi.conception')}
+                    value={fmtPct(metrics.conceptionRatePct)}
+                    miss={
+                      metrics.conceptionRatePct != null &&
+                      metrics.targets.conceptionRateMinPct != null &&
+                      metrics.conceptionRatePct < metrics.targets.conceptionRateMinPct
+                    }
+                  />
+                  <KpiTile
                     label={t('breeding.kpi.firstService')}
                     value={fmtPct(metrics.firstServiceRatePct)}
                   />
-                  <Stat label={t('breeding.kpi.daysOpen')} value={fmtNum(metrics.daysOpen)} />
-                  <Stat label={t('breeding.kpi.interval')} value={fmtNum(metrics.calvingIntervalDays)} />
-                  <Stat
+                  <KpiTile
+                    label={t('breeding.kpi.daysOpen')}
+                    value={fmtNum(metrics.daysOpen)}
+                    miss={
+                      metrics.daysOpen != null &&
+                      metrics.targets.daysOpenMax != null &&
+                      metrics.daysOpen > metrics.targets.daysOpenMax
+                    }
+                  />
+                  <KpiTile
+                    label={t('breeding.kpi.interval')}
+                    value={fmtNum(metrics.calvingIntervalDays)}
+                    miss={
+                      metrics.calvingIntervalDays != null &&
+                      metrics.targets.calvingIntervalMaxDays != null &&
+                      metrics.calvingIntervalDays > metrics.targets.calvingIntervalMaxDays
+                    }
+                  />
+                  <KpiTile
                     label={t('breeding.kpi.services')}
                     value={
                       metrics.servicesPerConception == null
@@ -772,11 +922,11 @@ export function BreedingScreen() {
                         : metrics.servicesPerConception.toFixed(1)
                     }
                   />
-                  <Stat
+                  <KpiTile
                     label={t('breeding.kpi.heatDetection')}
                     value={fmtPct(metrics.heatDetectionRatePct)}
                   />
-                  <Stat
+                  <KpiTile
                     label={t('breeding.kpi.firstCalving')}
                     value={
                       metrics.ageAtFirstCalvingMonths == null
@@ -784,7 +934,7 @@ export function BreedingScreen() {
                         : t('breeding.kpi.months', { n: metrics.ageAtFirstCalvingMonths })
                     }
                   />
-                  <Stat
+                  <KpiTile
                     label={t('breeding.kpi.openCost')}
                     value={
                       metrics.costOfOpenDaysNpr == null
@@ -937,62 +1087,76 @@ export function BreedingScreen() {
           <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
             {form === 'heat' ? (
               <>
-                <MotherPicker
-                  label={t('breeding.mother')}
-                  females={females}
-                  value={heatAnimalId}
-                  onChange={setHeatAnimalId}
-                  placeholder={t('breeding.selectMother')}
-                />
-                <Field
-                  label={t('breeding.observedAt')}
-                  value={observedAt}
-                  onChangeText={setObservedAt}
-                  placeholder="YYYY-MM-DDTHH:mm"
-                  autoCapitalize="none"
-                />
-                <ChipSelect
-                  label={t('breeding.intensity')}
-                  options={[...INTENSITIES]}
-                  value={heatIntensity}
-                  onChange={setHeatIntensity}
-                  labels={{
-                    STRONG: t('enum.heatIntensity.STRONG'),
-                    MEDIUM: t('enum.heatIntensity.MEDIUM'),
-                    WEAK: t('enum.heatIntensity.WEAK'),
-                  }}
-                />
-                <Txt weight="medium" style={styles.signsLabel}>
-                  {t('breeding.signs')}
-                </Txt>
-                <View style={styles.signWrap}>
-                  <Pressable
-                    onPress={() => setSilent((v) => !v)}
-                    style={[styles.signChip, silent && styles.signChipOn]}
-                  >
-                    <Txt weight="semibold" style={silent ? styles.signTextOn : styles.signText}>
-                      {t('breeding.silentSuspected')}
-                    </Txt>
-                  </Pressable>
-                  {HEAT_SIGNS.map((sign) => {
-                    const on = signs.includes(sign);
-                    return (
-                      <Pressable
-                        key={sign}
-                        onPress={() =>
-                          setSigns((cur) =>
-                            cur.includes(sign) ? cur.filter((s) => s !== sign) : [...cur, sign],
-                          )
-                        }
-                        style={[styles.signChip, on && styles.signChipOn]}
-                      >
-                        <Txt weight="semibold" style={on ? styles.signTextOn : styles.signText}>
-                          {t(`enum.heatSign.${sign}`)}
-                        </Txt>
-                      </Pressable>
-                    );
-                  })}
-                </View>
+                {heatAnimalId ? (
+                  <DamHero
+                    shortNo={
+                      females.find((a) => a.id === heatAnimalId)?.herdNumber ??
+                      females.find((a) => a.id === heatAnimalId)?.tag ??
+                      '—'
+                    }
+                    name={females.find((a) => a.id === heatAnimalId)?.name}
+                  />
+                ) : (
+                  <MotherPicker
+                    label={t('breeding.mother')}
+                    females={females}
+                    value={heatAnimalId}
+                    onChange={setHeatAnimalId}
+                    placeholder={t('breeding.selectMother')}
+                  />
+                )}
+                <SheetStep n={1} title={t('breeding.observedAt')}>
+                  <Field
+                    label={t('breeding.observedAt')}
+                    value={observedAt}
+                    onChangeText={setObservedAt}
+                    placeholder="YYYY-MM-DDTHH:mm"
+                    autoCapitalize="none"
+                  />
+                </SheetStep>
+                <SheetStep n={2} title={t('breeding.intensity')}>
+                  <ChipSelect
+                    label={t('breeding.intensity')}
+                    options={[...INTENSITIES]}
+                    value={heatIntensity}
+                    onChange={setHeatIntensity}
+                    labels={{
+                      STRONG: t('enum.heatIntensity.STRONG'),
+                      MEDIUM: t('enum.heatIntensity.MEDIUM'),
+                      WEAK: t('enum.heatIntensity.WEAK'),
+                    }}
+                  />
+                </SheetStep>
+                <SheetStep n={3} title={t('breeding.signs')}>
+                  <View style={styles.signWrap}>
+                    <Pressable
+                      onPress={() => setSilent((v) => !v)}
+                      style={[styles.signChip, silent && styles.signChipOn]}
+                    >
+                      <Txt weight="semibold" style={silent ? styles.signTextOn : styles.signText}>
+                        {t('breeding.silentSuspected')}
+                      </Txt>
+                    </Pressable>
+                    {HEAT_SIGNS.map((sign) => {
+                      const on = signs.includes(sign);
+                      return (
+                        <Pressable
+                          key={sign}
+                          onPress={() =>
+                            setSigns((cur) =>
+                              cur.includes(sign) ? cur.filter((s) => s !== sign) : [...cur, sign],
+                            )
+                          }
+                          style={[styles.signChip, on && styles.signChipOn]}
+                        >
+                          <Txt weight="semibold" style={on ? styles.signTextOn : styles.signText}>
+                            {t(`enum.heatSign.${sign}`)}
+                          </Txt>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </SheetStep>
                 {canWrite ? (
                   <FormActions>
                     <PrimaryButton
@@ -1007,59 +1171,73 @@ export function BreedingScreen() {
 
             {form === 'service' ? (
               <>
-                <MotherPicker
-                  label={t('breeding.mother')}
-                  females={females}
-                  value={motherId}
-                  onChange={setMotherId}
-                  placeholder={t('breeding.selectMother')}
-                />
-                <ChipSelect
-                  label={t('breeding.matingType')}
-                  options={['AI', 'NATURAL']}
-                  value={matingType}
-                  onChange={setMatingType}
-                  labels={{ AI: t('breeding.ai'), NATURAL: t('breeding.natural') }}
-                />
-                <Field
-                  label={matingType === 'AI' ? t('breeding.straw') : t('breeding.bull')}
-                  value={fatherTagOrAi}
-                  onChangeText={setFatherTagOrAi}
-                />
-                <Txt weight="medium" style={styles.signsLabel}>
-                  {t('breeding.sire')}
-                </Txt>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sireRow}>
-                  <Pressable
-                    onPress={() => setSireId('')}
-                    style={[styles.signChip, !sireId && styles.signChipOn]}
-                  >
-                    <Txt weight="semibold" style={!sireId ? styles.signTextOn : styles.signText}>
-                      {t('breeding.noSire')}
-                    </Txt>
-                  </Pressable>
-                  {males.map((m) => {
-                    const on = sireId === m.id;
-                    return (
-                      <Pressable
-                        key={m.id}
-                        onPress={() => setSireId(m.id)}
-                        style={[styles.signChip, on && styles.signChipOn]}
-                      >
-                        <Txt weight="semibold" style={on ? styles.signTextOn : styles.signText}>
-                          {animalPickLabel(m)}
-                        </Txt>
-                      </Pressable>
-                    );
-                  })}
-                </ScrollView>
-                <Field
-                  label={t('breeding.matingDate')}
-                  value={matingDate}
-                  onChangeText={setMatingDate}
-                  placeholder="YYYY-MM-DD"
-                  autoCapitalize="none"
-                />
+                {motherId ? (
+                  <DamHero
+                    shortNo={
+                      females.find((a) => a.id === motherId)?.herdNumber ??
+                      females.find((a) => a.id === motherId)?.tag ??
+                      '—'
+                    }
+                    name={females.find((a) => a.id === motherId)?.name}
+                  />
+                ) : (
+                  <MotherPicker
+                    label={t('breeding.mother')}
+                    females={females}
+                    value={motherId}
+                    onChange={setMotherId}
+                    placeholder={t('breeding.selectMother')}
+                  />
+                )}
+                <SheetStep n={1} title={t('breeding.ai')}>
+                  <ChipSelect
+                    label={t('breeding.matingType')}
+                    options={['AI', 'NATURAL']}
+                    value={matingType}
+                    onChange={setMatingType}
+                    labels={{ AI: t('breeding.ai'), NATURAL: t('breeding.natural') }}
+                  />
+                </SheetStep>
+                <SheetStep n={2} title={matingType === 'AI' ? t('breeding.straw') : t('breeding.bull')}>
+                  <Field
+                    label={matingType === 'AI' ? t('breeding.straw') : t('breeding.bull')}
+                    value={fatherTagOrAi}
+                    onChangeText={setFatherTagOrAi}
+                  />
+                </SheetStep>
+                <SheetStep n={3} title={t('breeding.sire')}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sireRow}>
+                    <Pressable
+                      onPress={() => setSireId('')}
+                      style={[styles.signChip, !sireId && styles.signChipOn]}
+                    >
+                      <Txt weight="semibold" style={!sireId ? styles.signTextOn : styles.signText}>
+                        {t('breeding.noSire')}
+                      </Txt>
+                    </Pressable>
+                    {males.map((m) => {
+                      const on = sireId === m.id;
+                      return (
+                        <Pressable
+                          key={m.id}
+                          onPress={() => setSireId(m.id)}
+                          style={[styles.signChip, on && styles.signChipOn]}
+                        >
+                          <Txt weight="semibold" style={on ? styles.signTextOn : styles.signText}>
+                            {animalPickLabel(m)}
+                          </Txt>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                  <Field
+                    label={t('breeding.matingDate')}
+                    value={matingDate}
+                    onChangeText={setMatingDate}
+                    placeholder="YYYY-MM-DD"
+                    autoCapitalize="none"
+                  />
+                </SheetStep>
                 {canWrite ? (
                   <FormActions>
                     <PrimaryButton
@@ -1074,49 +1252,72 @@ export function BreedingScreen() {
 
             {form === 'pd' ? (
               <>
-                <Txt weight="medium" style={styles.signsLabel}>
-                  {t('breeding.record')}
-                </Txt>
-                <MotherPicker
-                  label={t('breeding.mother')}
-                  females={females}
-                  value={motherId}
-                  onChange={(id) => {
-                    setMotherId(id);
-                    const rec = records.find(
-                      (r) =>
-                        r.motherId === id &&
-                        r.pregnancyStatus !== 'DELIVERED' &&
-                        r.pregnancyStatus !== 'FAILED',
-                    );
-                    if (rec) setPdId(rec.id);
-                  }}
-                  placeholder={t('breeding.selectMother')}
-                />
-                {pdId ? <Muted>{pdId.slice(0, 8)}…</Muted> : <Muted>{t('breeding.noOpenServices')}</Muted>}
-                <ChipSelect
-                  label={t('breeding.pdResult')}
-                  options={['CONFIRMED', 'OPEN', 'INCONCLUSIVE']}
-                  value={pdResult}
-                  onChange={setPdResult}
-                  labels={{
-                    CONFIRMED: t('breeding.pdConfirmed'),
-                    OPEN: t('breeding.pdOpen'),
-                    INCONCLUSIVE: t('breeding.pdInconclusive'),
-                  }}
-                />
-                {canWrite ? (
-                  <PrimaryButton
-                    label={t('breeding.savePd')}
-                    disabled={busy || !pdId}
-                    onPress={() => void submitPd()}
+                {motherId ? (
+                  <DamHero
+                    shortNo={
+                      females.find((a) => a.id === motherId)?.herdNumber ??
+                      females.find((a) => a.id === motherId)?.tag ??
+                      records.find((r) => r.id === pdId)?.motherTag ??
+                      '—'
+                    }
+                    name={females.find((a) => a.id === motherId)?.name}
                   />
+                ) : (
+                  <MotherPicker
+                    label={t('breeding.mother')}
+                    females={females}
+                    value={motherId}
+                    onChange={(id) => {
+                      setMotherId(id);
+                      const rec = records.find(
+                        (r) =>
+                          r.motherId === id &&
+                          r.pregnancyStatus !== 'DELIVERED' &&
+                          r.pregnancyStatus !== 'FAILED',
+                      );
+                      if (rec) setPdId(rec.id);
+                    }}
+                    placeholder={t('breeding.selectMother')}
+                  />
+                )}
+                {pdId ? <Muted>{pdId.slice(0, 8)}…</Muted> : <Muted>{t('breeding.noOpenServices')}</Muted>}
+                <SheetStep n={1} title={t('breeding.pdResult')}>
+                  <ChipSelect
+                    label={t('breeding.pdResult')}
+                    options={['CONFIRMED', 'OPEN', 'INCONCLUSIVE']}
+                    value={pdResult}
+                    onChange={setPdResult}
+                    labels={{
+                      CONFIRMED: t('breeding.pdConfirmed'),
+                      OPEN: t('breeding.pdOpen'),
+                      INCONCLUSIVE: t('breeding.pdInconclusive'),
+                    }}
+                  />
+                </SheetStep>
+                {canWrite ? (
+                  <FormActions>
+                    <PrimaryButton
+                      label={t('breeding.savePd')}
+                      disabled={busy || !pdId}
+                      onPress={() => void submitPd()}
+                    />
+                  </FormActions>
                 ) : null}
               </>
             ) : null}
 
             {form === 'calving' ? (
               <>
+                {(motherId || heatAnimalId) && (
+                  <DamHero
+                    shortNo={
+                      females.find((a) => a.id === (motherId || heatAnimalId))?.herdNumber ??
+                      females.find((a) => a.id === (motherId || heatAnimalId))?.tag ??
+                      '—'
+                    }
+                    name={females.find((a) => a.id === (motherId || heatAnimalId))?.name}
+                  />
+                )}
                 {calvingId ? (
                   <Muted>{calvingId.slice(0, 8)}…</Muted>
                 ) : motherId || heatAnimalId ? (
@@ -1124,38 +1325,74 @@ export function BreedingScreen() {
                 ) : (
                   <Muted>{t('breeding.noPendingCalving')}</Muted>
                 )}
-                <ChipSelect
-                  label={t('animals.gender')}
-                  options={['FEMALE', 'MALE']}
-                  value={calfSex}
-                  onChange={setCalfSex}
-                  labels={{ FEMALE: t('animals.female'), MALE: t('animals.male') }}
-                />
-                {canWrite ? (
-                  <PrimaryButton
-                    label={t('breeding.saveCalving')}
-                    disabled={busy || (!calvingId && !motherId && !heatAnimalId)}
-                    onPress={() => void submitCalving()}
+                <SheetStep n={1} title={t('breeding.outcomeLive')}>
+                  <ChipSelect
+                    label={t('breeding.outcomeLive')}
+                    options={['LIVE', 'ABORTED']}
+                    value={calvingOutcome}
+                    onChange={setCalvingOutcome}
+                    labels={{
+                      LIVE: t('breeding.outcomeLive'),
+                      ABORTED: t('breeding.outcomeAborted'),
+                    }}
                   />
+                </SheetStep>
+                <SheetStep n={2} title={t('breeding.calvingDifficulty')}>
+                  <ChipSelect
+                    label={t('breeding.calvingDifficulty')}
+                    options={[...CALVING_DIFFICULTY]}
+                    value={calvingDifficulty}
+                    onChange={setCalvingDifficulty}
+                    labels={{
+                      EASY: t('enum.calvingDifficulty.EASY'),
+                      ASSISTED: t('enum.calvingDifficulty.ASSISTED'),
+                      EMERGENCY: t('enum.calvingDifficulty.EMERGENCY'),
+                      STILLBIRTH: t('enum.calvingDifficulty.STILLBIRTH'),
+                    }}
+                  />
+                </SheetStep>
+                {calvingOutcome !== 'ABORTED' ? (
+                  <SheetStep n={3} title={t('animals.gender')}>
+                    <ChipSelect
+                      label={t('animals.gender')}
+                      options={['FEMALE', 'MALE']}
+                      value={calfSex}
+                      onChange={setCalfSex}
+                      labels={{ FEMALE: t('animals.female'), MALE: t('animals.male') }}
+                    />
+                  </SheetStep>
+                ) : null}
+                {canWrite ? (
+                  <FormActions>
+                    <PrimaryButton
+                      label={t('breeding.saveCalving')}
+                      disabled={busy || (!calvingId && !motherId && !heatAnimalId)}
+                      onPress={() => void submitCalving()}
+                    />
+                  </FormActions>
                 ) : null}
               </>
             ) : null}
 
             {form === 'colostrum' ? (
               <>
-                {coloId ? <Muted>{coloId.slice(0, 8)}…</Muted> : <Muted>{t('breeding.noRecentCalving')}</Muted>}
-                <Field
-                  label={t('breeding.colostrumLiters')}
-                  value={coloLiters}
-                  onChangeText={setColoLiters}
-                  keyboardType="decimal-pad"
-                />
-                {canWrite ? (
-                  <PrimaryButton
-                    label={t('breeding.saveColostrum')}
-                    disabled={busy || !coloId}
-                    onPress={() => void submitColostrum()}
+                <SheetStep n={1} title={t('breeding.colostrumLiters')}>
+                  {coloId ? <Muted>{coloId.slice(0, 8)}…</Muted> : <Muted>{t('breeding.noRecentCalving')}</Muted>}
+                  <Field
+                    label={t('breeding.colostrumLiters')}
+                    value={coloLiters}
+                    onChangeText={setColoLiters}
+                    keyboardType="decimal-pad"
                   />
+                </SheetStep>
+                {canWrite ? (
+                  <FormActions>
+                    <PrimaryButton
+                      label={t('breeding.saveColostrum')}
+                      disabled={busy || !coloId}
+                      onPress={() => void submitColostrum()}
+                    />
+                  </FormActions>
                 ) : null}
               </>
             ) : null}
@@ -1327,6 +1564,56 @@ const styles = StyleSheet.create({
   walkShortNo: { fontSize: 26, letterSpacing: -0.5, color: color.brandStrong },
   walkName: { fontSize: 16, color: color.textPrimary },
   walkLate: { fontSize: 14, color: '#C62828', marginTop: 2 },
+  damHero: {
+    gap: 2,
+    padding: 12,
+    marginBottom: 8,
+    borderRadius: 14,
+    backgroundColor: 'rgba(31, 77, 56, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(31, 77, 56, 0.14)',
+  },
+  damHeroTag: {
+    fontSize: 26,
+    letterSpacing: -0.5,
+    color: color.brandStrong,
+  },
+  sheetStep: {
+    gap: 10,
+    paddingTop: 12,
+    marginTop: 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: color.border,
+  },
+  sheetStepTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  sheetStepNum: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: color.brandStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetStepNumText: { color: color.surface, fontSize: 13 },
+  sheetStepTitle: { fontSize: 16, color: color.brandStrong, flex: 1 },
+  kpiTile: {
+    width: '46%',
+    minWidth: 140,
+    flexGrow: 1,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: color.border,
+    backgroundColor: color.surface,
+    gap: 4,
+  },
+  kpiTileMiss: {
+    borderColor: 'rgba(198, 40, 40, 0.35)',
+    backgroundColor: '#FFEBEE',
+  },
+  kpiLabel: { fontSize: 12 },
+  kpiValue: { fontSize: 28, letterSpacing: -0.5, color: color.brandStrong },
+  kpiValueMiss: { color: '#C62828' },
   rowCard: { gap: 8, marginBottom: 8 },
   rowTitle: { fontSize: 16 },
   rowActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 12, paddingBottom: 12 },
