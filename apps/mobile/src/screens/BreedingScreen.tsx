@@ -27,10 +27,8 @@ import { AppShell } from '../components/AppShell';
 import { ChipSelect, Field, FormActions } from '../components/forms';
 import {
   Card,
-  ChipRow,
   EmptyState,
   ErrorText,
-  FilterChip,
   ListRow,
   LoadingBlock,
   Muted,
@@ -58,6 +56,23 @@ import {
 } from '../lib/breeding-groups';
 import type { RootStackParamList } from '../navigation/types';
 import { color, radius, tap } from '../theme/tokens';
+
+const GROUP_COLOUR: Record<string, string> = {
+  RED: '#C62828',
+  YELLOW: '#E65100',
+  BLUE: '#2A6A4A',
+  PURPLE: '#1F4D38',
+  AMBER: '#E65100',
+  GREY: '#6B6F68',
+  GREEN: '#2A6A4A',
+};
+
+const URGENCY: Record<string, { fg: string; bg: string }> = {
+  GREEN: { fg: '#2A6A4A', bg: 'rgba(42, 106, 74, 0.08)' },
+  AMBER: { fg: '#E65100', bg: 'rgba(230, 81, 0, 0.1)' },
+  RED: { fg: '#C62828', bg: 'rgba(198, 40, 40, 0.1)' },
+  NORMAL: { fg: '#6B6F68', bg: color.surface },
+};
 
 type Heat = {
   id: string;
@@ -438,16 +453,22 @@ export function BreedingScreen() {
           <PageHeader title={t('nav.breeding')} subtitle={t('breeding.subtitle')} />
           {fromCache ? <Muted>{t('native.cached')}</Muted> : null}
           {error && !form ? <ErrorText message={error} /> : null}
-          <ChipRow>
-            {MAIN_TABS.map((tabKey) => (
-              <FilterChip
-                key={tabKey}
-                label={t(`breeding.mainTab.${tabKey}`)}
-                active={mainTab === tabKey}
-                onPress={() => setMainTab(tabKey)}
-              />
-            ))}
-          </ChipRow>
+          <View style={styles.segmentTrack}>
+            {MAIN_TABS.map((tabKey) => {
+              const active = mainTab === tabKey;
+              return (
+                <Pressable
+                  key={tabKey}
+                  onPress={() => setMainTab(tabKey)}
+                  style={[styles.segmentBtn, active && styles.segmentBtnOn]}
+                >
+                  <Txt weight="semibold" style={[styles.segmentText, active && styles.segmentTextOn]}>
+                    {t(`breeding.mainTab.${tabKey}`)}
+                  </Txt>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
 
         <ScrollView
@@ -514,48 +535,84 @@ export function BreedingScreen() {
                   {board.groups.length === 0 && !loading ? (
                     <EmptyState message={t('breeding.walkEmpty')} />
                   ) : null}
-                  {board.groups.map((group) => (
-                    <View key={group.key} style={styles.section}>
-                      <SectionTitle>
-                        {group.labelEn} ({group.items.length})
-                      </SectionTitle>
-                      <Muted>{group.subLabelEn}</Muted>
-                      {group.items.map((row) => (
-                        <Card key={row.taskId} style={styles.rowCard}>
-                          <Pressable onPress={() => openAnimal(row.animalId)}>
-                            <Txt weight="semibold" style={styles.rowTitle}>
-                              {row.shortNo} · {row.name ?? '—'}
-                            </Txt>
-                            <Muted>{row.penName}</Muted>
-                            <Muted>
-                              Do by: {row.doByEn}
-                            </Muted>
-                            <Muted>Why: {row.whyEn}</Muted>
-                            {row.lateEn ? <Muted>{row.lateEn}</Muted> : null}
-                          </Pressable>
+                  {board.groups.map((group) => {
+                    const groupTint = GROUP_COLOUR[group.colour] ?? color.brandStrong;
+                    return (
+                    <View
+                      key={group.key}
+                      style={[
+                        styles.walkGroup,
+                        { borderColor: `${groupTint}44`, backgroundColor: `${groupTint}12` },
+                      ]}
+                    >
+                      <Txt weight="semibold" style={[styles.walkGroupTitle, { color: groupTint }]}>
+                        {group.labelEn}
+                      </Txt>
+                      {group.subLabelEn ? <Muted>{group.subLabelEn}</Muted> : null}
+                      {group.items.map((row) => {
+                        const urg = URGENCY[row.urgency] ?? URGENCY.NORMAL!;
+                        const primary = row.actions.find((a) => a.primary) ?? row.actions[0];
+                        const secondary = row.actions.filter((a) => a !== primary).slice(0, 1);
+                        return (
+                        <View
+                          key={row.taskId}
+                          style={[
+                            styles.walkRowCard,
+                            {
+                              borderColor: `${urg.fg}33`,
+                              backgroundColor: urg.bg,
+                              borderWidth: 1,
+                              borderRadius: 14,
+                              marginBottom: 8,
+                              overflow: 'hidden',
+                            },
+                          ]}
+                        >
+                          <View style={styles.walkRowInner}>
+                            <View style={[styles.urgencyRail, { backgroundColor: urg.fg }]} />
+                            <Pressable style={styles.walkRowBody} onPress={() => openAnimal(row.animalId)}>
+                              <Txt weight="bold" style={styles.walkShortNo}>
+                                {row.shortNo}
+                              </Txt>
+                              <Txt weight="semibold" style={styles.walkName}>
+                                {row.name ?? '—'}
+                              </Txt>
+                              {row.penName ? <Muted>{row.penName}</Muted> : null}
+                              <Muted>
+                                Do by: {row.doByEn}
+                              </Muted>
+                              {row.whyEn ? <Muted>Why: {row.whyEn}</Muted> : null}
+                              {row.lateEn ? (
+                                <Txt weight="semibold" style={styles.walkLate}>
+                                  {row.lateEn}
+                                </Txt>
+                              ) : null}
+                            </Pressable>
+                          </View>
                           {canWrite ? (
                             <View style={styles.rowActions}>
-                              {row.actions.slice(0, 2).map((action) =>
-                                action.primary ? (
-                                  <PrimaryButton
-                                    key={action.key}
-                                    label={action.labelEn}
-                                    onPress={() => runBoardAction(row, action.key)}
-                                  />
-                                ) : (
-                                  <SecondaryButton
-                                    key={action.key}
-                                    label={action.labelEn}
-                                    onPress={() => runBoardAction(row, action.key)}
-                                  />
-                                ),
-                              )}
+                              {primary ? (
+                                <PrimaryButton
+                                  key={primary.key}
+                                  label={primary.labelEn}
+                                  onPress={() => runBoardAction(row, primary.key)}
+                                />
+                              ) : null}
+                              {secondary.map((action) => (
+                                <SecondaryButton
+                                  key={action.key}
+                                  label={action.labelEn}
+                                  onPress={() => runBoardAction(row, action.key)}
+                                />
+                              ))}
                             </View>
                           ) : null}
-                        </Card>
-                      ))}
+                        </View>
+                        );
+                      })}
                     </View>
-                  ))}
+                    );
+                  })}
                   {board.decisionQueue.count > 0 ? (
                     <View style={styles.section}>
                       <SectionTitle>
@@ -1234,10 +1291,45 @@ const styles = StyleSheet.create({
   fabPressed: { opacity: 0.9, transform: [{ translateY: 1 }] },
   fabPrimaryText: { color: color.surface, fontSize: 14 },
   fabSecondaryText: { color: color.textPrimary, fontSize: 14 },
+  segmentTrack: {
+    flexDirection: 'row',
+    gap: 4,
+    padding: 4,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(31, 77, 56, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(31, 77, 56, 0.12)',
+  },
+  segmentBtn: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  segmentBtnOn: { backgroundColor: color.brandStrong },
+  segmentText: { fontSize: 15, color: color.textSecondary },
+  segmentTextOn: { color: color.surface },
   section: { marginTop: 12, gap: 8 },
+  walkGroup: {
+    marginTop: 12,
+    gap: 8,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  walkGroupTitle: { fontSize: 18, marginBottom: 2 },
+  walkRowCard: { gap: 0 },
+  walkRowInner: { flexDirection: 'row', alignItems: 'stretch' },
+  urgencyRail: { width: 7 },
+  walkRowBody: { flex: 1, padding: 12, gap: 2 },
+  walkShortNo: { fontSize: 26, letterSpacing: -0.5, color: color.brandStrong },
+  walkName: { fontSize: 16, color: color.textPrimary },
+  walkLate: { fontSize: 14, color: '#C62828', marginTop: 2 },
   rowCard: { gap: 8, marginBottom: 8 },
   rowTitle: { fontSize: 16 },
-  rowActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  rowActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 12, paddingBottom: 12 },
   progressWrap: { gap: 4 },
   progressTrack: {
     height: 8,

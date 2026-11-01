@@ -6,20 +6,20 @@ import { breedingWatch } from '../../api/breeding';
 import { readBreedingWatchCache, writeBreedingWatchCache } from '../../lib/breeding-offline';
 
 const URGENCY: Record<CountdownUrgency, string> = {
-  CALM: '#667085',
-  NORMAL: '#175cd3',
-  SOON: '#b54708',
-  IMMINENT: '#b42318',
-  OVERDUE: '#b42318',
+  CALM: '#6B6F68',
+  NORMAL: '#2A6A4A',
+  SOON: '#E65100',
+  IMMINENT: '#C62828',
+  OVERDUE: '#C62828',
 };
 
 const GROUP_COLOUR: Record<WatchGroupDto['colour'], string> = {
-  RED: '#b42318',
-  YELLOW: '#b54708',
-  BLUE: '#175cd3',
-  PURPLE: '#6941c6',
-  AMBER: '#b54708',
-  GREY: '#475467',
+  RED: '#C62828',
+  YELLOW: '#E65100',
+  BLUE: '#2A6A4A',
+  PURPLE: '#1F4D38',
+  AMBER: '#E65100',
+  GREY: '#6B6F68',
 };
 
 function formForStage(stage: string): string | undefined {
@@ -55,7 +55,6 @@ export function BreedingWatch({
   const offline = watchQ.isError && Boolean(cached);
 
   const openItem = (row: WatchItemDto) => {
-    // Open service windows on Walk — one mental model with the breed-today clock.
     if (row.stage === 'IN_HEAT') {
       onOpen({ animalId: row.animalId, form: 'service', tab: 'walk' });
       return;
@@ -64,78 +63,101 @@ export function BreedingWatch({
   };
 
   return (
-    <div className="breeding-board breeding-watch">
+    <div className="breeding-board breeding-watch breeding-desk-board">
       <div className="board-head">
         <h2>{t('breeding.watch.title')}</h2>
-        <p className="muted">
+        <p className="board-head-help">
           {offline ? t('breeding.watch.offline') : t('breeding.watch.help')}
-          {watch ? ` · ${watch.totalAnimals} ${t('breeding.watch.animals')}` : ''}
+          {watch ? (
+            <span className="board-head-counts">
+              {' '}
+              · {watch.totalAnimals} {t('breeding.watch.animals')}
+            </span>
+          ) : (
+            ''
+          )}
         </p>
       </div>
 
       {!watch || watch.groups.length === 0 ? (
         <p className="board-empty">{t('breeding.watch.empty')}</p>
       ) : (
-        watch.groups.map((group) => (
-          <section key={group.key} className="board-group">
-            <h3 style={{ color: GROUP_COLOUR[group.colour] }}>
-              <span className="board-dot" style={{ background: GROUP_COLOUR[group.colour] }} />
-              {np ? group.labelNp : group.labelEn}
-              <span className="board-sub">{group.items.length}</span>
-            </h3>
-            <ul>
+        watch.groups.map((group, gi) => (
+          <section
+            key={group.key}
+            className={`board-group board-group-${group.colour.toLowerCase()}`}
+            style={{
+              ['--group-colour' as string]: GROUP_COLOUR[group.colour],
+              animationDelay: `${gi * 40}ms`,
+            }}
+          >
+            <header className="board-group-head">
+              <h3 className="board-group-title">{np ? group.labelNp : group.labelEn}</h3>
+              <p className="board-sub">{group.items.length}</p>
+            </header>
+            <ul className="board-list">
               {group.items.map((row) => {
                 const nextForm = formForStage(row.stage);
+                const urgencyColour = URGENCY[row.countdown.urgency];
                 return (
-                <li key={row.animalId} className="watch-row">
-                  <button type="button" className="board-animal" onClick={() => openItem(row)}>
-                    {row.photoUrl ? (
-                      <img className="watch-photo" src={row.photoUrl} alt="" />
-                    ) : (
-                      <span className="watch-photo watch-photo-empty" />
-                    )}
-                    <span className="board-tag">{row.shortNo}</span>
-                    <span className="board-meta">
-                      <strong>{row.name ?? t('breeding.board.unnamed')}</strong>
-                      <span>{row.penName}</span>
-                      {/* Skip context when it duplicates the countdown label. */}
-                      {(np ? row.contextNp : row.contextEn) !==
-                        (np ? row.countdown.labelNp : row.countdown.labelEn) && (
-                        <span>{np ? row.contextNp : row.contextEn}</span>
+                  <li
+                    key={row.animalId}
+                    className="board-row watch-row"
+                    style={{
+                      ['--urgency' as string]: urgencyColour,
+                      ['--urgency-wash' as string]: 'rgba(42, 106, 74, 0.04)',
+                    }}
+                  >
+                    <button type="button" className="board-animal" onClick={() => openItem(row)}>
+                      <span className="board-urgency" aria-hidden="true" />
+                      {row.photoUrl ? (
+                        <img className="watch-photo" src={row.photoUrl} alt="" />
+                      ) : (
+                        <span className="watch-photo watch-photo-empty" aria-hidden="true" />
                       )}
-                    </span>
-                  </button>
-                  <div className="watch-count">
-                    <div
-                      className="watch-bar"
-                      aria-hidden="true"
-                      style={{
-                        ['--watch-pct' as string]: `${row.countdown.progressPct}%`,
-                        ['--watch-colour' as string]: URGENCY[row.countdown.urgency],
-                      }}
-                    />
-                    <span style={{ color: URGENCY[row.countdown.urgency] }}>
-                      {np ? row.countdown.labelNp : row.countdown.labelEn}
-                    </span>
-                    {row.stage === 'IN_HEAT' ? (
-                      <button type="button" className="board-btn primary" onClick={() => openItem(row)}>
-                        {t('breeding.watch.openWalk')}
-                      </button>
-                    ) : nextForm ? (
-                      <button type="button" className="board-btn" onClick={() => openItem(row)}>
-                        {t(`breeding.watch.action.${nextForm}`)}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="board-btn"
-                        onClick={() => void navigate(`/animals/${row.animalId}`)}
-                      >
-                        {t('breeding.watch.openRecord')}
-                      </button>
-                    )}
-                  </div>
-                </li>
+                      <span className="board-identity">
+                        <span className="board-tag">{row.shortNo}</span>
+                        <span className="board-name">{row.name ?? t('breeding.board.unnamed')}</span>
+                        {row.penName ? <span className="board-pen">{row.penName}</span> : null}
+                      </span>
+                      <span className="board-timing">
+                        {(np ? row.contextNp : row.contextEn) !==
+                          (np ? row.countdown.labelNp : row.countdown.labelEn) && (
+                          <span className="board-why">{np ? row.contextNp : row.contextEn}</span>
+                        )}
+                        <span className="board-doby" style={{ color: urgencyColour, fontWeight: 700 }}>
+                          {np ? row.countdown.labelNp : row.countdown.labelEn}
+                        </span>
+                      </span>
+                    </button>
+                    <div className="board-actions watch-count">
+                      <div
+                        className="watch-bar"
+                        aria-hidden="true"
+                        style={{
+                          ['--watch-pct' as string]: `${row.countdown.progressPct}%`,
+                          ['--watch-colour' as string]: urgencyColour,
+                        }}
+                      />
+                      {row.stage === 'IN_HEAT' ? (
+                        <button type="button" className="board-btn primary" onClick={() => openItem(row)}>
+                          {t('breeding.watch.openWalk')}
+                        </button>
+                      ) : nextForm ? (
+                        <button type="button" className="board-btn" onClick={() => openItem(row)}>
+                          {t(`breeding.watch.action.${nextForm}`)}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="board-btn"
+                          onClick={() => void navigate(`/animals/${row.animalId}`)}
+                        >
+                          {t('breeding.watch.openRecord')}
+                        </button>
+                      )}
+                    </div>
+                  </li>
                 );
               })}
             </ul>

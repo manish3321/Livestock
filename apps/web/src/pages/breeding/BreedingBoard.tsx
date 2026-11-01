@@ -7,21 +7,29 @@ import { breedingBoard, completeDryOff, completeSyncTask, enrollSync, recordHeat
 import { useAuth } from '../../auth/auth-context';
 import { readBreedingBoardCache, writeBreedingBoardCache } from '../../lib/breeding-offline';
 
+/** Group signal colours — moss / amber / red from farm tokens, not generic SaaS. */
 const COLOUR: Record<BoardGroupDto['colour'], string> = {
-  RED: '#b42318',
-  YELLOW: '#b54708',
-  BLUE: '#175cd3',
-  PURPLE: '#6941c6',
-  AMBER: '#b54708',
-  GREY: '#475467',
-  GREEN: '#027a48',
+  RED: '#C62828',
+  YELLOW: '#E65100',
+  BLUE: '#2A6A4A',
+  PURPLE: '#1F4D38',
+  AMBER: '#E65100',
+  GREY: '#6B6F68',
+  GREEN: '#2A6A4A',
 };
 
 const URGENCY: Record<string, string> = {
-  GREEN: '#027a48',
-  AMBER: '#b54708',
-  RED: '#b42318',
-  NORMAL: '#475467',
+  GREEN: '#2A6A4A',
+  AMBER: '#E65100',
+  RED: '#C62828',
+  NORMAL: '#6B6F68',
+};
+
+const URGENCY_WASH: Record<string, string> = {
+  GREEN: 'rgba(42, 106, 74, 0.08)',
+  AMBER: 'rgba(230, 81, 0, 0.1)',
+  RED: 'rgba(198, 40, 40, 0.1)',
+  NORMAL: 'transparent',
 };
 
 function formForTask(type: string): string | undefined {
@@ -59,7 +67,6 @@ export function BreedingBoard({
   });
 
   const ping = () => void qc.invalidateQueries({ queryKey: ['breeding'] });
-  // Each of these already reports through onToast with its own wording.
   const observe = useMutation({
     meta: { silent: true },
     mutationFn: recordHeatObservation,
@@ -165,78 +172,108 @@ export function BreedingBoard({
   };
 
   return (
-    <div className="breeding-board">
+    <div className="breeding-board breeding-desk-board">
       <div className="board-head">
-        <p className="muted">
+        <p className="board-head-help">
           {offline ? t('breeding.board.offline') : t('breeding.board.help')}
-          {board && ` · ${board.summary.totalActions}`}
-          {board && board.summary.overdue > 0 ? ` · ${board.summary.overdue} ${t('breeding.board.overdue')}` : ''}
+          {board && (
+            <span className="board-head-counts">
+              {' '}
+              · {board.summary.totalActions}
+              {board.summary.overdue > 0
+                ? ` · ${board.summary.overdue} ${t('breeding.board.overdue')}`
+                : ''}
+            </span>
+          )}
         </p>
       </div>
 
       {!board || board.groups.length === 0 ? (
         <p className="board-empty">{t('breeding.board.empty')}</p>
       ) : (
-        board.groups.map((group) => (
-          <section key={group.key} className="board-group">
-            <h3 style={{ color: COLOUR[group.colour] }}>
-              <span className="board-dot" style={{ background: COLOUR[group.colour] }} />
-              {np ? group.labelNp : group.labelEn}
-              <span className="board-sub">{np ? group.subLabelNp : group.subLabelEn}</span>
-            </h3>
-            <ul>
-              {group.items.map((row) => (
-                <li key={row.taskId} className="board-row">
-                  <button
-                    type="button"
-                    className="board-animal"
-                    onClick={() =>
-                      onOpen({
-                        animalId: row.animalId,
-                        form: formForTask(row.taskType),
-                        taskId: row.taskId,
-                      })
-                    }
+        board.groups.map((group, gi) => (
+          <section
+            key={group.key}
+            className={`board-group board-group-${group.colour.toLowerCase()}`}
+            style={{ ['--group-colour' as string]: COLOUR[group.colour], animationDelay: `${gi * 40}ms` }}
+          >
+            <header className="board-group-head">
+              <h3 className="board-group-title">{np ? group.labelNp : group.labelEn}</h3>
+              {(np ? group.subLabelNp : group.subLabelEn) ? (
+                <p className="board-sub">{np ? group.subLabelNp : group.subLabelEn}</p>
+              ) : null}
+            </header>
+            <ul className="board-list">
+              {group.items.map((row) => {
+                const urgency = row.urgency in URGENCY ? row.urgency : 'NORMAL';
+                const primary = row.actions.find((a) => a.primary) ?? row.actions[0];
+                const secondary = row.actions.filter((a) => a !== primary).slice(0, 1);
+                return (
+                  <li
+                    key={row.taskId}
+                    className={`board-row board-urgency-${urgency.toLowerCase()}`}
+                    style={{
+                      ['--urgency' as string]: URGENCY[urgency],
+                      ['--urgency-wash' as string]: URGENCY_WASH[urgency],
+                    }}
                   >
-                    <span
-                      className="board-urgency"
-                      style={{ background: URGENCY[row.urgency] ?? URGENCY.NORMAL }}
-                      aria-hidden="true"
-                    />
-                    <span className="board-tag">{row.shortNo}</span>
-                    <span className="board-meta">
-                      <strong>{row.name ?? t('breeding.board.unnamed')}</strong>
-                      <span>{row.penName}</span>
-                      <span>
-                        {t('breeding.board.doBy')}:{' '}
-                        {(np ? row.doByNp : row.doByEn) || (np ? row.contextNp : row.contextEn) || '—'}
+                    <button
+                      type="button"
+                      className="board-animal"
+                      onClick={() =>
+                        onOpen({
+                          animalId: row.animalId,
+                          form: formForTask(row.taskType),
+                          taskId: row.taskId,
+                        })
+                      }
+                    >
+                      <span className="board-urgency" aria-hidden="true" />
+                      <span className="board-identity">
+                        <span className="board-tag">{row.shortNo}</span>
+                        <span className="board-name">{row.name ?? t('breeding.board.unnamed')}</span>
+                        {row.penName ? <span className="board-pen">{row.penName}</span> : null}
                       </span>
-                      {(np ? row.whyNp : row.whyEn) ? (
-                        <span>
-                          {t('breeding.board.why')}: {np ? row.whyNp : row.whyEn}
+                      <span className="board-timing">
+                        <span className="board-doby">
+                          <span className="board-label">{t('breeding.board.doBy')}</span>{' '}
+                          {(np ? row.doByNp : row.doByEn) || (np ? row.contextNp : row.contextEn) || '—'}
                         </span>
+                        {(np ? row.whyNp : row.whyEn) ? (
+                          <span className="board-why">
+                            <span className="board-label">{t('breeding.board.why')}</span>{' '}
+                            {np ? row.whyNp : row.whyEn}
+                          </span>
+                        ) : null}
+                        {(np ? row.lateNp : row.lateEn) ? (
+                          <span className="board-late">{np ? row.lateNp : row.lateEn}</span>
+                        ) : null}
+                      </span>
+                    </button>
+                    <div className="board-actions">
+                      {primary ? (
+                        <button
+                          type="button"
+                          className="board-btn primary"
+                          onClick={() => runAction(row, primary)}
+                        >
+                          {np ? primary.labelNp : primary.labelEn}
+                        </button>
                       ) : null}
-                      {(np ? row.lateNp : row.lateEn) ? (
-                        <span className="board-late" style={{ color: URGENCY.RED }}>
-                          {np ? row.lateNp : row.lateEn}
-                        </span>
-                      ) : null}
-                    </span>
-                  </button>
-                  <div className="board-actions">
-                    {row.actions.slice(0, 2).map((action) => (
-                      <button
-                        key={action.key}
-                        type="button"
-                        className={`board-btn ${action.primary ? 'primary' : ''}`}
-                        onClick={() => runAction(row, action)}
-                      >
-                        {np ? action.labelNp : action.labelEn}
-                      </button>
-                    ))}
-                  </div>
-                </li>
-              ))}
+                      {secondary.map((action) => (
+                        <button
+                          key={action.key}
+                          type="button"
+                          className="board-btn"
+                          onClick={() => runAction(row, action)}
+                        >
+                          {np ? action.labelNp : action.labelEn}
+                        </button>
+                      ))}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </section>
         ))
@@ -249,12 +286,12 @@ export function BreedingBoard({
           </button>
           {openDecisions &&
             (can('tasks:manage') ? (
-              <ul>
+              <ul className="board-list">
                 {board.decisionQueue.items.map((row) => (
-                  <li key={row.taskId}>
+                  <li key={row.taskId} className="board-row board-decision-row">
                     <button
                       type="button"
-                      className="board-decision"
+                      className="board-animal"
                       onClick={() =>
                         onOpen({
                           animalId: row.animalId,
@@ -263,8 +300,10 @@ export function BreedingBoard({
                         })
                       }
                     >
-                      <span className="board-tag">{row.shortNo}</span>
-                      <span>{np ? row.titleNp : row.titleEn}</span>
+                      <span className="board-identity">
+                        <span className="board-tag">{row.shortNo}</span>
+                        <span className="board-name">{np ? row.titleNp : row.titleEn}</span>
+                      </span>
                     </button>
                     <div className="board-actions">
                       {(row.actions ?? []).slice(0, 2).map((action) => (

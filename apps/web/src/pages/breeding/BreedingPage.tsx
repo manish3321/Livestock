@@ -231,10 +231,11 @@ export function BreedingPage() {
         </div>
       )}
 
-        <div className="choice-row breeding-tabs" role="tablist">
+        <div className="choice-row breeding-tabs breeding-segment" role="tablist" aria-label={t('nav.breeding')}>
           <button
             type="button"
             role="tab"
+            aria-selected={watchTab}
             className={`choice-btn ${watchTab ? 'selected' : ''}`}
             onClick={() => {
               setNextStep(null);
@@ -246,6 +247,7 @@ export function BreedingPage() {
           <button
             type="button"
             role="tab"
+            aria-selected={walkTab}
             className={`choice-btn ${walkTab ? 'selected' : ''}`}
             onClick={() => setSearchParams(new URLSearchParams({ tab: 'walk' }), { replace: true })}
           >
@@ -255,6 +257,7 @@ export function BreedingPage() {
             <button
               type="button"
               role="tab"
+              aria-selected={herdTab}
               className={`choice-btn ${herdTab ? 'selected' : ''}`}
               onClick={() => setSearchParams(new URLSearchParams({ tab: 'herd' }), { replace: true })}
             >
@@ -619,15 +622,24 @@ function HeatForm({
           fieldProps={fieldProps('animalId')}
         />
       )}
+      {animalId && animal ? (
+        <div className="sheet-dam-hero">
+          <strong>{animal.herdNumber ?? '—'}</strong>
+          <span>{animal.name ?? t('breeding.board.unnamed')}</span>
+        </div>
+      ) : null}
       {animal?.isPregnant && <div className="hold-banner hold-banner-red">{t('breeding.heatOnPregnant')}</div>}
       {tooSoon != null && <p className="warn-text">{t('breeding.tooSoon', { n: tooSoon })}</p>}
       {tooSoon != null && vwpMode === 'ask' && (
-        <div className="vwp-confirm">
-          <p>{t('breeding.vwp.confirmHeat', { n: tooSoon })}</p>
+        <div className="vwp-confirm sheet-step">
+          <p className="sheet-step-title">
+            <span className="sheet-step-num">!</span>
+            {t('breeding.vwp.confirmHeat', { n: tooSoon })}
+          </p>
           <div className="choice-row">
             <button
               type="button"
-              className="btn secondary"
+              className="choice-btn"
               onClick={() => {
                 setVwpMode('observe');
                 save.mutate('observe');
@@ -637,7 +649,7 @@ function HeatForm({
             </button>
             <button
               type="button"
-              className="btn"
+              className="choice-btn selected"
               onClick={() => {
                 setVwpMode('real');
                 save.mutate('real');
@@ -649,23 +661,31 @@ function HeatForm({
         </div>
       )}
 
-      <div className="field">
-        <label htmlFor="heat-observedAt">{t('breeding.observedAt')}</label>
-        <input
-          {...fieldProps('observedAt')}
-          type="datetime-local"
-          data-autofocus={animalId ? true : undefined}
-          value={observedAt}
-          onChange={(e) => {
-            clearField('observedAt');
-            setObservedAt(e.target.value);
-          }}
-        />
-        <FieldError id="heat-observedAt-error" message={errors.observedAt} />
+      <div className="sheet-step">
+        <p className="sheet-step-title">
+          <span className="sheet-step-num">1</span>
+          {t('breeding.observedAt')}
+        </p>
+        <div className="field">
+          <input
+            {...fieldProps('observedAt')}
+            type="datetime-local"
+            data-autofocus={animalId ? true : undefined}
+            value={observedAt}
+            onChange={(e) => {
+              clearField('observedAt');
+              setObservedAt(e.target.value);
+            }}
+          />
+          <FieldError id="heat-observedAt-error" message={errors.observedAt} />
+        </div>
       </div>
 
-      <fieldset className="sheet-fieldset">
-        <legend>{t('breeding.intensity')}</legend>
+      <div className="sheet-step">
+        <p className="sheet-step-title">
+          <span className="sheet-step-num">2</span>
+          {t('breeding.intensity')}
+        </p>
         <div className="choice-row">
           {(['STRONG', 'MEDIUM', 'WEAK'] as const).map((v) => (
             <button
@@ -681,7 +701,7 @@ function HeatForm({
             </button>
           ))}
         </div>
-      </fieldset>
+      </div>
 
       <button type="button" className="text-link" onClick={() => setMore((v) => !v)}>
         {more ? t('common.close') : t('breeding.moreSigns')}
@@ -858,29 +878,46 @@ function ServiceForm({
           </div>
         </div>
       )}
+      {animalId && animal ? (
+        <div className="sheet-dam-hero">
+          <strong>{animal.herdNumber ?? '—'}</strong>
+          <span>{animal.name ?? t('breeding.board.unnamed')}</span>
+        </div>
+      ) : null}
       {serviceNo >= 3 && <p className="warn-text">{t('breeding.repeatWarn', { n: serviceNo })}</p>}
       {related && <p className="warn-text">{t('breeding.inbreedingWarn')}</p>}
 
-      <div className="choice-row">
-        <button
-          type="button"
-          className={`choice-btn ${matingType === 'AI' ? 'selected' : ''}`}
-          onClick={() => setMatingType('AI')}
-        >
+      <div className="sheet-step">
+        <p className="sheet-step-title">
+          <span className="sheet-step-num">1</span>
           {t('breeding.ai')}
-        </button>
-        <button
-          type="button"
-          className={`choice-btn ${matingType === 'NATURAL' ? 'selected' : ''}`}
-          onClick={() => setMatingType('NATURAL')}
-        >
-          {t('breeding.natural')}
-        </button>
+        </p>
+        <div className="choice-row">
+          <button
+            type="button"
+            className={`choice-btn ${matingType === 'AI' ? 'selected' : ''}`}
+            onClick={() => setMatingType('AI')}
+          >
+            {t('breeding.ai')}
+          </button>
+          <button
+            type="button"
+            className={`choice-btn ${matingType === 'NATURAL' ? 'selected' : ''}`}
+            onClick={() => setMatingType('NATURAL')}
+          >
+            {t('breeding.natural')}
+          </button>
+        </div>
       </div>
 
-      <div className="field">
-        <label htmlFor="svc-sire">{matingType === 'AI' ? t('breeding.straw') : t('breeding.bull')}</label>
-        <input id="svc-sire" value={fatherTagOrAi} onChange={(e) => setFather(e.target.value)} />
+      <div className="sheet-step">
+        <p className="sheet-step-title">
+          <span className="sheet-step-num">2</span>
+          {matingType === 'AI' ? t('breeding.straw') : t('breeding.bull')}
+        </p>
+        <div className="field">
+          <input id="svc-sire" value={fatherTagOrAi} onChange={(e) => setFather(e.target.value)} />
+        </div>
       </div>
 
       <button type="button" className="text-link" onClick={() => setMore((v) => !v)}>
@@ -992,28 +1029,37 @@ function PdForm({
         />
       )}
       {open.length === 1 && (
-        <p className="muted">
-          {t('breeding.matingDate')}: {formatDate(open[0]!.matingDate)}
-        </p>
+        <div className="sheet-dam-hero">
+          <strong>{open[0]!.motherTag ?? '—'}</strong>
+          <span>
+            {t('breeding.matingDate')}: {formatDate(open[0]!.matingDate)}
+          </span>
+        </div>
       )}
 
-      <div className="choice-row">
-        {(
-          [
-            ['CONFIRMED', t('breeding.pdConfirmed')],
-            ['OPEN', t('breeding.pdOpen')],
-            ['INCONCLUSIVE', t('breeding.pdInconclusive')],
-          ] as const
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            className={`choice-btn ${result === value ? 'selected' : ''}`}
-            onClick={() => setResult(value)}
-          >
-            {label}
-          </button>
-        ))}
+      <div className="sheet-step">
+        <p className="sheet-step-title">
+          <span className="sheet-step-num">1</span>
+          {t('breeding.pdResult')}
+        </p>
+        <div className="choice-row">
+          {(
+            [
+              ['CONFIRMED', t('breeding.pdConfirmed')],
+              ['OPEN', t('breeding.pdOpen')],
+              ['INCONCLUSIVE', t('breeding.pdInconclusive')],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className={`choice-btn ${result === value ? 'selected' : ''}`}
+              onClick={() => setResult(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {result === 'CONFIRMED' && (
@@ -1186,41 +1232,61 @@ function CalvingForm({
         />
       )}
 
-      <div className="field">
-        <label htmlFor="calve-birthDate">{t('breeding.calvingAt')}</label>
-        <input
-          {...fieldProps('birthDate')}
-          type="datetime-local"
-          value={birthDate}
-          onChange={(e) => {
-            clearField('birthDate');
-            setBirthDate(e.target.value);
-          }}
-        />
-        <FieldError id="calve-birthDate-error" message={errors.birthDate} />
+      {animalId ? (
+        <div className="sheet-dam-hero">
+          <strong>{females.find((a) => a.id === animalId)?.herdNumber ?? '—'}</strong>
+          <span>{females.find((a) => a.id === animalId)?.name ?? t('breeding.board.unnamed')}</span>
+        </div>
+      ) : null}
+
+      <div className="sheet-step">
+        <p className="sheet-step-title">
+          <span className="sheet-step-num">1</span>
+          {t('breeding.calvingAt')}
+        </p>
+        <div className="field">
+          <input
+            {...fieldProps('birthDate')}
+            type="datetime-local"
+            value={birthDate}
+            onChange={(e) => {
+              clearField('birthDate');
+              setBirthDate(e.target.value);
+            }}
+          />
+          <FieldError id="calve-birthDate-error" message={errors.birthDate} />
+        </div>
       </div>
 
-      <div className="choice-row">
-        <button
-          type="button"
-          className={`choice-btn ${outcome === 'LIVE' ? 'selected' : ''}`}
-          onClick={() => setOutcome('LIVE')}
-        >
+      <div className="sheet-step">
+        <p className="sheet-step-title">
+          <span className="sheet-step-num">2</span>
           {t('breeding.outcomeLive')}
-        </button>
-        <button
-          type="button"
-          className={`choice-btn ${outcome === 'ABORTED' ? 'selected' : ''}`}
-          onClick={() => setOutcome('ABORTED')}
-        >
-          {t('breeding.outcomeAborted')}
-        </button>
+        </p>
+        <div className="choice-row">
+          <button
+            type="button"
+            className={`choice-btn ${outcome === 'LIVE' ? 'selected' : ''}`}
+            onClick={() => setOutcome('LIVE')}
+          >
+            {t('breeding.outcomeLive')}
+          </button>
+          <button
+            type="button"
+            className={`choice-btn ${outcome === 'ABORTED' ? 'selected' : ''}`}
+            onClick={() => setOutcome('ABORTED')}
+          >
+            {t('breeding.outcomeAborted')}
+          </button>
+        </div>
+        {outcome === 'ABORTED' && <p className="warn-text">{t('breeding.abortHelp')}</p>}
       </div>
 
-      {outcome === 'ABORTED' && <p className="warn-text">{t('breeding.abortHelp')}</p>}
-
-      <fieldset className="sheet-fieldset">
-        <legend>{t('breeding.calvingDifficulty')}</legend>
+      <div className="sheet-step">
+        <p className="sheet-step-title">
+          <span className="sheet-step-num">3</span>
+          {t('breeding.calvingDifficulty')}
+        </p>
         <div className="choice-row">
           {DIFFICULTY.map((v) => (
             <button
@@ -1233,11 +1299,14 @@ function CalvingForm({
             </button>
           ))}
         </div>
-      </fieldset>
+      </div>
 
       {outcome !== 'ABORTED' && (
-        <fieldset className="sheet-fieldset">
-          <legend>{t('animals.gender')}</legend>
+        <div className="sheet-step">
+          <p className="sheet-step-title">
+            <span className="sheet-step-num">4</span>
+            {t('animals.gender')}
+          </p>
           <div className="choice-row">
             {(['FEMALE', 'MALE'] as const).map((sex) => (
               <button
@@ -1250,7 +1319,7 @@ function CalvingForm({
               </button>
             ))}
           </div>
-        </fieldset>
+        </div>
       )}
 
       <button type="button" className="text-link" onClick={() => setMore((v) => !v)}>
