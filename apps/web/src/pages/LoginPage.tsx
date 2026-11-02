@@ -113,16 +113,33 @@ export function LoginPage() {
             {busy ? t('common.loading') : t('login.submit')}
           </button>
           <p className="login-bilingual">
-            {t('login.bilingualNote')}
-            {' · '}
-            <button
-              type="button"
-              className="btn ghost"
-              style={{ minHeight: 28, display: 'inline', padding: '0 4px' }}
-              onClick={() => setLocale(i18n.language === 'en' ? 'ne' : 'en')}
-            >
-              {i18n.language === 'en' ? 'नेपाली' : 'English'}
-            </button>
+            {i18n.language === 'en' ? (
+              <>
+                English
+                {' · '}
+                <button
+                  type="button"
+                  className="btn ghost"
+                  style={{ minHeight: 28, display: 'inline', padding: '0 4px' }}
+                  onClick={() => setLocale('ne')}
+                >
+                  नेपाली
+                </button>
+              </>
+            ) : (
+              <>
+                नेपाली
+                {' · '}
+                <button
+                  type="button"
+                  className="btn ghost"
+                  style={{ minHeight: 28, display: 'inline', padding: '0 4px' }}
+                  onClick={() => setLocale('en')}
+                >
+                  English
+                </button>
+              </>
+            )}
           </p>
         </form>
       </div>

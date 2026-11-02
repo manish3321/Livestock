@@ -1098,7 +1098,13 @@ export const en = {
       confirmFinish: 'Finish and save skips',
       skipAllNotMilked: 'Mark all as not milked',
       secondsPerAnimal: '{{n}} seconds per animal',
-      skip: { NOT_MILKED: 'Not milked', FORGOT: 'Forgot' },
+      skip: {
+        NOT_MILKED: 'Not milked',
+        FORGOT: 'Forgot',
+        SICK: 'Sick',
+        DRIED_OFF: 'Dried off',
+        OTHER: 'Other',
+      },
       confirmDose: 'Confirm dose',
       vaxDisease: 'Vaccine',
       next: {

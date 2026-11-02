@@ -34,6 +34,7 @@ import type {
   AnimalEconomicsDto,
   AnimalImportCommit,
   AnimalListQuery,
+  AnimalSpeciesCountsDto,
   AnimalUpdate,
   MarkerPlace,
   PageResult,
@@ -65,6 +66,13 @@ export class AnimalsController {
   @ApiOperation({ summary: 'Numeric shed search: 42 finds B42 and C42' })
   search(@CurrentUser() user: RequestUser, @Query('q') q: string) {
     return this.animals.search(user, q ?? '');
+  }
+
+  @Get('counts')
+  @RequirePermissions('animals:read')
+  @ApiOperation({ summary: 'Animal counts grouped by species (species picker)' })
+  counts(@CurrentUser() user: RequestUser): Promise<AnimalSpeciesCountsDto> {
+    return this.animals.countsBySpecies(user);
   }
 
   @Get('profitability')

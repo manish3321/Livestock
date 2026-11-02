@@ -10,10 +10,18 @@ import {
   View,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { MilkDisposal, PageResult, RoundSkipReason, ScanResolveDto } from '@farm/contracts';
+import {
+  ROUND_SKIP_REASONS,
+  type MilkDisposal,
+  type PageResult,
+  type RoundSkipReason,
+  type ScanResolveDto,
+} from '@farm/contracts';
 import {
   abandonLocalRound,
+  applyServerRemaining,
   finishLocalRound,
   remainingAnimals,
   resolveLocalScan,
@@ -37,7 +45,7 @@ type InvLite = { id: string; name: string; category?: string; currentStock?: num
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Round'>;
 
-const SKIP_REASONS: RoundSkipReason[] = ['NOT_MILKED', 'FORGOT'];
+const SKIP_REASONS: RoundSkipReason[] = [...ROUND_SKIP_REASONS];
 
 export function RoundScreen({ navigation, route }: Props) {
   const { store, api, revision, persist, syncNow } = useFarm();
@@ -83,10 +91,32 @@ export function RoundScreen({ navigation, route }: Props) {
   const [finishing, setFinishing] = useState(false);
   const [skipDraft, setSkipDraft] = useState<Record<string, RoundSkipReason>>({});
   const [finishBusy, setFinishBusy] = useState(false);
+  const [listTick, setListTick] = useState(0);
 
   void revision;
-  const remaining = useMemo(() => remainingAnimals(store), [store, revision]);
+  const remaining = useMemo(() => remainingAnimals(store), [store, revision, listTick]);
   const mode = store.round?.mode ?? 'MILKING';
+
+  const refreshRemainingFromServer = useCallback(async () => {
+    const roundId = store.round?.id;
+    if (!roundId || !store.accessToken || store.round?.offlineOnly) return;
+    try {
+      const dto = await api.get<{
+        remaining: Array<{ id: string; usualLitres?: number | null }>;
+      }>(`/v1/rounds/${roundId}/remaining`);
+      applyServerRemaining(store, dto);
+      persist();
+      setListTick((n) => n + 1);
+    } catch {
+      /* offline — keep local remainingAnimals */
+    }
+  }, [api, persist, store]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshRemainingFromServer();
+    }, [refreshRemainingFromServer]),
+  );
 
   useEffect(() => {
     if (permission && !permission.granted) void requestPermission();

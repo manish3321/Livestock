@@ -2361,6 +2361,7 @@ model ProductionEntry {
 
   @@index([farmId, entryDate])
   @@index([farmId, type])
+  @@index([farmId, type, session, entryDate])
   @@index([herdBatchId])
   @@index([milkRoundId])
   @@index([farmId, animalId, entryDate, session])
@@ -2647,4 +2648,5 @@ model ScanEvent {
 
   @@index([farmId, scannedAt])
   @@index([animalId, scannedAt])
+  @@index([roundId])
 }

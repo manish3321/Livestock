@@ -43,6 +43,11 @@ class RecordingFake {
     findMany: async () => [],
   };
 
+  healthRecord = {
+    findFirst: async () => null,
+    findMany: async () => [],
+  };
+
   recordingRound = {
     findFirst: async ({ where }: any) =>
       [...this.rounds.values()].find((r) => matchRound(r, where)) ?? null,
@@ -294,6 +299,7 @@ function matchRound(r: any, where: any) {
   if (where.startedAt?.gte && !(r.startedAt >= where.startedAt.gte)) return false;
   if (where.id?.in && !where.id.in.includes(r.id)) return false;
   if (where.session && r.session !== where.session) return false;
+  if (where.milkRoundId && r.milkRoundId !== where.milkRoundId) return false;
   return true;
 }
 
@@ -495,5 +501,19 @@ describe('Phase 2 scan-to-record', () => {
 
     const fresh = await rounds.create(actor, { mode: 'MILKING', session: 'MORNING' });
     expect((await rounds.active(actor))?.id).toBe(fresh.id);
+  });
+
+  it('create after finish reuses the day milk round without unique milkRoundId clash', async () => {
+    db.addAnimal({ herdNumber: 'B01', status: 'LACTATING' });
+    const first = await rounds.create(actor, { mode: 'MILKING', session: 'EVENING' });
+    await rounds.finish(actor, first.id, { skips: [] });
+    expect(db.rounds.get(first.id).status).toBe('FINISHED');
+
+    const second = await rounds.create(actor, { mode: 'MILKING', session: 'EVENING' });
+    expect(second.id).not.toBe(first.id);
+    expect(second.status).toBe('ACTIVE');
+    expect(second.milkRoundId).toBeTruthy();
+    expect(db.rounds.get(first.id).milkRoundId).toBeNull();
+    expect((await rounds.active(actor, 'MILKING', 'EVENING'))?.id).toBe(second.id);
   });
 });

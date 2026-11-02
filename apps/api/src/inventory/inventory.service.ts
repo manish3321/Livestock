@@ -316,16 +316,9 @@ export class InventoryService {
     }
 
     if (nextStock < 0) {
-      const { ensureTask } = await import('../jobs/task-writer');
-      await ensureTask(this.prisma, {
-        farmId: user.farmId,
-        type: 'STOCK_RECONCILE',
-        titleEn: `Negative stock: ${item.name} — record the purchase`,
-        titleNp: `${item.name} स्टक ऋणात्मक — किनबेच रेकर्ड गर्नुहोस्`,
-        dueAt: new Date(),
-        priority: 'NORMAL',
-        sourceRefType: 'inventoryItem',
-        sourceRefId: item.id,
+      throw new BadRequestException({
+        code: 'STOCK_NEGATIVE',
+        message: `Not enough stock for ${item.name} (have ${current}, need ${input.quantity})`,
       });
     }
 

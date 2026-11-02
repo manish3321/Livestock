@@ -45,6 +45,9 @@ export function digitsOf(q: string): string {
 /**
  * Lower is a better match. Exact short number first, then the shared
  * sequence across species (42 → B42 and C42), then tag, then name.
+ *
+ * Digit matching uses the full numeric suffix (B21 → "21"), not String.endsWith,
+ * so typing B01 / 1 does not also hit B11, B21, C21, …
  */
 export function rankAnimalMatch(
   q: string,
@@ -57,11 +60,14 @@ export function rankAnimalMatch(
   const hn = (animal.herdNumber ?? '').toUpperCase();
   const tag = animal.tag.toUpperCase();
   const name = (animal.name ?? '').toUpperCase();
+  const hnDigits = digitsOf(hn);
+  const tagDigits = digitsOf(tag);
 
   if (hn && hn === upper) return 0;
+  if (tag === upper) return 0;
   if (digits && hn === digits) return 1;
-  if (digits && hn.endsWith(digits)) return 2;
-  if (tag === upper || tag.includes(upper) || (digits && tag.includes(digits))) return 3;
-  if (name.includes(upper)) return 4;
+  if (digits && hnDigits && hnDigits === digits) return 2;
+  if (digits && tagDigits && tagDigits === digits) return 3;
+  if (upper.length >= 3 && name.includes(upper)) return 4;
   return null;
 }

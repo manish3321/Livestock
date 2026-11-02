@@ -5,6 +5,7 @@ import type {
   AnimalEconomicsDto,
   AnimalListQuery,
   AnimalProductionStatsDto,
+  AnimalSpeciesCountsDto,
   AnimalUpdate,
   PageResult,
   WeightCreate,
@@ -27,6 +28,11 @@ export function listAnimals(
   }
   const qs = params.toString();
   return api(`/v1/animals${qs ? `?${qs}` : ''}`);
+}
+
+/** Live animal count per species (one request for the species picker). */
+export function getAnimalCounts(): Promise<AnimalSpeciesCountsDto> {
+  return api('/v1/animals/counts');
 }
 
 export function getAnimal(id: string): Promise<AnimalDetailDto> {

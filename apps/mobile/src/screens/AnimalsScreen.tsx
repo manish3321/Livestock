@@ -14,6 +14,7 @@ import {
   SPECIES,
   SPECIES_LABEL,
   type AnimalDto,
+  type AnimalSpeciesCountsDto,
   type AnimalStatus,
   type PageResult,
   type Species,
@@ -66,19 +67,12 @@ export function AnimalsScreen() {
   const showPicker = !species && !searching;
 
   const loadCounts = useCallback(async () => {
-    const entries = await Promise.all(
-      SPECIES.map(async (s) => {
-        try {
-          const page = await api.get<PageResult<AnimalDto>>(
-            `/v1/animals${toQuery({ page: 1, pageSize: 1, species: s })}`,
-          );
-          return [s, page.total] as const;
-        } catch {
-          return [s, 0] as const;
-        }
-      }),
-    );
-    setSpeciesCounts(Object.fromEntries(entries));
+    try {
+      const res = await api.get<AnimalSpeciesCountsDto>('/v1/animals/counts');
+      setSpeciesCounts(res.counts);
+    } catch {
+      setSpeciesCounts(Object.fromEntries(SPECIES.map((s) => [s, 0])));
+    }
   }, [api]);
 
   const load = useCallback(async () => {

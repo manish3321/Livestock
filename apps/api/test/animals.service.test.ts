@@ -2,7 +2,7 @@ import './setup-env';
 import { randomUUID } from 'node:crypto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { ROLE_PERMISSIONS } from '@farm/contracts';
+import { ROLE_PERMISSIONS, SPECIES } from '@farm/contracts';
 import { AnimalsService } from '../src/animals/animals.service';
 import type { RequestUser } from '../src/common/types';
 import type { PrismaService } from '../src/prisma/prisma.service';
@@ -92,6 +92,20 @@ class AnimalsFakePrisma extends FakePrisma {
           }
           return true;
         }).length,
+      groupBy: async ({ by, where }: any) => {
+        const key = by[0] as string;
+        const tally = new Map<string, number>();
+        for (const a of this.animals.values()) {
+          if (a.farmId !== where.farmId) continue;
+          if (where.deletedAt === null && a.deletedAt) continue;
+          const k = String((a as any)[key]);
+          tally.set(k, (tally.get(k) ?? 0) + 1);
+        }
+        return [...tally.entries()].map(([k, n]) => ({
+          [key]: k,
+          _count: { _all: n },
+        }));
+      },
     } as any;
 
     this.weightRecord = {
@@ -219,6 +233,44 @@ describe('AnimalsService', () => {
       order: 'asc',
     });
     expect(list.total).toBe(0);
+  });
+
+  it('counts live animals per species in one call, matching list totals', async () => {
+    const base = { breed: 'Mixed', gender: 'FEMALE' as const, status: 'ACTIVE' as const };
+    await service.create(user(), { ...base, tag: 'BUF200', species: 'BUFFALO' });
+    await service.create(user(), { ...base, tag: 'BUF201', species: 'BUFFALO' });
+    await service.create(user(), { ...base, tag: 'COW200', species: 'COW' });
+    const gone = await service.create(user('MANAGER'), {
+      ...base,
+      tag: 'COW201',
+      species: 'COW',
+    });
+    await service.remove(user('MANAGER'), gone.id);
+    // Another farm's animal must not leak into this farm's counts.
+    await prisma.animal.create({
+      data: {
+        farmId: randomUUID(),
+        tag: 'OTHER1',
+        species: 'GOAT',
+        breed: 'Boer',
+        gender: 'FEMALE',
+      },
+    });
+
+    const res = await service.countsBySpecies(user());
+    expect(res.counts).toEqual({ BUFFALO: 2, COW: 1, PIG: 0, GOAT: 0 });
+    expect(res.total).toBe(3);
+
+    for (const species of SPECIES) {
+      const page = await service.list(user(), {
+        page: 1,
+        pageSize: 1,
+        sort: 'tag',
+        order: 'asc',
+        species,
+      });
+      expect(res.counts[species]).toBe(page.total);
+    }
   });
 
   it('exports CSV with header and rows', async () => {

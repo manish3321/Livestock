@@ -163,6 +163,7 @@ type MainTab = 'watch' | 'walk' | 'herd';
 type FormMode = 'heat' | 'service' | 'pd' | 'calving' | 'colostrum' | null;
 
 const MAIN_TABS: MainTab[] = ['watch', 'walk', 'herd'];
+const WORKER_TABS: MainTab[] = ['watch', 'walk'];
 const FORM_MODES = new Set<string>(['heat', 'service', 'pd', 'calving', 'colostrum']);
 
 const HEAT_SIGNS = [
@@ -205,9 +206,11 @@ export function BreedingScreen() {
   const route = useRoute<RouteProp<RootStackParamList, 'Breeding'>>();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { api, store, persist } = useFarm();
-  const { can } = useAccess();
+  const { can, user } = useAccess();
   const { t } = useLocale();
   const canWrite = can('breeding:write');
+  const isWorker = user?.role === 'WORKER';
+  const tabs = isWorker ? WORKER_TABS : MAIN_TABS;
 
   const [mainTab, setMainTab] = useState<MainTab>('watch');
   const [form, setForm] = useState<FormMode>(() => {
@@ -267,12 +270,18 @@ export function BreedingScreen() {
     }
   }, [route.params?.animalId, route.params?.breedingId, route.params?.form]);
 
+  useEffect(() => {
+    if (isWorker && mainTab === 'herd') setMainTab('watch');
+  }, [isWorker, mainTab]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const [page, m, heatPage, femalePage, malePage, taskPage, cfg, boardDto] = await Promise.all([
         api.get<PageResult<BreedingRecordLite>>(`/v1/breeding${toQuery({ page: 1, pageSize: 200 })}`),
-        api.get<BreedingMetricsDto>('/v1/breeding/metrics').catch(() => null),
+        isWorker
+          ? Promise.resolve(null)
+          : api.get<BreedingMetricsDto>('/v1/breeding/metrics').catch(() => null),
         api.get<PageResult<Heat>>(`/v1/breeding/heat${toQuery({ page: 1, pageSize: 50 })}`).catch(() => null),
         api.get<PageResult<AnimalDto>>(`/v1/animals${toQuery({ gender: 'FEMALE', pageSize: 200 })}`).catch(() => null),
         api.get<PageResult<AnimalDto>>(`/v1/animals${toQuery({ gender: 'MALE', pageSize: 200 })}`).catch(() => null),
@@ -303,7 +312,7 @@ export function BreedingScreen() {
     } finally {
       setLoading(false);
     }
-  }, [api, persist, store, t]);
+  }, [api, isWorker, persist, store, t]);
 
   useEffect(() => {
     void load();
@@ -535,7 +544,7 @@ export function BreedingScreen() {
           {fromCache ? <Muted>{t('native.cached')}</Muted> : null}
           {error && !form ? <ErrorText message={error} /> : null}
           <View style={styles.segmentTrack}>
-            {MAIN_TABS.map((tabKey) => {
+            {tabs.map((tabKey) => {
               const active = mainTab === tabKey;
               return (
                 <Pressable

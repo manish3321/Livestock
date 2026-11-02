@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import type {
   AnimalCreate,
+  AnimalSpeciesCountsDto,
   AnimalDetailDto,
   AnimalDto,
   AnimalEconomicsDto,
@@ -22,7 +23,7 @@ import type {
   WeightCreate,
   WeightRecordDto,
 } from '@farm/contracts';
-import { DEFAULT_MARKER_SCHEME, ANIMAL_EXIT_STATUSES, animalImportRowSchema } from '@farm/contracts';
+import { DEFAULT_MARKER_SCHEME, ANIMAL_EXIT_STATUSES, SPECIES, animalImportRowSchema } from '@farm/contracts';
 import { MIN_DAM_AGE_GAP_MONTHS, type AnimalStatusHistoryDto, type BreedComposition, type Species } from '@farm/contracts';
 import { Prisma, type Animal, type AnimalStatusHistory, type WeightRecord } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
@@ -91,6 +92,30 @@ export class AnimalsService {
       pageSize: query.pageSize,
       total,
     };
+  }
+
+  /**
+   * Live animal count per species in one grouped query. Every species is
+   * present (0 when empty), and each count equals what list reports as
+   * 	otal for that species with no other filter.
+   */
+  async countsBySpecies(user: RequestUser): Promise<AnimalSpeciesCountsDto> {
+    const rows = await this.prisma.animal.groupBy({
+      by: ['species'],
+      where: { farmId: user.farmId, deletedAt: null },
+      _count: { _all: true },
+    });
+    const counts = Object.fromEntries(SPECIES.map((s) => [s, 0])) as Record<
+      Species,
+      number
+    >;
+    let total = 0;
+    for (const row of rows) {
+      const n = row._count._all;
+      if (row.species in counts) counts[row.species as Species] = n;
+      total += n;
+    }
+    return { counts, total };
   }
 
   /**

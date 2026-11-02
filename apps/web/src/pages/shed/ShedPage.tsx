@@ -43,7 +43,7 @@ type ScanCreateMethod = 'CAMERA' | 'MANUAL_NUMBER' | 'LIST_TAP' | 'PHOTO_PICK' |
 
 const SESSIONS: MilkSession[] = ['MORNING', 'EVENING', 'MIDDAY'];
 const DISPOSALS = ['SOLD', 'FED_TO_CALVES', 'HOUSEHOLD', 'DISCARDED'] as const;
-const SKIP_REASONS: RoundSkipReason[] = ['NOT_MILKED', 'FORGOT'];
+const SKIP_REASONS: RoundSkipReason[] = ['NOT_MILKED', 'FORGOT', 'SICK', 'DRIED_OFF', 'OTHER'];
 
 function minutesNow(): number {
   const n = new Date();
@@ -867,7 +867,7 @@ export function ShedPage() {
               </label>
             </div>
           )}
-          {!roundId && (
+          {!roundId && activeRoundReady && (
             <button type="button" className="btn shed-go" onClick={() => start.mutate()} disabled={start.isPending}>
               {t('shed.start')}
             </button>
@@ -880,7 +880,11 @@ export function ShedPage() {
         </div>
       )}
 
-      {!roundId && !milkDeepLink && (
+      {!roundId && !milkDeepLink && !activeRoundReady && (
+        <p className="muted">{t('common.loading')}</p>
+      )}
+
+      {!roundId && activeRoundReady && !milkDeepLink && (
         <ShedNotDone
           today={todayQ.data}
           loading={todayQ.isLoading}

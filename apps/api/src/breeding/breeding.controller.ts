@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Headers,
   HttpCode,
@@ -149,6 +150,13 @@ export class BreedingController {
   @RequirePermissions('breeding:read')
   @ApiOperation({ summary: 'Herd breeding metrics, open-day cost, observer heat detection' })
   metrics(@CurrentUser() user: RequestUser): Promise<BreedingMetricsDto> {
+    // Workers record heat/service; herd KPIs are manager/admin/vet desk work.
+    if (user.role === 'WORKER') {
+      throw new ForbiddenException({
+        code: 'FORBIDDEN',
+        message: 'Workers cannot view breeding herd metrics',
+      });
+    }
     return this.breeding.herdMetrics(user);
   }
 

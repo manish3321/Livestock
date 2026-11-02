@@ -15,7 +15,13 @@ import type {
 import { SPECIES } from '@farm/contracts';
 import { applySnapshot, pruneTasks, type FarmStore } from './store';
 import { alertsFromStore, type NotificationEngine, syncLocalAlerts } from './notify';
-import { applyPullChanges, applyPushResults, pendingMutations, pendingRest } from './scan-round';
+import {
+  applyPullChanges,
+  applyPushResults,
+  applyServerRemaining,
+  pendingMutations,
+  pendingRest,
+} from './scan-round';
 import { needsClaim, rememberBlock } from './tag-blocks';
 
 export interface FarmApi {
@@ -143,10 +149,7 @@ export async function refreshMeansFromRound(
 ): Promise<void> {
   if (!store.accessToken) return;
   const remaining = await api.remaining(roundId, store.accessToken);
-  for (const row of remaining.remaining) {
-    const animal = store.animals.get(row.id);
-    if (animal) animal.rolling7Mean = row.usualLitres;
-  }
+  applyServerRemaining(store, remaining);
 }
 
 export async function ensureTagBlocks(store: FarmStore, api: FarmApi): Promise<void> {

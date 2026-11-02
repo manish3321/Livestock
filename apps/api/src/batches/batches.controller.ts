@@ -24,6 +24,7 @@ import {
   herdBatchUpdateSchema,
 } from '@farm/contracts';
 import type {
+  BatchDetailDto,
   BatchEconomicsDto,
   BatchFeedCreate,
   BatchHarvestCreate,
@@ -73,6 +74,18 @@ export class BatchesController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<HerdBatchDto> {
     return this.batches.get(user, id);
+  }
+
+  @Get(':id/detail')
+  @RequirePermissions('animals:read')
+  @ApiOperation({
+    summary: 'Batch, economics and all event histories in one request',
+  })
+  detail(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<BatchDetailDto> {
+    return this.batches.detail(user, id);
   }
 
   @Get(':id/economics')

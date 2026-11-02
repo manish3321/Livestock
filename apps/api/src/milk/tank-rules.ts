@@ -15,11 +15,21 @@ export function tankVariance(actualLitres: number, expectedLitres: number): {
   return { varianceLitres, variancePct: (varianceLitres / expectedLitres) * 100 };
 }
 
-/** HIGH TANK_VARIANCE when worse than −8% or any extra litres. */
+/** HIGH TANK_VARIANCE when worse than −8% (short) — over-fill is rejected before save. */
 export function shouldRaiseTankVariance(
   varianceLitres: number,
   variancePct: number | null,
 ): boolean {
-  if (varianceLitres > 0) return true;
   return variancePct != null && variancePct < -8;
+}
+
+/** Tank/delivery cannot claim more litres than were milked as SOLD. */
+export function assertNotAboveMilked(claimed: number, milkedSold: number): void {
+  if (claimed > milkedSold + 1e-9) {
+    const err = new Error(
+      `Cannot record ${claimed} L — only ${milkedSold} L was milked for sale`,
+    ) as Error & { code: string };
+    err.code = 'TANK_ABOVE_MILKED';
+    throw err;
+  }
 }

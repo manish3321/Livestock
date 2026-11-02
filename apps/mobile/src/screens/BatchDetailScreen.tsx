@@ -4,6 +4,7 @@ import type { RouteProp } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
 import {
   ILLNESS_CONDITIONS,
+  type BatchDetailDto,
   type BatchEconomicsDto,
   type IllnessCondition,
 } from '@farm/contracts';
@@ -43,6 +44,44 @@ type DetailTab = 'overview' | 'illness' | 'mortality' | 'feed' | 'fish' | 'histo
 
 const TABS: DetailTab[] = ['overview', 'illness', 'mortality', 'feed', 'fish', 'history'];
 
+function buildHistory(d: BatchDetailDto): EventRow[] {
+  const day = (v: string) => v.slice(0, 10);
+  const rows: EventRow[] = [
+    ...d.illness.map((r) => ({
+      id: r.id,
+      label: `Illness · ${r.condition} ×${r.count}`,
+      meta: day(r.occurredAt),
+    })),
+    ...d.mortality.map((r) => ({
+      id: r.id,
+      label: `Mortality ×${r.count}${r.reason ? ` · ${r.reason}` : ''}`,
+      meta: day(r.occurredAt),
+    })),
+    ...d.feed.map((r) => ({
+      id: r.id,
+      label: `Feed ${r.quantityKg} kg`,
+      meta: day(r.occurredAt),
+    })),
+    ...d.waterQuality.map((r) => ({
+      id: r.id,
+      label: `Water pH ${r.ph ?? '—'} · ${r.temperatureC ?? '—'}°C`,
+      meta: day(r.recordedAt),
+    })),
+    ...d.sampling.map((r) => ({
+      id: r.id,
+      label: `Sample n=${r.sampleCount} · ${r.totalWeightGrams}g`,
+      meta: day(r.sampledAt),
+    })),
+    ...d.harvest.map((r) => ({
+      id: r.id,
+      label: `Harvest ${r.quantityKg} kg`,
+      meta: day(r.occurredAt),
+    })),
+  ];
+  rows.sort((a, b) => String(b.meta).localeCompare(String(a.meta)));
+  return rows;
+}
+
 export function BatchDetailScreen() {
   const route = useRoute<RouteProp<RootStackParamList, 'BatchDetail'>>();
   const { api, store, persist } = useFarm();
@@ -78,15 +117,13 @@ export function BatchDetailScreen() {
     const id = route.params.id;
     setLoading(true);
     try {
-      const row = await api.get<Batch>(`/v1/batches/${id}`);
-      setData(row);
-      setModuleCache(store, `batch:${id}`, row);
+      const detail = await api.get<BatchDetailDto>(`/v1/batches/${id}/detail`);
+      setData(detail.batch);
+      setModuleCache(store, `batch:${id}`, detail.batch);
       persist();
       setError(null);
-      void api
-        .get<BatchEconomicsDto>(`/v1/batches/${id}/economics`)
-        .then(setEconomics)
-        .catch(() => setEconomics(null));
+      setEconomics(detail.economics);
+      setHistory(buildHistory(detail));
     } catch {
       setData((prev) => prev ?? getModuleCache(store, `batch:${route.params.id}`) ?? null);
       setError((prev) => {
@@ -97,56 +134,6 @@ export function BatchDetailScreen() {
       setLoading(false);
     }
   }, [api, persist, route.params.id, store]);
-
-  const loadHistory = useCallback(async () => {
-    const id = route.params.id;
-    try {
-      const [illness, mortality, feed, water, sampling, harvest] = await Promise.all([
-        api.get<Array<Record<string, unknown>>>(`/v1/batches/${id}/illness`).catch(() => []),
-        api.get<Array<Record<string, unknown>>>(`/v1/batches/${id}/mortality`).catch(() => []),
-        api.get<Array<Record<string, unknown>>>(`/v1/batches/${id}/feed`).catch(() => []),
-        api.get<Array<Record<string, unknown>>>(`/v1/batches/${id}/water-quality`).catch(() => []),
-        api.get<Array<Record<string, unknown>>>(`/v1/batches/${id}/sampling`).catch(() => []),
-        api.get<Array<Record<string, unknown>>>(`/v1/batches/${id}/harvest`).catch(() => []),
-      ]);
-      const rows: EventRow[] = [
-        ...illness.map((r) => ({
-          id: String(r.id),
-          label: `Illness · ${String(r.condition ?? '')} ×${String(r.count ?? '')}`,
-          meta: String(r.occurredAt ?? '').slice(0, 10),
-        })),
-        ...mortality.map((r) => ({
-          id: String(r.id),
-          label: `Mortality ×${String(r.count ?? '')}${r.reason ? ` · ${r.reason}` : ''}`,
-          meta: String(r.occurredAt ?? '').slice(0, 10),
-        })),
-        ...feed.map((r) => ({
-          id: String(r.id),
-          label: `Feed ${String(r.quantityKg ?? '')} kg`,
-          meta: String(r.occurredAt ?? '').slice(0, 10),
-        })),
-        ...water.map((r) => ({
-          id: String(r.id),
-          label: `Water pH ${String(r.ph ?? '—')} · ${String(r.temperatureC ?? '—')}°C`,
-          meta: String(r.recordedAt ?? '').slice(0, 10),
-        })),
-        ...sampling.map((r) => ({
-          id: String(r.id),
-          label: `Sample n=${String(r.sampleCount ?? '')} · ${String(r.totalWeightGrams ?? '')}g`,
-          meta: String(r.sampledAt ?? '').slice(0, 10),
-        })),
-        ...harvest.map((r) => ({
-          id: String(r.id),
-          label: `Harvest ${String(r.quantityKg ?? '')} kg`,
-          meta: String(r.occurredAt ?? '').slice(0, 10),
-        })),
-      ];
-      rows.sort((a, b) => String(b.meta).localeCompare(String(a.meta)));
-      setHistory(rows);
-    } catch {
-      /* keep */
-    }
-  }, [api, route.params.id]);
 
   useEffect(() => {
     const id = route.params.id;
@@ -159,10 +146,6 @@ export function BatchDetailScreen() {
     void load();
   }, [load, route.params.id, store]);
 
-  useEffect(() => {
-    if (tab === 'history' || tab === 'overview') void loadHistory();
-  }, [loadHistory, tab]);
-
   const postEvent = async (path: string, body: Record<string, unknown>, ok: string) => {
     setBusy(true);
     setError(null);
@@ -170,7 +153,6 @@ export function BatchDetailScreen() {
       await api.post(path, body);
       Alert.alert('Saved', ok);
       await load();
-      await loadHistory();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed');
     } finally {

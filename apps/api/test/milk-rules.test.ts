@@ -33,4 +33,15 @@ describe('milk-rules', () => {
     expect(rankAnimalMatch('012', { herdNumber: 'B12', tag: 'X', name: null })).toBe(2);
     expect(rankAnimalMatch('b12', { herdNumber: 'B12', tag: 'X', name: null })).toBe(0);
   });
+
+  it('does not treat B01 as a substring hit on B21 / C21', () => {
+    const b01 = { herdNumber: 'B01', tag: 'BUF001', name: 'Kalimati' };
+    const b21 = { herdNumber: 'B21', tag: 'BUF021', name: 'Hira' };
+    const c21 = { herdNumber: 'C21', tag: 'COW021', name: 'Tulsi' };
+    expect(rankAnimalMatch('B01', b01)).toBe(0);
+    expect(rankAnimalMatch('B01', b21)).toBeNull();
+    expect(rankAnimalMatch('B01', c21)).toBeNull();
+    expect(rankAnimalMatch('1', b01)).toBe(2);
+    expect(rankAnimalMatch('1', b21)).toBeNull();
+  });
 });

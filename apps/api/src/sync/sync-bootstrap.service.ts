@@ -17,7 +17,21 @@ import { ReportsService } from '../reports/reports.service';
 import { RevenueService } from '../revenue/revenue.service';
 import { TasksService } from '../tasks/tasks.service';
 
-const PAGE = { page: 1, pageSize: 100, order: 'asc' as const };
+const PAGE_SIZE = 100;
+const PAGE = { page: 1, pageSize: PAGE_SIZE, order: 'asc' as const };
+/** Hard stop per module so a runaway total can't hang bootstrap (20 x 100 = 2000 rows). */
+export const MAX_BOOTSTRAP_PAGES = 20;
+
+interface PagedResult {
+  items: unknown[];
+  page?: number;
+  pageSize?: number;
+  total?: number;
+}
+
+function isPaged(v: unknown): v is PagedResult {
+  return !!v && typeof v === 'object' && Array.isArray((v as PagedResult).items);
+}
 
 /**
  * Builds the offline module snapshot the phone used to fetch as 18 separate routes.
@@ -55,65 +69,65 @@ export class SyncBootstrapService {
         'animals',
         () =>
           can('animals:read')
-            ? this.animals.list(user, { ...PAGE, sort: 'tag', order: 'asc' })
+            ? this.paged('animals', (page) => this.animals.list(user, { ...PAGE, page, sort: 'tag', order: 'asc' }))
             : Promise.resolve(null),
       ],
       [
         'batches',
         () =>
-          can('animals:read') ? this.batches.list(user, { ...PAGE }) : Promise.resolve(null),
+          can('animals:read') ? this.paged('batches', (page) => this.batches.list(user, { ...PAGE, page })) : Promise.resolve(null),
       ],
       [
         'groups',
         () =>
           can('animals:read')
-            ? this.batches.list(user, { ...PAGE, kind: 'POULTRY' })
+            ? this.paged('groups', (page) => this.batches.list(user, { ...PAGE, page, kind: 'POULTRY' }))
             : Promise.resolve(null),
       ],
       [
         'fish',
         () =>
           can('animals:read')
-            ? this.batches.list(user, { ...PAGE, kind: 'FISH' })
+            ? this.paged('fish', (page) => this.batches.list(user, { ...PAGE, page, kind: 'FISH' }))
             : Promise.resolve(null),
       ],
       [
         'expenses',
-        () => (can('expenses:read') ? this.expenses.list(user, { ...PAGE }) : Promise.resolve(null)),
+        () => (can('expenses:read') ? this.paged('expenses', (page) => this.expenses.list(user, { ...PAGE, page })) : Promise.resolve(null)),
       ],
       [
         'revenue',
-        () => (can('revenue:read') ? this.revenue.list(user, { ...PAGE }) : Promise.resolve(null)),
+        () => (can('revenue:read') ? this.paged('revenue', (page) => this.revenue.list(user, { ...PAGE, page })) : Promise.resolve(null)),
       ],
       [
         'inventory',
         () =>
           can('inventory:read')
-            ? this.inventory.list(user, { ...PAGE })
+            ? this.paged('inventory', (page) => this.inventory.list(user, { ...PAGE, page }))
             : Promise.resolve(null),
       ],
       [
         'health',
         () =>
           can('health:read')
-            ? this.health.list(user, { ...PAGE, due: 'all' })
+            ? this.paged('health', (page) => this.health.list(user, { ...PAGE, page, due: 'all' }))
             : Promise.resolve(null),
       ],
       [
         'breeding',
         () =>
-          can('breeding:read') ? this.breeding.list(user, { ...PAGE }) : Promise.resolve(null),
+          can('breeding:read') ? this.paged('breeding', (page) => this.breeding.list(user, { ...PAGE, page })) : Promise.resolve(null),
       ],
       [
         'production',
         () =>
           can('production:read')
-            ? this.production.list(user, { ...PAGE })
+            ? this.paged('production', (page) => this.production.list(user, { ...PAGE, page }))
             : Promise.resolve(null),
       ],
       [
         'feed',
-        () => (can('feed:read') ? this.feed.list(user, { ...PAGE }) : Promise.resolve(null)),
+        () => (can('feed:read') ? this.paged('feed', (page) => this.feed.list(user, { ...PAGE, page })) : Promise.resolve(null)),
       ],
       [
         'pnl',
@@ -145,7 +159,7 @@ export class SyncBootstrapService {
         'tasks',
         () =>
           can('tasks:read')
-            ? this.tasks.list(user, { page: 1, pageSize: 100, dueBefore })
+            ? this.paged('tasks', (page) => this.tasks.list(user, { page, pageSize: PAGE_SIZE, dueBefore }))
             : Promise.resolve(null),
       ],
     ];
@@ -165,6 +179,50 @@ export class SyncBootstrapService {
       fetchedAt: new Date().toISOString(),
       modules: Object.fromEntries(settled),
     };
+  }
+
+  /**
+   * Walk list pages 1..N and merge `items`. Stops when a page is short, empty,
+   * or the collected count reaches `total`; capped at MAX_BOOTSTRAP_PAGES.
+   * Returns the first response's shape with items combined, page 1, and
+   * pageSize widened to cover the combined list.
+   */
+  private async paged<T>(module: string, fetchPage: (page: number) => Promise<T>): Promise<T> {
+    const first = await fetchPage(1);
+    if (!isPaged(first)) return first;
+
+    const items: unknown[] = [...first.items];
+    let total = first.total;
+    let last: PagedResult = first;
+    let pages = 1;
+
+    while (
+      last.items.length > 0 &&
+      last.items.length >= (first.pageSize ?? PAGE_SIZE) &&
+      (total === undefined || items.length < total)
+    ) {
+      if (pages >= MAX_BOOTSTRAP_PAGES) {
+        this.log.warn(
+          `bootstrap ${module} hit ${MAX_BOOTSTRAP_PAGES}-page cap (${items.length}/${total ?? '?'} rows)`,
+        );
+        break;
+      }
+      const next = await fetchPage(pages + 1);
+      pages += 1;
+      if (!isPaged(next)) break;
+      items.push(...next.items);
+      if (next.total !== undefined) total = next.total;
+      last = next;
+    }
+
+    if (pages === 1) return first;
+    return {
+      ...first,
+      items,
+      page: 1,
+      pageSize: Math.max(first.pageSize ?? PAGE_SIZE, items.length),
+      ...(total !== undefined ? { total } : {}),
+    } as T;
   }
 
   private async listAudit(farmId: string, pageSize: number) {

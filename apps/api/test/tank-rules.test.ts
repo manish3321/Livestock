@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { shouldRaiseTankVariance, soldLitres, tankVariance } from '../src/milk/tank-rules';
+import {
+  assertNotAboveMilked,
+  shouldRaiseTankVariance,
+  soldLitres,
+  tankVariance,
+} from '../src/milk/tank-rules';
 
 describe('tank-rules', () => {
   it('counts SOLD litres only', () => {
@@ -19,10 +24,9 @@ describe('tank-rules', () => {
     expect(shouldRaiseTankVariance(varianceLitres, variancePct)).toBe(true);
   });
 
-  it('raises HIGH for any extra litres', () => {
-    const { varianceLitres, variancePct } = tankVariance(101, 100);
-    expect(variancePct).toBeGreaterThan(0);
-    expect(shouldRaiseTankVariance(varianceLitres, variancePct)).toBe(true);
+  it('rejects litres above what was milked', () => {
+    expect(() => assertNotAboveMilked(101, 100)).toThrow(/only 100 L/);
+    expect(() => assertNotAboveMilked(100, 100)).not.toThrow();
   });
 
   it('does not raise for a normal −5% loss', () => {

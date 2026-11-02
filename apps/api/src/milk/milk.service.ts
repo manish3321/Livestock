@@ -28,7 +28,12 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProfitService } from '../profit/profit.service';
 import type { StoragePort } from '../storage/storage.port';
 import { mapMilkDisposal, NOT_MILKING_STATUSES, startOfUtcDay, toApiDisposal } from './milk-rules';
-import { shouldRaiseTankVariance, soldLitres, tankVariance } from './tank-rules';
+import {
+  assertNotAboveMilked,
+  shouldRaiseTankVariance,
+  soldLitres,
+  tankVariance,
+} from './tank-rules';
 
 const EXIT = ['SOLD', 'DEAD', 'CULLED'] as const;
 const DAY = 24 * 60 * 60 * 1000;
@@ -376,6 +381,16 @@ export class MilkService {
       throw new NotFoundException({ code: 'TANK_NOT_FOUND', message: 'Finish the round first' });
     }
     const expected = soldLitres(round.entries);
+    try {
+      assertNotAboveMilked(input.actualLitres, expected);
+    } catch (e) {
+      const err = e as Error & { code?: string };
+      throw new BadRequestException({
+        code: err.code ?? 'TANK_ABOVE_MILKED',
+        message: err.message,
+        details: { actualLitres: input.actualLitres, milkedSold: expected },
+      });
+    }
     await this.prisma.milkTank.update({
       where: { id: round.tank.id },
       data: {
@@ -407,10 +422,21 @@ export class MilkService {
   async addDelivery(user: RequestUser, roundId: string, input: DeliveryCreate) {
     const round = await this.prisma.milkRound.findFirst({
       where: { id: roundId, farmId: user.farmId },
-      include: { tank: true },
+      include: { tank: true, entries: true },
     });
     if (!round?.tank) {
       throw new NotFoundException({ code: 'TANK_NOT_FOUND', message: 'Finish the round first' });
+    }
+    const milked = soldLitres(round.entries ?? []);
+    try {
+      assertNotAboveMilked(input.litresSent, milked);
+    } catch (e) {
+      const err = e as Error & { code?: string };
+      throw new BadRequestException({
+        code: err.code ?? 'TANK_ABOVE_MILKED',
+        message: err.message,
+        details: { litresSent: input.litresSent, milkedSold: milked },
+      });
     }
     return this.prisma.milkDelivery.upsert({
       where: { tankId: round.tank.id },

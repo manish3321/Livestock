@@ -374,6 +374,112 @@ export interface BatchEconomicsDto {
   healthCount: number;
 }
 
+/** Herd batch row (livestock / poultry / fish group). */
+export interface HerdBatchDto {
+  id: string;
+  farmId: string;
+  kind: string;
+  category: string;
+  name: string;
+  ageFromMonths: number | null;
+  ageToMonths: number | null;
+  initialCount: number;
+  currentCount: number;
+  deadCount: number;
+  sickCount: number;
+  sickByCondition: Record<string, number>;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BatchIllnessDto {
+  id: string;
+  batchId: string;
+  condition: string;
+  count: number;
+  occurredAt: string;
+  resolvedAt: string | null;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface BatchMortalityDto {
+  id: string;
+  batchId: string;
+  count: number;
+  reason: string | null;
+  occurredAt: string;
+  createdAt: string;
+}
+
+export interface BatchWaterQualityDto {
+  id: string;
+  batchId: string;
+  recordedAt: string;
+  temperatureC: number | null;
+  ph: number | null;
+  dissolvedO2: number | null;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface BatchSamplingDto {
+  id: string;
+  batchId: string;
+  sampledAt: string;
+  sampleCount: number;
+  totalWeightGrams: number;
+  estimatedCount: number;
+  avgWeightGrams: number;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface BatchHarvestDto {
+  id: string;
+  batchId: string;
+  quantityKg: number;
+  fishCount: number | null;
+  quality: string | null;
+  occurredAt: string;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface BatchFeedDto {
+  id: string;
+  batchId: string;
+  quantityKg: number;
+  feedType: string | null;
+  inventoryItemId: string | null;
+  occurredAt: string;
+  notes: string | null;
+  createdAt: string;
+}
+
+/**
+ * One-request batch detail: the batch plus everything the detail screens used
+ * to fetch separately. `waterQuality`, `sampling` and `harvest` are FISH-only
+ * and are empty arrays for other kinds.
+ */
+export interface BatchDetailDto {
+  batch: HerdBatchDto;
+  economics: BatchEconomicsDto;
+  illness: BatchIllnessDto[];
+  mortality: BatchMortalityDto[];
+  feed: BatchFeedDto[];
+  waterQuality: BatchWaterQualityDto[];
+  sampling: BatchSamplingDto[];
+  harvest: BatchHarvestDto[];
+}
+
+/** Live (non-deleted) animal headcount per species, for the species picker. */
+export interface AnimalSpeciesCountsDto {
+  counts: Record<Species, number>;
+  total: number;
+}
+
 export const weightCreateSchema = z.object({
   weightKg: z.number().positive().max(5000),
   bcs: z.number().int().min(1).max(5).optional(),

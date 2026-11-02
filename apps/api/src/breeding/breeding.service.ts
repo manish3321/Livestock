@@ -348,6 +348,13 @@ export class BreedingService {
         message: 'Animal not found',
       });
     }
+    const observedAt = input.observedAt ?? new Date();
+    if (observedAt.getTime() > Date.now() + 60_000) {
+      throw new BadRequestException({
+        code: 'HEAT_FUTURE_DATE',
+        message: 'Heat cannot be recorded in the future',
+      });
+    }
     const cfg = await this.speciesConfig.forSpecies(animal.species as Species);
     const label = animal.herdNumber ?? animal.tag;
     const tooSoonDays = daysUntilReady(animal.lactationStartDate, cfg.voluntaryWaitingDays);

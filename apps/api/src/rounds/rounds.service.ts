@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -39,11 +40,22 @@ const NEXT_ACTION: Record<RecordingMode, ScanResolveDto['nextAction']> = {
 
 @Injectable()
 export class RoundsService {
+  private readonly logger = new Logger(RoundsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly milk: MilkService,
   ) {}
+
+  private async timed<T>(label: string, run: () => Promise<T>): Promise<T> {
+    const t0 = Date.now();
+    try {
+      return await run();
+    } finally {
+      this.logger.log(`progress.query ${label} ${Date.now() - t0}ms`);
+    }
+  }
 
   async create(user: RequestUser, input: RecordingRoundCreate): Promise<RecordingRoundDto> {
     await this.abandonStale(user);
@@ -66,6 +78,25 @@ export class RoundsService {
     if (input.mode === 'MILKING' && session) {
       const milkRound = await this.milk.currentOrStart(user, { session, roundDate: date });
       milkRoundId = milkRound.id;
+      // One MilkRound per farm/day/session; RecordingRound.milkRoundId is unique.
+      // After finish/abandon the link still blocks a new open pad — free it and reopen milk.
+      const prior = await this.prisma.recordingRound.findFirst({
+        where: { milkRoundId },
+        select: { id: true, status: true },
+      });
+      if (prior?.status === 'ACTIVE') return toRoundDto(await this.requireRound(user.farmId, prior.id));
+      if (prior) {
+        await this.prisma.recordingRound.update({
+          where: { id: prior.id },
+          data: { milkRoundId: null },
+        });
+      }
+      if (milkRound.status !== 'OPEN') {
+        await this.prisma.milkRound.update({
+          where: { id: milkRoundId },
+          data: { status: 'OPEN', finishedAt: null },
+        });
+      }
     }
 
     const created = await this.prisma.recordingRound.create({
@@ -146,6 +177,14 @@ export class RoundsService {
   }
 
   async remaining(user: RequestUser, id: string): Promise<RoundRemainingDto> {
+    // Milking: one SQL round-trip (roster + recorded + skips + round row).
+    // Remote Supabase RTT ~700ms; sequential Prisma finds stacked to ~2s.
+    if (typeof this.prisma.$queryRaw === 'function') {
+      const bundled = await this.timed('milkingRemainingOneShot', () =>
+        this.milkingRemainingOneShot(user.farmId, id),
+      );
+      if (bundled) return bundled;
+    }
     const round = await this.requireRound(user.farmId, id);
     return { round: toRoundDto(round), ...(await this.progress(round)) };
   }
@@ -153,6 +192,20 @@ export class RoundsService {
   async today(user: RequestUser, query: RoundTodayQuery): Promise<RoundTodayDto> {
     const date = startOfUtcDay(new Date());
     const session = query.mode === 'MILKING' ? (query.session ?? inferSession()) : null;
+    // Do not call abandonStale here — shed "today" must stay a read.
+    if (query.mode === 'MILKING' && session && typeof this.prisma.$queryRaw === 'function') {
+      const bundled = await this.timed('milkingTodayOneShot', () =>
+        this.milkingTodayOneShot(user.farmId, session, date),
+      );
+      return {
+        mode: query.mode,
+        session,
+        round: bundled.round,
+        expected: bundled.expected,
+        recorded: bundled.recorded,
+        remaining: bundled.remaining,
+      };
+    }
     const round = await this.prisma.recordingRound.findFirst({
       where: {
         farmId: user.farmId,
@@ -174,6 +227,211 @@ export class RoundsService {
     };
   }
 
+  /**
+   * One Postgres round-trip for milking remaining: round row + roster (with
+   * active withhold flag) + recorded animal ids + skips. usualLitres stays null.
+   */
+  private async milkingRemainingOneShot(
+    farmId: string,
+    roundId: string,
+  ): Promise<RoundRemainingDto | null> {
+    type Row = MilkingProgressRow & RoundRowCols;
+    const rows = await this.prisma.$queryRaw<Row[]>`
+      WITH round AS (
+        SELECT r.id, r.mode, r.session, r.date, r.status, r."startedAt", r."finishedAt",
+               r."expectedCount", r."recordedCount", r."skippedCount", r."totalLitres",
+               r."durationSeconds", r."secondsPerAnimal", r."milkRoundId", r."farmId"
+        FROM "RecordingRound" r
+        WHERE r.id = ${roundId}::uuid AND r."farmId" = ${farmId}::uuid
+      ),
+      withholds AS (
+        SELECT DISTINCT ON (h."animalId") h."animalId", h."milkWithholdUntil" AS withhold
+        FROM "HealthRecord" h
+        JOIN round r ON r."farmId" = h."farmId"
+        WHERE h."milkWithholdUntil" >= NOW() AND h."animalId" IS NOT NULL
+        ORDER BY h."animalId", h."milkWithholdUntil" DESC
+      ),
+      roster AS (
+        SELECT a.id, a."herdNumber", a.tag, a.name, a.species, a.shed, a."photoUrl",
+               a.status, a."isPregnant", w.withhold
+        FROM "Animal" a
+        CROSS JOIN round r
+        LEFT JOIN withholds w ON w."animalId" = a.id
+        WHERE a."farmId" = r."farmId"
+          AND a."deletedAt" IS NULL
+          AND a.gender = 'FEMALE'
+          AND a.status::text NOT IN ('SOLD', 'DEAD', 'CULLED', 'DRY')
+      ),
+      recorded AS (
+        SELECT DISTINCT pe."animalId"
+        FROM "ProductionEntry" pe
+        CROSS JOIN round r
+        WHERE pe."farmId" = r."farmId"
+          AND pe.type = 'MILK'
+          AND pe.session = r.session
+          AND pe."entryDate" = r.date
+          AND pe."animalId" IS NOT NULL
+      ),
+      skipped AS (
+        SELECT s."animalId"
+        FROM "RoundSkip" s
+        JOIN round r ON r.id = s."roundId"
+      )
+      SELECT r.id AS "roundId", r.mode, r.session, r.date, r.status, r."startedAt", r."finishedAt",
+             r."expectedCount", r."recordedCount", r."skippedCount", r."totalLitres",
+             r."durationSeconds", r."secondsPerAnimal", r."milkRoundId",
+             o.id AS "animalId", o."herdNumber", o.tag, o.name, o.species, o.shed, o."photoUrl",
+             o.status AS "animalStatus", o."isPregnant", o.withhold,
+             (rec."animalId" IS NOT NULL) AS recorded,
+             (sk."animalId" IS NOT NULL) AS skipped
+      FROM round r
+      LEFT JOIN roster o ON true
+      LEFT JOIN recorded rec ON rec."animalId" = o.id
+      LEFT JOIN skipped sk ON sk."animalId" = o.id
+      ORDER BY o.shed ASC NULLS LAST, o."herdNumber" ASC NULLS LAST
+    `;
+    if (rows.length === 0) {
+      throw new NotFoundException({ code: 'ROUND_NOT_FOUND', message: 'Recording round not found' });
+    }
+    if (rows[0]!.mode !== 'MILKING') return null;
+    return this.bundleFromMilkingRows(rows);
+  }
+
+  private async milkingTodayOneShot(
+    farmId: string,
+    session: MilkSession,
+    date: Date,
+  ): Promise<{
+    round: RecordingRoundDto | null;
+    expected: number;
+    recorded: number;
+    remaining: RoundRemainingDto['remaining'];
+  }> {
+    type Row = MilkingProgressRow & Partial<RoundRowCols> & { roundId: string | null };
+    const rows = await this.prisma.$queryRaw<Row[]>`
+      WITH round AS (
+        SELECT r.id, r.mode, r.session, r.date, r.status, r."startedAt", r."finishedAt",
+               r."expectedCount", r."recordedCount", r."skippedCount", r."totalLitres",
+               r."durationSeconds", r."secondsPerAnimal", r."milkRoundId", r."farmId"
+        FROM "RecordingRound" r
+        WHERE r."farmId" = ${farmId}::uuid
+          AND r.mode = 'MILKING'
+          AND r.date = ${date}
+          AND r.session = ${session}::"MilkSession"
+          AND r.status <> 'ABANDONED'
+        ORDER BY r."startedAt" DESC
+        LIMIT 1
+      ),
+      withholds AS (
+        SELECT DISTINCT ON (h."animalId") h."animalId", h."milkWithholdUntil" AS withhold
+        FROM "HealthRecord" h
+        WHERE h."farmId" = ${farmId}::uuid
+          AND h."milkWithholdUntil" >= NOW()
+          AND h."animalId" IS NOT NULL
+        ORDER BY h."animalId", h."milkWithholdUntil" DESC
+      ),
+      roster AS (
+        SELECT a.id, a."herdNumber", a.tag, a.name, a.species, a.shed, a."photoUrl",
+               a.status, a."isPregnant", w.withhold
+        FROM "Animal" a
+        LEFT JOIN withholds w ON w."animalId" = a.id
+        WHERE a."farmId" = ${farmId}::uuid
+          AND a."deletedAt" IS NULL
+          AND a.gender = 'FEMALE'
+          AND a.status::text NOT IN ('SOLD', 'DEAD', 'CULLED', 'DRY')
+      ),
+      recorded AS (
+        SELECT DISTINCT pe."animalId"
+        FROM "ProductionEntry" pe
+        WHERE pe."farmId" = ${farmId}::uuid
+          AND pe.type = 'MILK'
+          AND pe.session = ${session}::"MilkSession"
+          AND pe."entryDate" = ${date}
+          AND pe."animalId" IS NOT NULL
+      ),
+      skipped AS (
+        SELECT s."animalId"
+        FROM "RoundSkip" s
+        JOIN round r ON r.id = s."roundId"
+      )
+      SELECT r.id AS "roundId", r.mode, r.session, r.date, r.status, r."startedAt", r."finishedAt",
+             r."expectedCount", r."recordedCount", r."skippedCount", r."totalLitres",
+             r."durationSeconds", r."secondsPerAnimal", r."milkRoundId",
+             o.id AS "animalId", o."herdNumber", o.tag, o.name, o.species, o.shed, o."photoUrl",
+             o.status AS "animalStatus", o."isPregnant", o.withhold,
+             (rec."animalId" IS NOT NULL) AS recorded,
+             (sk."animalId" IS NOT NULL) AS skipped
+      FROM roster o
+      LEFT JOIN round r ON true
+      LEFT JOIN recorded rec ON rec."animalId" = o.id
+      LEFT JOIN skipped sk ON sk."animalId" = o.id
+      ORDER BY o.shed ASC NULLS LAST, o."herdNumber" ASC NULLS LAST
+    `;
+    if (rows.length === 0) {
+      return { round: null, expected: 0, recorded: 0, remaining: [] };
+    }
+    const first = rows[0]!;
+    const recordedIds = new Set(
+      rows.filter((x) => x.recorded && x.animalId).map((x) => x.animalId as string),
+    );
+    const remaining = rows
+      .filter((x) => x.animalId && !x.recorded && !x.skipped)
+      .map((x) => milkingAnimalDto(x));
+    return {
+      round: first.roundId
+        ? toRoundDto({
+            id: first.roundId,
+            mode: 'MILKING',
+            session: first.session ?? session,
+            date: first.date ?? date,
+            status: first.status ?? 'ACTIVE',
+            startedAt: first.startedAt ?? date,
+            finishedAt: first.finishedAt ?? null,
+            expectedCount: first.expectedCount ?? null,
+            recordedCount: first.recordedCount ?? 0,
+            skippedCount: first.skippedCount ?? 0,
+            totalLitres: first.totalLitres ?? null,
+            durationSeconds: first.durationSeconds ?? null,
+            secondsPerAnimal: first.secondsPerAnimal ?? null,
+            milkRoundId: first.milkRoundId ?? null,
+          })
+        : null,
+      expected: rows.filter((x) => x.animalId).length,
+      recorded: recordedIds.size,
+      remaining,
+    };
+  }
+
+  private bundleFromMilkingRows(
+    rows: Array<MilkingProgressRow & RoundRowCols>,
+  ): RoundRemainingDto {
+    const head = rows[0]!;
+    const animals = rows.filter((x) => x.animalId);
+    const recordedIds = new Set(animals.filter((x) => x.recorded).map((x) => x.animalId as string));
+    const remaining = animals.filter((x) => !x.recorded && !x.skipped).map((x) => milkingAnimalDto(x));
+    return {
+      round: toRoundDto({
+        id: head.roundId,
+        mode: head.mode as RecordingMode,
+        session: head.session,
+        date: head.date,
+        status: head.status,
+        startedAt: head.startedAt,
+        finishedAt: head.finishedAt,
+        expectedCount: head.expectedCount,
+        recordedCount: head.recordedCount,
+        skippedCount: head.skippedCount,
+        totalLitres: head.totalLitres,
+        durationSeconds: head.durationSeconds,
+        secondsPerAnimal: head.secondsPerAnimal,
+        milkRoundId: head.milkRoundId,
+      }),
+      expected: animals.length,
+      recorded: recordedIds.size,
+      remaining,
+    };
+  }
+
   private async progress(round: {
     id: string;
     farmId: string;
@@ -183,15 +441,26 @@ export class RoundsService {
     milkRoundId: string | null;
   }): Promise<Omit<RoundRemainingDto, 'round'>> {
     const needRecorded = Boolean(round.id) || round.mode === 'MILKING';
+    const t0 = Date.now();
     const [expected, recordedIds, skipped] = await Promise.all([
-      this.expectedAnimals(round.farmId, round.mode),
-      needRecorded ? this.recordedAnimalIds(round) : Promise.resolve(new Set<string>()),
+      this.timed('expectedAnimals', () => this.expectedAnimals(round.farmId, round.mode)),
+      needRecorded
+        ? this.timed('recordedAnimalIds', () => this.recordedAnimalIds(round))
+        : Promise.resolve(new Set<string>()),
       round.id
-        ? this.prisma.roundSkip.findMany({ where: { roundId: round.id } })
+        ? this.timed('roundSkips', () =>
+            this.prisma.roundSkip.findMany({
+              where: { roundId: round.id },
+              select: { animalId: true },
+            }),
+          )
         : Promise.resolve([] as { animalId: string }[]),
     ]);
     const skippedIds = new Set(skipped.map((s) => s.animalId));
     const remaining = expected.filter((a) => !recordedIds.has(a.id) && !skippedIds.has(a.id));
+    this.logger.log(
+      `progress.total ${Date.now() - t0}ms mode=${round.mode} session=${round.session ?? '-'} expected=${expected.length} recorded=${recordedIds.size} remaining=${remaining.length}`,
+    );
     return {
       expected: expected.length,
       recorded: recordedIds.size,
@@ -536,6 +805,9 @@ export class RoundsService {
       return rows.map((a) => ({ ...a, withholdUntil: null, usualLitres: null }));
     }
 
+    // Roster + withhold flags only — one query. Nested production (7-day milk
+    // rows per female) made remaining/today multi-second; the milking pad loads
+    // rolling7Mean when an animal is opened.
     const rows = await this.prisma.animal.findMany({
       where,
       select: {
@@ -554,20 +826,13 @@ export class RoundsService {
           take: 1,
           select: { milkWithholdUntil: true },
         },
-        production: {
-          where: { type: 'MILK', entryDate: { gte: new Date(Date.now() - 7 * DAY_MS) } },
-          select: { quantity: true },
-        },
       },
       orderBy: [{ shed: 'asc' }, { herdNumber: 'asc' }],
     });
     return rows.map((a) => ({
       ...a,
       withholdUntil: a.health?.[0]?.milkWithholdUntil ?? null,
-      usualLitres:
-        a.production && a.production.length > 0
-          ? a.production.reduce((s, p) => s + Number(p.quantity), 0) / a.production.length
-          : null,
+      usualLitres: null as number | null,
     }));
   }
 
@@ -619,11 +884,14 @@ export class RoundsService {
       where: { farmId, deletedAt: null },
       take: 80,
     });
-    return rows
+    const ranked = rows
       .map((a) => ({ animal: a, rank: rankAnimalMatch(raw, a) }))
       .filter((row): row is { animal: (typeof rows)[number]; rank: number } => row.rank != null)
-      .sort((a, b) => a.rank - b.rank)
-      .map((r) => r.animal);
+      .sort((a, b) => a.rank - b.rank);
+    if (ranked.length === 0) return [];
+    // Exact B01 must win over digit-suffix ties like C01 — only the best rank tier counts.
+    const best = ranked[0]!.rank;
+    return ranked.filter((r) => r.rank === best).map((r) => r.animal);
   }
 
   private async writeScan(
@@ -661,6 +929,54 @@ export function inferSession(): MilkSession {
   if (hour < 10) return 'MORNING';
   if (hour >= 15) return 'EVENING';
   return 'MIDDAY';
+}
+
+type RoundRowCols = {
+  roundId: string;
+  mode: string;
+  session: MilkSession | null;
+  date: Date;
+  status: string;
+  startedAt: Date;
+  finishedAt: Date | null;
+  expectedCount: number | null;
+  recordedCount: number;
+  skippedCount: number;
+  totalLitres: Prisma.Decimal | number | null;
+  durationSeconds: number | null;
+  secondsPerAnimal: Prisma.Decimal | number | null;
+  milkRoundId: string | null;
+};
+
+type MilkingProgressRow = {
+  animalId: string | null;
+  herdNumber: string | null;
+  tag: string | null;
+  name: string | null;
+  species: string | null;
+  shed: string | null;
+  photoUrl: string | null;
+  animalStatus: string | null;
+  isPregnant: boolean | null;
+  withhold: Date | null;
+  recorded: boolean | null;
+  skipped: boolean | null;
+};
+
+function milkingAnimalDto(x: MilkingProgressRow): RoundRemainingDto['remaining'][number] {
+  return {
+    id: x.animalId as string,
+    shortNo: x.herdNumber as string,
+    tag: x.tag as string,
+    name: x.name,
+    species: x.species as RoundRemainingDto['remaining'][number]['species'],
+    penName: x.shed,
+    photoUrl: x.photoUrl,
+    status: x.animalStatus as RoundRemainingDto['remaining'][number]['status'],
+    isPregnant: Boolean(x.isPregnant),
+    withholdActive: x.withhold != null,
+    usualLitres: null,
+  };
 }
 
 function toRoundDto(row: {

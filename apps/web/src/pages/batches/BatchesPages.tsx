@@ -21,15 +21,8 @@ import {
   addSampling,
   addWaterQuality,
   createBatch,
-  getBatch,
-  getBatchEconomics,
+  getBatchDetail,
   listBatches,
-  listFeed,
-  listHarvest,
-  listIllness,
-  listMortality,
-  listSampling,
-  listWaterQuality,
 } from '../../api/batches';
 import { listInventory } from '../../api/inventory';
 import { AnimalPhoto, batchPictureKind } from '../../components/AnimalPhoto';
@@ -318,51 +311,23 @@ export function BatchDetailPage() {
   const [harvestQuality, setHarvestQuality] = useState<(typeof QUALITY_GRADES_FISH)[number]>('STANDARD');
 
   const batchQ = useQuery({
-    queryKey: ['batch', id],
-    queryFn: () => getBatch(id!),
+    queryKey: ['batch', id, 'detail'],
+    queryFn: () => getBatchDetail(id!),
     enabled: Boolean(id),
   });
-  const economicsQ = useQuery({
-    queryKey: ['batch', id, 'economics'],
-    queryFn: () => getBatchEconomics(id!),
-    enabled: Boolean(id),
-  });
-  const illnessQ = useQuery({
-    queryKey: ['batch', id, 'illness'],
-    queryFn: () => listIllness(id!),
-    enabled: Boolean(id),
-  });
-  const mortalityQ = useQuery({
-    queryKey: ['batch', id, 'mortality'],
-    queryFn: () => listMortality(id!),
-    enabled: Boolean(id),
-  });
-  const feedQ = useQuery({
-    queryKey: ['batch', id, 'feed'],
-    queryFn: () => listFeed(id!),
-    enabled: Boolean(id),
-  });
+  const detail = batchQ.data;
   const feedItemsQ = useQuery({
     queryKey: ['inventory', 'FEED'],
     queryFn: () => listInventory({ pageSize: 100 }),
     enabled: Boolean(id) && can('inventory:read'),
   });
-  const isFish = batchQ.data?.kind === 'FISH';
-  const waterQ = useQuery({
-    queryKey: ['batch', id, 'water-quality'],
-    queryFn: () => listWaterQuality(id!),
-    enabled: Boolean(id) && isFish,
-  });
-  const samplingQ = useQuery({
-    queryKey: ['batch', id, 'sampling'],
-    queryFn: () => listSampling(id!),
-    enabled: Boolean(id) && isFish,
-  });
-  const harvestQ = useQuery({
-    queryKey: ['batch', id, 'harvest'],
-    queryFn: () => listHarvest(id!),
-    enabled: Boolean(id) && isFish,
-  });
+  const economics = detail?.economics;
+  const illness = detail?.illness ?? [];
+  const mortality = detail?.mortality ?? [];
+  const feed = detail?.feed ?? [];
+  const waterQuality = detail?.waterQuality ?? [];
+  const sampling = detail?.sampling ?? [];
+  const harvest = detail?.harvest ?? [];
 
   const invalidateBatch = () => {
     void qc.invalidateQueries({ queryKey: ['batch', id] });
@@ -459,7 +424,7 @@ export function BatchDetailPage() {
     return <ErrorState onRetry={() => void batchQ.refetch()} />;
   }
 
-  const b = batchQ.data;
+  const b = batchQ.data.batch;
   const back =
     b.kind === 'POULTRY' ? '/groups' : b.kind === 'FISH' ? '/fish' : '/batches';
   const feedItems = (feedItemsQ.data?.items ?? []).filter((i) => i.category === 'FEED');
@@ -518,15 +483,15 @@ export function BatchDetailPage() {
           <span className="stat-label">{t('batches.initial')}</span>
           <span className="stat-value">{b.initialCount}</span>
         </div>
-        {economicsQ.data && (
+        {economics && (
           <>
             <div className="stat-card">
               <span className="stat-label">{t('qr.invested')}</span>
-              <span className="stat-value">{formatNPR(economicsQ.data.investedTotal)}</span>
+              <span className="stat-value">{formatNPR(economics.investedTotal)}</span>
             </div>
             <div className="stat-card">
               <span className="stat-label">{t('qr.earned')}</span>
-              <span className="stat-value">{formatNPR(economicsQ.data.earnedTotal)}</span>
+              <span className="stat-value">{formatNPR(economics.earnedTotal)}</span>
             </div>
           </>
         )}
@@ -585,9 +550,9 @@ export function BatchDetailPage() {
           )}
 
           <h3 style={{ marginTop: 24 }}>{t('batches.illnessHistory')}</h3>
-          {illnessQ.data && illnessQ.data.length > 0 ? (
+          {illness.length > 0 ? (
             <ul className="activity-list">
-              {illnessQ.data.map((e) => (
+              {illness.map((e) => (
                 <li key={e.id}>
                   <div>
                     <strong>
@@ -646,9 +611,9 @@ export function BatchDetailPage() {
             </form>
           )}
           <h3 style={{ marginTop: 24 }}>{t('batches.mortalityHistory')}</h3>
-          {mortalityQ.data && mortalityQ.data.length > 0 ? (
+          {mortality.length > 0 ? (
             <ul className="activity-list">
-              {mortalityQ.data.map((e) => (
+              {mortality.map((e) => (
                 <li key={e.id}>
                   <div>
                     <strong>{e.count}</strong>
@@ -726,9 +691,9 @@ export function BatchDetailPage() {
           </form>
         )}
         <h3 style={{ marginTop: 24 }}>{t('batches.feedHistory')}</h3>
-        {feedQ.data && feedQ.data.length > 0 ? (
+        {feed.length > 0 ? (
           <ul className="activity-list">
-            {feedQ.data.map((e) => (
+            {feed.map((e) => (
               <li key={e.id}>
                 <div>
                   <strong>
@@ -796,9 +761,9 @@ export function BatchDetailPage() {
               </form>
             )}
             <h3 style={{ marginTop: 24 }}>{t('batches.waterQualityHistory')}</h3>
-            {waterQ.data && waterQ.data.length > 0 ? (
+            {waterQuality.length > 0 ? (
               <ul className="activity-list">
-                {waterQ.data.map((e) => (
+                {waterQuality.map((e) => (
                   <li key={e.id}>
                     <div>
                       <strong>
@@ -867,9 +832,9 @@ export function BatchDetailPage() {
               </form>
             )}
             <h3 style={{ marginTop: 24 }}>{t('batches.samplingHistory')}</h3>
-            {samplingQ.data && samplingQ.data.length > 0 ? (
+            {sampling.length > 0 ? (
               <ul className="activity-list">
-                {samplingQ.data.map((e) => (
+                {sampling.map((e) => (
                   <li key={e.id}>
                     <div>
                       <strong>
@@ -945,9 +910,9 @@ export function BatchDetailPage() {
               </form>
             )}
             <h3 style={{ marginTop: 24 }}>{t('batches.harvestHistory')}</h3>
-            {harvestQ.data && harvestQ.data.length > 0 ? (
+            {harvest.length > 0 ? (
               <ul className="activity-list">
-                {harvestQ.data.map((e) => (
+                {harvest.map((e) => (
                   <li key={e.id}>
                     <div>
                       <strong>

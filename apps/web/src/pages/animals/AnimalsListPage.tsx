@@ -1,4 +1,4 @@
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -18,7 +18,7 @@ import { DeleteButton } from '../../components/Modal';
 import { SpeciesGlyph } from '../../components/ModuleIcon';
 import { ErrorState, LoadingState } from '../../components/PageState';
 import { StatusChip } from '../../components/StatusChip';
-import { deleteAnimal, downloadAnimalsCsv, listAnimals } from '../../api/animals';
+import { deleteAnimal, downloadAnimalsCsv, getAnimalCounts, listAnimals } from '../../api/animals';
 import { downloadTablePdf } from '../../lib/pdf';
 import { parseSpeciesParam } from '../../lib/livestock';
 
@@ -35,11 +35,10 @@ export function AnimalsListPage() {
   const searching = q.trim().length > 0;
   const showPicker = !species && !searching;
 
-  const counts = useQueries({
-    queries: SPECIES.map((s) => ({
-      queryKey: ['animals', 'count', s],
-      queryFn: () => listAnimals({ species: s, pageSize: 1 }),
-    })),
+  const countsQ = useQuery({
+    queryKey: ['animals', 'counts'],
+    queryFn: getAnimalCounts,
+    enabled: showPicker,
   });
 
   const query = useQuery({
@@ -164,7 +163,7 @@ export function AnimalsListPage() {
 
       {showPicker && (
         <div className="species-pick-grid">
-          {SPECIES.map((s, i) => (
+          {SPECIES.map((s) => (
             <button
               key={s}
               type="button"
@@ -174,7 +173,7 @@ export function AnimalsListPage() {
               <SpeciesGlyph species={s} />
               <strong>{SPECIES_LABEL[s]}</strong>
               <span className="species-pick-count">
-                {counts[i]?.data?.total ?? (counts[i]?.isLoading ? '…' : 0)}
+                {countsQ.data?.counts[s] ?? (countsQ.isLoading ? '…' : 0)}
               </span>
               <AnimalPhoto species={s} size={60} className="species-pick-photo" />
             </button>

@@ -96,15 +96,44 @@ export function remainingAnimals(store: FarmStore): CachedAnimal[] {
   });
 }
 
+/**
+ * After GET /v1/rounds/:id/remaining, mark every local eligible animal that is
+ * not on the server remaining list as already recorded so Round matches Shed.
+ */
+export function applyServerRemaining(
+  store: FarmStore,
+  payload: {
+    remaining: Array<{ id: string; usualLitres?: number | null }>;
+  },
+): void {
+  if (!store.round) return;
+  const remainingIds = new Set(payload.remaining.map((r) => r.id));
+  const eligible = [...store.animals.values()].filter((a) => {
+    if (a.deletedAt) return false;
+    if (store.round?.mode === 'MILKING') {
+      return a.gender === 'FEMALE' && !['SOLD', 'DEAD', 'CULLED', 'DRY'].includes(a.status);
+    }
+    return !['SOLD', 'DEAD', 'CULLED'].includes(a.status);
+  });
+  store.round.recordedIds = eligible.filter((a) => !remainingIds.has(a.id)).map((a) => a.id);
+  for (const row of payload.remaining) {
+    if (row.usualLitres == null) continue;
+    const animal = store.animals.get(row.id);
+    if (animal) animal.rolling7Mean = row.usualLitres;
+  }
+}
+
 export function resolveLocalScan(store: FarmStore, raw: string, method: ScanMethod): ScanLookup {
   const parsed = parseScanPayload(raw);
   let animal = parsed.animalId ? store.animals.get(parsed.animalId) : undefined;
   if (!animal && parsed.query) {
-    const hits = [...store.animals.values()]
+    const ranked = [...store.animals.values()]
       .map((a) => ({ animal: a, rank: rankAnimalMatch(parsed.query!, a) }))
       .filter((row): row is { animal: CachedAnimal; rank: number } => row.rank != null)
-      .sort((a, b) => a.rank - b.rank || (a.animal.shortNo ?? '').localeCompare(b.animal.shortNo ?? ''))
-      .map((row) => row.animal);
+      .sort((a, b) => a.rank - b.rank || (a.animal.shortNo ?? '').localeCompare(b.animal.shortNo ?? ''));
+    // Exact B01 must win over digit-suffix ties — only the best rank tier counts.
+    const best = ranked[0]?.rank;
+    const hits = best == null ? [] : ranked.filter((r) => r.rank === best).map((r) => r.animal);
     if (hits.length > 1) return { status: 'ambiguous', hits };
     animal = hits[0];
   }

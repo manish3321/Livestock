@@ -4,14 +4,22 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type {
+  BatchDetailDto,
   BatchEconomicsDto,
   BatchFeedCreate,
+  BatchFeedDto,
   BatchHarvestCreate,
+  BatchHarvestDto,
   BatchIllnessCreate,
+  BatchIllnessDto,
   BatchMortalityCreate,
+  BatchMortalityDto,
   BatchSamplingCreate,
+  BatchSamplingDto,
   BatchWaterQualityCreate,
+  BatchWaterQualityDto,
   HerdBatchCreate,
+  HerdBatchDto,
   HerdBatchListQuery,
   HerdBatchUpdate,
   PageResult,
@@ -29,89 +37,13 @@ import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
 
-export interface HerdBatchDto {
-  id: string;
-  farmId: string;
-  kind: string;
-  category: string;
-  name: string;
-  ageFromMonths: number | null;
-  ageToMonths: number | null;
-  initialCount: number;
-  currentCount: number;
-  deadCount: number;
-  sickCount: number;
-  sickByCondition: Record<string, number>;
-  notes: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface IllnessDto {
-  id: string;
-  batchId: string;
-  condition: string;
-  count: number;
-  occurredAt: string;
-  resolvedAt: string | null;
-  notes: string | null;
-  createdAt: string;
-}
-
-export interface MortalityDto {
-  id: string;
-  batchId: string;
-  count: number;
-  reason: string | null;
-  occurredAt: string;
-  createdAt: string;
-}
-
-export interface WaterQualityDto {
-  id: string;
-  batchId: string;
-  recordedAt: string;
-  temperatureC: number | null;
-  ph: number | null;
-  dissolvedO2: number | null;
-  notes: string | null;
-  createdAt: string;
-}
-
-export interface SamplingDto {
-  id: string;
-  batchId: string;
-  sampledAt: string;
-  sampleCount: number;
-  totalWeightGrams: number;
-  estimatedCount: number;
-  avgWeightGrams: number;
-  notes: string | null;
-  createdAt: string;
-}
-
-export interface HarvestDto {
-  id: string;
-  batchId: string;
-  quantityKg: number;
-  fishCount: number | null;
-  quality: string | null;
-  occurredAt: string;
-  notes: string | null;
-  createdAt: string;
-}
-
-export interface FeedDto {
-  id: string;
-  batchId: string;
-  quantityKg: number;
-  feedType: string | null;
-  inventoryItemId: string | null;
-  occurredAt: string;
-  notes: string | null;
-  createdAt: string;
-}
-
+export type { HerdBatchDto };
+export type IllnessDto = BatchIllnessDto;
+export type MortalityDto = BatchMortalityDto;
+export type WaterQualityDto = BatchWaterQualityDto;
+export type SamplingDto = BatchSamplingDto;
+export type HarvestDto = BatchHarvestDto;
+export type FeedDto = BatchFeedDto;
 @Injectable()
 export class BatchesService {
   constructor(
@@ -169,20 +101,89 @@ export class BatchesService {
 
   async economics(user: RequestUser, id: string): Promise<BatchEconomicsDto> {
     const batch = await this.requireBatch(user.farmId, id);
+    return this.computeEconomics(user.farmId, batch);
+  }
+
+  /**
+   * Everything the batch detail screens need in one round trip. Each section is
+   * built with the same queries and mappers as its single-purpose route, so the
+   * payload always matches those routes. FISH-only sections are empty arrays for
+   * other kinds (their own routes would answer 400).
+   */
+  async detail(user: RequestUser, id: string): Promise<BatchDetailDto> {
+    const batch = await this.requireBatch(user.farmId, id);
+    const { farmId } = user;
+    const isFish = batch.kind === 'FISH';
+
+    const [illness, mortality, feed, water, sampling, harvest, economics] =
+      await Promise.all([
+        this.prisma.batchIllnessEvent.findMany({
+          where: { batchId: id, farmId },
+          orderBy: { occurredAt: 'desc' },
+        }),
+        this.prisma.batchMortalityEvent.findMany({
+          where: { batchId: id, farmId },
+          orderBy: { occurredAt: 'desc' },
+        }),
+        this.prisma.batchFeedEvent.findMany({
+          where: { batchId: id, farmId },
+          orderBy: { occurredAt: 'desc' },
+        }),
+        isFish
+          ? this.prisma.batchWaterQualityLog.findMany({
+              where: { batchId: id, farmId },
+              orderBy: { recordedAt: 'desc' },
+            })
+          : Promise.resolve([]),
+        isFish
+          ? this.prisma.batchSamplingEvent.findMany({
+              where: { batchId: id, farmId },
+              orderBy: { sampledAt: 'desc' },
+            })
+          : Promise.resolve([]),
+        isFish
+          ? this.prisma.batchHarvestEvent.findMany({
+              where: { batchId: id, farmId },
+              orderBy: { occurredAt: 'desc' },
+            })
+          : Promise.resolve([]),
+        this.computeEconomics(farmId, batch),
+      ]);
+
+    return {
+      batch: toDto(
+        batch,
+        illness.filter((e) => e.resolvedAt === null),
+      ),
+      economics,
+      illness: illness.map(toIllnessDto),
+      mortality: mortality.map(toMortalityDto),
+      feed: feed.map(toFeedDto),
+      waterQuality: water.map(toWaterQualityDto),
+      sampling: sampling.map(toSamplingDto),
+      harvest: harvest.map(toHarvestDto),
+    };
+  }
+
+  private async computeEconomics(
+    farmId: string,
+    batch: HerdBatch,
+  ): Promise<BatchEconomicsDto> {
+    const id = batch.id;
 
     const [expenseAgg, revenueAgg, healthAgg] = await Promise.all([
       this.prisma.expense.aggregate({
-        where: { farmId: user.farmId, herdBatchId: id },
+        where: { farmId, herdBatchId: id },
         _sum: { amount: true },
         _count: true,
       }),
       this.prisma.revenue.aggregate({
-        where: { farmId: user.farmId, herdBatchId: id },
+        where: { farmId, herdBatchId: id },
         _sum: { amount: true },
         _count: true,
       }),
       this.prisma.healthRecord.aggregate({
-        where: { farmId: user.farmId, herdBatchId: id },
+        where: { farmId, herdBatchId: id },
         _sum: { cost: true },
         _count: true,
       }),

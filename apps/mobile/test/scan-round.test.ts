@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applySnapshot, createStore, pruneTasks } from '../src/core/store';
 import {
+  applyServerRemaining,
   remainingAnimals,
   resolveLocalScan,
   saveMilkLocal,
@@ -86,6 +87,55 @@ describe('native scan-to-record', () => {
     const store = seedStore();
     const result = resolveLocalScan(store, '04', 'MANUAL_NUMBER');
     expect(result.status).toBe('ok');
+  });
+
+  it('applies server remaining so a web-saved animal leaves the local list', () => {
+    const store = createStore('android-device-1');
+    const ids = Array.from({ length: 44 }, (_, i) => `a${String(i).padStart(3, '0')}`);
+    applySnapshot(store, {
+      pullCursor: 0,
+      tagBlocks: [],
+      photos: [],
+      animals: ids.map((id, i) => ({
+        id,
+        tag: `BUF${String(i + 1).padStart(3, '0')}`,
+        shortNo: `B${String(i + 1).padStart(2, '0')}`,
+        name: i === 3 ? 'B04' : null,
+        species: 'BUFFALO',
+        status: 'LACTATING',
+        gender: 'FEMALE',
+        isPregnant: false,
+        penName: 'Shed 1',
+        photoUrl: null,
+        photoLocalPath: null,
+        rolling7Mean: null,
+        version: 1,
+        lactationStartDate: null,
+        expectedCalvingDate: null,
+        deletedAt: null,
+      })),
+      withholds: [],
+      markers: [],
+      tasks: [],
+    });
+    startLocalRound(store, {
+      id: 'round-1',
+      mode: 'MILKING',
+      session: 'MORNING',
+    });
+    expect(remainingAnimals(store)).toHaveLength(44);
+    expect(remainingAnimals(store).some((a) => a.shortNo === 'B04')).toBe(true);
+
+    // Server already has two milk saves (incl. B04); remaining payload has 42.
+    const withoutRecorded = ids
+      .filter((_, i) => i !== 0 && i !== 3)
+      .map((id) => ({ id, usualLitres: 8 }));
+    expect(withoutRecorded).toHaveLength(42);
+    applyServerRemaining(store, { remaining: withoutRecorded });
+
+    const left = remainingAnimals(store);
+    expect(left).toHaveLength(42);
+    expect(left.some((a) => a.shortNo === 'B04')).toBe(false);
   });
 });
 

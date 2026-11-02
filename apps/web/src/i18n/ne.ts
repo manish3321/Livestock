@@ -1097,7 +1097,13 @@ export const ne = {
       confirmFinish: 'सकाएर छुटेका सेभ गर्नुहोस्',
       skipAllNotMilked: 'सबैलाई दुहिएन भनी चिन्ह लगाउनुहोस्',
       secondsPerAnimal: 'प्रति पशु {{n}} सेकेन्ड',
-      skip: { NOT_MILKED: 'दुहिएन', FORGOT: 'बिर्सियो' },
+      skip: {
+        NOT_MILKED: 'दुहिएन',
+        FORGOT: 'बिर्सियो',
+        SICK: 'बिरामी',
+        DRIED_OFF: 'सुकाइएको',
+        OTHER: 'अन्य',
+      },
       confirmDose: 'खुराक पक्का',
       vaxDisease: 'खोप',
       next: {
