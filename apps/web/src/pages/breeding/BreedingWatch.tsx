@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { CountdownUrgency, WatchGroupDto, WatchItemDto } from '@farm/contracts';
 import { breedingWatch } from '../../api/breeding';
 import { readBreedingWatchCache, writeBreedingWatchCache } from '../../lib/breeding-offline';
+import { SpeciesThumb } from './SpeciesThumb';
 
 const URGENCY: Record<CountdownUrgency, string> = {
   CALM: '#6B6F68',
@@ -118,9 +119,12 @@ export function BreedingWatch({
                   >
                     <button type="button" className="board-animal" onClick={() => openItem(row)}>
                       <span className="board-urgency" aria-hidden="true" />
-                      {row.photoUrl ? (
-                        <img className="watch-photo" src={row.photoUrl} alt="" />
-                      ) : null}
+                      <SpeciesThumb
+                        species={row.species}
+                        photoUrl={row.photoUrl}
+                        name={row.name}
+                        np={np}
+                      />
                       <span className="board-identity">
                         <span className="board-tag">{row.shortNo}</span>
                         <span className="board-name">{row.name ?? t('breeding.board.unnamed')}</span>

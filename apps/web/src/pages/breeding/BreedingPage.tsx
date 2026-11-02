@@ -231,7 +231,14 @@ export function BreedingPage() {
         </div>
       )}
 
-        <div className="choice-row breeding-tabs breeding-segment" role="tablist" aria-label={t('nav.breeding')}>
+        <div
+          className="choice-row breeding-tabs breeding-segment"
+          role="tablist"
+          aria-label={t('nav.breeding')}
+          data-tab={herdTab ? 'herd' : walkTab ? 'walk' : 'watch'}
+          data-count={isWorker ? '2' : '3'}
+        >
+          <span className="breeding-segment-thumb" aria-hidden="true" />
           <button
             type="button"
             role="tab"
@@ -267,7 +274,7 @@ export function BreedingPage() {
         </div>
 
       {herdTab && !isWorker ? (
-        <>
+        <div key="herd" className="breeding-panel">
           {metricsQ.isError ? (
             <ErrorState onRetry={() => void metricsQ.refetch()} />
           ) : (
@@ -354,28 +361,32 @@ export function BreedingPage() {
               onDeleted={() => void qc.invalidateQueries({ queryKey: ['breeding'] })}
             />
           )}
-        </>
+        </div>
       ) : walkTab ? (
-        <BreedingBoard
-          onOpen={(item) =>
-            openSheet({
-              animalId: item.animalId,
-              form: parseBreedingStage(item.form ?? null) || undefined,
-              taskId: item.taskId,
-            })
-          }
-          onToast={notify}
-        />
+        <div key="walk" className="breeding-panel">
+          <BreedingBoard
+            onOpen={(item) =>
+              openSheet({
+                animalId: item.animalId,
+                form: parseBreedingStage(item.form ?? null) || undefined,
+                taskId: item.taskId,
+              })
+            }
+            onToast={notify}
+          />
+        </div>
       ) : (
-        <BreedingWatch
-          onOpen={(item) =>
-            openSheet({
-              animalId: item.animalId,
-              form: parseBreedingStage(item.form ?? null) || undefined,
-              tab: item.tab,
-            })
-          }
-        />
+        <div key="watch" className="breeding-panel">
+          <BreedingWatch
+            onOpen={(item) =>
+              openSheet({
+                animalId: item.animalId,
+                form: parseBreedingStage(item.form ?? null) || undefined,
+                tab: item.tab,
+              })
+            }
+          />
+        </div>
       )}
 
       <Modal
