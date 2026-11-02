@@ -2,18 +2,24 @@ import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
 /**
- * Prefer DIRECT_URL (Supabase session mode :5432) for the long-lived Nest
- * process. Transaction-pooler :6543 adds ~600ms+ per query from this region
- * and made rounds today/remaining miss the sub-second budget even when the
- * SQL itself was under 1ms on the database.
+ * Local long-lived Nest: prefer DIRECT_URL (Supabase session :5432) so
+ * today/remaining stay under ~1s. Vercel/serverless must keep the transaction
+ * pooler (DATABASE_URL :6543) — session mode hits max clients and crashes
+ * the function (FUNCTION_INVOCATION_FAILED).
  */
+function prismaUrl(): string | undefined {
+  const serverless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+  if (serverless) return process.env.DATABASE_URL;
+  return process.env.DIRECT_URL || process.env.DATABASE_URL;
+}
+
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   constructor() {
     super({
       datasources: {
         db: {
-          url: process.env.DIRECT_URL || process.env.DATABASE_URL,
+          url: prismaUrl(),
         },
       },
     });
