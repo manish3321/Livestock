@@ -6,7 +6,7 @@ import type { BoardActionDto, BoardGroupDto, BoardItemDto, BreedingBoardDto } fr
 import { breedingBoard, completeDryOff, completeSyncTask, enrollSync, recordHeatObservation, resolveDecision, suggestProtocol } from '../../api/breeding';
 import { useAuth } from '../../auth/auth-context';
 import { readBreedingBoardCache, writeBreedingBoardCache } from '../../lib/breeding-offline';
-import { SpeciesThumb } from './SpeciesThumb';
+import { AnimalPhoto } from '../../components/AnimalPhoto';
 
 /** Group signal colours — moss / amber / red from farm tokens, not generic SaaS. */
 const COLOUR: Record<BoardGroupDto['colour'], string> = {
@@ -230,11 +230,11 @@ export function BreedingBoard({
                       }
                     >
                       <span className="board-urgency" aria-hidden="true" />
-                      <SpeciesThumb
-                        species={row.species}
+                      <AnimalPhoto
                         photoUrl={row.photoUrl}
-                        name={row.name}
-                        np={np}
+                        species={row.species}
+                        size={56}
+                        className="watch-photo"
                       />
                       <span className="board-identity">
                         <span className="board-tag">{row.shortNo}</span>
