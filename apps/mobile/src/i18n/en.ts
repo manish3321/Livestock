@@ -991,7 +991,8 @@ export const en = {
       receiptPhoto: 'Receipt photo',
       saveDelivery: 'Save delivery',
       receiptReady: 'Receipt photo saved',
-      varianceHint: '−2% to −5% is normal. −8% or worse usually means a missing animal or milk leaving the farm.',
+      varianceHint:
+        'Tank litres cannot exceed milked SOLD litres (rejected on save). −2% to −5% short is normal; −8% or worse raises a tank shortfall task.',
       saveFailed: 'Could not save',
       session: { MORNING: 'Morning', EVENING: 'Evening', MIDDAY: 'Midday' },
       dest: {
@@ -1079,7 +1080,7 @@ export const en = {
         MILK_WITHHOLD_END: 'Milk can be sold',
         MISSING_PRODUCTION: 'Record milk',
         YIELD_DROP: 'Milk dropped',
-        TANK_VARIANCE: 'Check milk tank',
+        TANK_VARIANCE: 'Tank shortfall — check missing milk',
         APPLY_MARKER: 'Put on band',
         REMOVE_MARKER: 'Take off band',
         RETAG_REQUIRED: 'Reprint tag',

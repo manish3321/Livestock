@@ -990,7 +990,8 @@ export const ne = {
       receiptPhoto: 'रसिद फोटो',
       saveDelivery: 'डेलिभरी सेभ',
       receiptReady: 'रसिद फोटो सेभ भयो',
-      varianceHint: '−२% देखि −५% सामान्य हो। −८% वा बढी प्रायः छुटेको पशु वा बाहिर गएको दूध हो।',
+      varianceHint:
+        'ट्याङ्क लिटर बिक्री भएको दूधभन्दा बढी हुन सक्दैन (सेभ हुँदैन)। −२% देखि −५% कम सामान्य हो; −८% वा बढी कम भए ट्याङ्क छोटो कार्य उठ्छ।',
       saveFailed: 'सेभ भएन',
       session: { MORNING: 'बिहान', EVENING: 'बेलुका', MIDDAY: 'दिउँसो' },
       dest: {
@@ -1078,7 +1079,7 @@ export const ne = {
         MILK_WITHHOLD_END: 'दूध बेच्न मिल्ने',
         MISSING_PRODUCTION: 'दूध लेख्ने',
         YIELD_DROP: 'दूध घट्यो',
-        TANK_VARIANCE: 'दूध ट्याङ्की जाँच',
+        TANK_VARIANCE: 'ट्याङ्क कम — छुटेको दूध जाँच',
         APPLY_MARKER: 'ब्यान्ड लगाउने',
         REMOVE_MARKER: 'ब्यान्ड हटाउने',
         RETAG_REQUIRED: 'ट्याग फेरि छाप्ने',

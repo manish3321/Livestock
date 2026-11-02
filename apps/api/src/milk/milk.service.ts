@@ -408,8 +408,8 @@ export class MilkService {
       await ensureTask(this.prisma, {
         farmId: user.farmId,
         type: 'TANK_VARIANCE',
-        titleEn: `Tank variance ${pctLabel}`,
-        titleNp: `ट्याङ्क फरक ${pctLabel}`,
+        titleEn: `Tank shortfall ${pctLabel} — check missing milk`,
+        titleNp: `ट्याङ्क कम ${pctLabel} — छुटेको दूध जाँच गर्नुहोस्`,
         dueAt: new Date(),
         priority: 'HIGH',
         sourceRefType: 'milkTank',

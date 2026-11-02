@@ -85,7 +85,7 @@
 
   <h1>Notifications &amp; Reminders</h1>
   <p class="meta">
-    Kharka Farm OS · Livestock monorepo · Prepared 3 Oct 2026<br />
+    Evoqed Livestock (Kharka Farm OS) · Livestock monorepo · Updated 2 Nov 2026<br />
     Covers the API (<code>apps/api</code>), mobile app (<code>apps/mobile</code>) and web Inbox (<code>apps/web</code>).
   </p>
 
@@ -298,7 +298,7 @@
     <tr><th style="width:20%">Reminder</th><th style="width:34%">When</th><th style="width:10%">Urgency</th><th>Notes</th></tr>
     <tr><td>Missing milk record</td><td>Nightly, for milking animals with no milk entry after 20:00</td><td><span class="u low">LOW</span></td><td>"No milk recorded for [tag]".</td></tr>
     <tr><td>Yield drop</td><td>When an animal's yield falls sharply</td><td><span class="u high">HIGH</span></td><td>Opens the Shed.</td></tr>
-    <tr><td>Tank variance</td><td>When the tank reading doesn't match recorded milk</td><td><span class="u high">HIGH</span></td><td>Opens the Shed.</td></tr>
+    <tr><td>Tank shortfall</td><td>When the tank reading is <strong>−8% or worse</strong> vs milked SOLD litres. Litres <em>above</em> milked are rejected on save (<code>TANK_ABOVE_MILKED</code>) and do not create a task.</td><td><span class="u high">HIGH</span></td><td>Opens the Shed. EN: “Tank shortfall … — check missing milk”. NP: “ट्याङ्क कम — छुटेको दूध जाँच”.</td></tr>
     <tr><td>Apply / remove marker</td><td>Marker cohort changes</td><td><span class="u high">HIGH</span></td><td>Can only be completed by scanning the tag.</td></tr>
     <tr><td>Re-tag required</td><td>Lost or unreadable tag</td><td><span class="u high">HIGH</span></td><td>Opens Animals.</td></tr>
     <tr><td>Low stock</td><td>Nightly, item below its reorder level</td><td><span class="u norm">NORMAL</span></td><td>"Low stock: [item]". Offline phone alarm.</td></tr>
