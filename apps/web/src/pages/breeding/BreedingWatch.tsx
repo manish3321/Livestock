@@ -13,6 +13,14 @@ const URGENCY: Record<CountdownUrgency, string> = {
   OVERDUE: '#C62828',
 };
 
+const URGENCY_WASH: Record<CountdownUrgency, string> = {
+  CALM: 'transparent',
+  NORMAL: 'rgba(42, 106, 74, 0.06)',
+  SOON: 'rgba(230, 81, 0, 0.1)',
+  IMMINENT: 'rgba(198, 40, 40, 0.1)',
+  OVERDUE: 'rgba(198, 40, 40, 0.12)',
+};
+
 const GROUP_COLOUR: Record<WatchGroupDto['colour'], string> = {
   RED: '#C62828',
   YELLOW: '#E65100',
@@ -102,19 +110,17 @@ export function BreedingWatch({
                 return (
                   <li
                     key={row.animalId}
-                    className="board-row watch-row"
+                    className={`board-row watch-row watch-urgency-${row.countdown.urgency.toLowerCase()}`}
                     style={{
                       ['--urgency' as string]: urgencyColour,
-                      ['--urgency-wash' as string]: 'rgba(42, 106, 74, 0.04)',
+                      ['--urgency-wash' as string]: URGENCY_WASH[row.countdown.urgency],
                     }}
                   >
                     <button type="button" className="board-animal" onClick={() => openItem(row)}>
                       <span className="board-urgency" aria-hidden="true" />
                       {row.photoUrl ? (
                         <img className="watch-photo" src={row.photoUrl} alt="" />
-                      ) : (
-                        <span className="watch-photo watch-photo-empty" aria-hidden="true" />
-                      )}
+                      ) : null}
                       <span className="board-identity">
                         <span className="board-tag">{row.shortNo}</span>
                         <span className="board-name">{row.name ?? t('breeding.board.unnamed')}</span>
@@ -125,7 +131,7 @@ export function BreedingWatch({
                           (np ? row.countdown.labelNp : row.countdown.labelEn) && (
                           <span className="board-why">{np ? row.contextNp : row.contextEn}</span>
                         )}
-                        <span className="board-doby" style={{ color: urgencyColour, fontWeight: 700 }}>
+                        <span className="board-late" style={{ color: urgencyColour }}>
                           {np ? row.countdown.labelNp : row.countdown.labelEn}
                         </span>
                       </span>
@@ -135,7 +141,7 @@ export function BreedingWatch({
                         className="watch-bar"
                         aria-hidden="true"
                         style={{
-                          ['--watch-pct' as string]: `${row.countdown.progressPct}%`,
+                          ['--watch-pct' as string]: `${Math.max(row.countdown.progressPct, 8)}%`,
                           ['--watch-colour' as string]: urgencyColour,
                         }}
                       />
@@ -144,7 +150,15 @@ export function BreedingWatch({
                           {t('breeding.watch.openWalk')}
                         </button>
                       ) : nextForm ? (
-                        <button type="button" className="board-btn" onClick={() => openItem(row)}>
+                        <button
+                          type="button"
+                          className={`board-btn ${
+                            row.countdown.urgency === 'OVERDUE' || row.countdown.urgency === 'IMMINENT'
+                              ? 'primary'
+                              : ''
+                          }`}
+                          onClick={() => openItem(row)}
+                        >
                           {t(`breeding.watch.action.${nextForm}`)}
                         </button>
                       ) : (
