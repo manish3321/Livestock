@@ -82,9 +82,9 @@ export function AnimalPhoto({
 const styles = StyleSheet.create({
   photo: { backgroundColor: color.border },
   placeholder: {
-    backgroundColor: color.mint,
-    borderWidth: 1.5,
-    borderColor: color.border,
+    backgroundColor: '#E8F0EA',
+    borderWidth: 1,
+    borderColor: 'rgba(31, 77, 56, 0.14)',
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -3523,8 +3523,8 @@ button.kpi-hit {
   align-items: center;
   justify-content: center;
   line-height: 1;
-  background: var(--color-brand-subtle);
-  border: 1.5px solid var(--color-border);
+  background: #e8f0ea;
+  border: 1px solid rgba(31, 77, 56, 0.14);
 }
 .shed-photo .animal-photo { width: 100% !important; height: 72px !important; border-radius: 8px !important; }
 

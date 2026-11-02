@@ -23,6 +23,7 @@ import {
   type SpeciesConfigDto,
   type TaskDto,
 } from '@farm/contracts';
+import { AnimalPhoto } from '../components/AnimalPhoto';
 import { AppShell } from '../components/AppShell';
 import { ChipSelect, Field, FormActions } from '../components/forms';
 import {
@@ -578,6 +579,7 @@ export function BreedingScreen() {
                     <Muted>{group.items.length}</Muted>
                     {group.items.map((row) => {
                       const { shortNo, name } = splitAnimalLabel(row.label);
+                      const animal = females.find((a) => a.id === row.animalId);
                       const hot =
                         row.kind === 'calvingSoon' ||
                         (row.progress != null && row.progress >= 0.85);
@@ -599,6 +601,13 @@ export function BreedingScreen() {
                         >
                           <View style={styles.walkRowInner}>
                             <View style={[styles.urgencyRail, { backgroundColor: urg.fg }]} />
+                            <AnimalPhoto
+                              animalId={row.animalId}
+                              photoUrl={animal?.photoUrl}
+                              species={animal?.species}
+                              size={56}
+                              style={styles.rowPhoto}
+                            />
                             <Pressable
                               style={styles.walkRowBody}
                               onPress={() => openAnimal(row.animalId)}
@@ -696,6 +705,13 @@ export function BreedingScreen() {
                         >
                           <View style={styles.walkRowInner}>
                             <View style={[styles.urgencyRail, { backgroundColor: urg.fg }]} />
+                            <AnimalPhoto
+                              animalId={row.animalId}
+                              photoUrl={row.photoUrl}
+                              species={row.species}
+                              size={56}
+                              style={styles.rowPhoto}
+                            />
                             <Pressable style={styles.walkRowBody} onPress={() => openAnimal(row.animalId)}>
                               <Txt weight="bold" style={styles.walkShortNo}>
                                 {row.shortNo}
@@ -1560,6 +1576,7 @@ const styles = StyleSheet.create({
   walkRowCard: { gap: 0 },
   walkRowInner: { flexDirection: 'row', alignItems: 'stretch' },
   urgencyRail: { width: 7 },
+  rowPhoto: { marginVertical: 12, marginLeft: 8, alignSelf: 'center' },
   walkRowBody: { flex: 1, padding: 12, gap: 2 },
   walkShortNo: { fontSize: 26, letterSpacing: -0.5, color: color.brandStrong },
   walkName: { fontSize: 16, color: color.textPrimary },
