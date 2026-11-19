@@ -503,11 +503,26 @@ export function buildBreedingWatch(input: {
     const items = (buckets.get(key) ?? []).sort(compareWatchItems);
     if (items.length === 0) continue;
     const meta = GROUP_META[key];
+    let labelEn = meta.labelEn;
+    let labelNp = meta.labelNp;
+    let colour = meta.colour;
+    // "Calving soon" is wrong when every row is already past EDD.
+    if (key === 'CALVING_SOON' && items.some((row) => row.countdown.urgency === 'OVERDUE')) {
+      const allOverdue = items.every((row) => row.countdown.urgency === 'OVERDUE');
+      if (allOverdue) {
+        labelEn = 'Calving overdue';
+        labelNp = 'बियाइ ढिलो';
+      } else {
+        labelEn = 'Calving soon / overdue';
+        labelNp = 'बियाउने / ढिलो';
+      }
+      colour = 'RED';
+    }
     groups.push({
       key,
-      labelEn: meta.labelEn,
-      labelNp: meta.labelNp,
-      colour: meta.colour,
+      labelEn,
+      labelNp,
+      colour,
       items: items.map((row) => {
         const { sortKey: _ignored, ...item } = row;
         return item;

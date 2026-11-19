@@ -3406,6 +3406,62 @@ button.kpi-hit {
   .pedigree-row { grid-template-columns: 1fr; }
   .work-row { flex-direction: column; gap: 4px; }
 }
+/* Same segment language as Watch / Walk / Herd — scroll when many groups. */
+.watch-group-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  padding: 4px;
+  margin: 0 0 14px;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  background: rgba(31, 77, 56, 0.08);
+  border-radius: 999px;
+  border: 1px solid rgba(31, 77, 56, 0.12);
+}
+.watch-group-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.02rem;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: none;
+  transition: color 0.22s var(--ease-out), background 0.22s var(--ease-out);
+}
+.watch-group-tab:hover {
+  color: var(--color-text);
+}
+.watch-group-tab.selected {
+  background: var(--color-brand-strong);
+  color: #fffbf5;
+  box-shadow: 0 4px 12px rgba(31, 77, 56, 0.22);
+}
+.watch-group-tab-count {
+  font-size: 0.85rem;
+  font-weight: 700;
+  opacity: 0.85;
+}
+.watch-group-tab:not(.selected) .watch-group-tab-count {
+  color: var(--color-brand-strong);
+  opacity: 1;
+}
+.watch-group-panel {
+  animation: breeding-panel-in 0.28s var(--ease-out);
+}
 .breeding-watch .watch-row {
   min-height: 88px;
 }

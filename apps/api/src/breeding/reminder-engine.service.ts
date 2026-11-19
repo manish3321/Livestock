@@ -188,6 +188,9 @@ export class ReminderEngineService {
       );
       for (const calf of event.calves) {
         if (!calf.animal) continue;
+        // Absorption window is gone — leave Walk alone even if the open task lingered.
+        const hoursSinceBirth = (now.getTime() - event.calvingAt.getTime()) / (60 * 60 * 1000);
+        if (hoursSinceBirth > 48) continue;
         wrote += await this.fireFiltered(farmId, {
           event: 'CALVING',
           species: (calf.animal.species as Species) ?? (event.dam.species as Species),

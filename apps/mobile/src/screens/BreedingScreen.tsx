@@ -213,6 +213,8 @@ export function BreedingScreen() {
   const tabs = isWorker ? WORKER_TABS : MAIN_TABS;
 
   const [mainTab, setMainTab] = useState<MainTab>('watch');
+  const [watchKind, setWatchKind] = useState<WatchKind | null>(null);
+  const [walkGroupKey, setWalkGroupKey] = useState<string | null>(null);
   const [form, setForm] = useState<FormMode>(() => {
     const f = route.params?.form;
     return f && FORM_MODES.has(f) ? (f as FormMode) : null;
@@ -331,6 +333,37 @@ export function BreedingScreen() {
   const watchGroups = useMemo(() => groupWatchByKind(watchRows), [watchRows]);
   const walkRows = useMemo(() => buildWalkRows(tasks), [tasks]);
   const walkGroups = useMemo(() => groupWalkByKind(walkRows), [walkRows]);
+  const activeWatchGroup = useMemo(
+    () => watchGroups.find((g) => g.kind === watchKind) ?? watchGroups[0] ?? null,
+    [watchGroups, watchKind],
+  );
+
+  useEffect(() => {
+    if (watchGroups.length === 0) {
+      setWatchKind(null);
+      return;
+    }
+    setWatchKind((prev) =>
+      prev && watchGroups.some((g) => g.kind === prev) ? prev : watchGroups[0]!.kind,
+    );
+  }, [watchGroups]);
+
+  const boardGroups = board?.groups;
+  const activeWalkGroup = useMemo(() => {
+    const groups = boardGroups ?? [];
+    return groups.find((g) => g.key === walkGroupKey) ?? groups[0] ?? null;
+  }, [boardGroups, walkGroupKey]);
+
+  useEffect(() => {
+    const groups = boardGroups ?? [];
+    if (groups.length === 0) {
+      setWalkGroupKey(null);
+      return;
+    }
+    setWalkGroupKey((prev) =>
+      prev && groups.some((g) => g.key === prev) ? prev : groups[0]!.key,
+    );
+  }, [boardGroups]);
 
   const openForm = (mode: FormMode, animalId?: string | null, breedingId?: string) => {
     if (animalId) {
@@ -572,100 +605,134 @@ export function BreedingScreen() {
           {mainTab === 'watch' ? (
             <View>
               {watchGroups.length === 0 && !loading ? <EmptyState /> : null}
-              {watchGroups.map((group) => {
-                const tint = WATCH_GROUP_COLOUR[group.kind] ?? color.brandStrong;
-                return (
-                  <View
-                    key={group.kind}
-                    style={[
-                      styles.walkGroup,
-                      { borderColor: `${tint}44`, backgroundColor: `${tint}12` },
-                    ]}
-                  >
-                    <Txt weight="semibold" style={[styles.walkGroupTitle, { color: tint }]}>
-                      {watchTitle(group.kind)}
-                    </Txt>
-                    <Muted>{group.items.length}</Muted>
-                    {group.items.map((row) => {
-                      const { shortNo, name } = splitAnimalLabel(row.label);
-                      const animal = females.find((a) => a.id === row.animalId);
-                      const hot =
-                        row.kind === 'calvingSoon' ||
-                        (row.progress != null && row.progress >= 0.85);
-                      const urg = hot ? URGENCY.RED! : URGENCY.NORMAL!;
-                      return (
-                        <View
-                          key={row.key}
-                          style={[
-                            styles.walkRowCard,
-                            {
-                              borderColor: `${urg.fg}33`,
-                              backgroundColor: urg.bg,
-                              borderWidth: 1,
-                              borderRadius: 14,
-                              marginBottom: 8,
-                              overflow: 'hidden',
-                            },
-                          ]}
+              {watchGroups.length > 0 ? (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.watchKindTrack}
+                >
+                  {watchGroups.map((group) => {
+                    const active = group.kind === (activeWatchGroup?.kind ?? watchKind);
+                    return (
+                      <Pressable
+                        key={group.kind}
+                        onPress={() => setWatchKind(group.kind)}
+                        style={[styles.watchKindBtn, active && styles.segmentBtnOn]}
+                      >
+                        <Txt
+                          weight="semibold"
+                          style={[styles.watchKindText, active && styles.watchKindTextOn]}
                         >
-                          <View style={styles.walkRowInner}>
-                            <View style={[styles.urgencyRail, { backgroundColor: urg.fg }]} />
-                            <AnimalPhoto
-                              animalId={row.animalId}
-                              photoUrl={animal?.photoUrl}
-                              species={animal?.species}
-                              size={56}
-                              style={styles.rowPhoto}
-                            />
-                            <Pressable
-                              style={styles.walkRowBody}
-                              onPress={() => openAnimal(row.animalId)}
+                          {watchTitle(group.kind)}
+                        </Txt>
+                        <Txt
+                          weight="bold"
+                          style={[styles.watchKindCountText, active && styles.watchKindTextOn]}
+                        >
+                          {group.items.length}
+                        </Txt>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              ) : null}
+              {activeWatchGroup
+                ? (() => {
+                    const group = activeWatchGroup;
+                    const tint = WATCH_GROUP_COLOUR[group.kind] ?? color.brandStrong;
+                    return (
+                      <View
+                        key={group.kind}
+                        style={[
+                          styles.walkGroup,
+                          { borderColor: `${tint}44`, backgroundColor: `${tint}12` },
+                        ]}
+                      >
+                        <Txt weight="semibold" style={[styles.walkGroupTitle, { color: tint }]}>
+                          {watchTitle(group.kind)}
+                        </Txt>
+                        <Muted>{group.items.length}</Muted>
+                        {group.items.map((row) => {
+                          const { shortNo, name } = splitAnimalLabel(row.label);
+                          const animal = females.find((a) => a.id === row.animalId);
+                          const hot =
+                            row.kind === 'calvingSoon' ||
+                            (row.progress != null && row.progress >= 0.85);
+                          const urg = hot ? URGENCY.RED! : URGENCY.NORMAL!;
+                          return (
+                            <View
+                              key={row.key}
+                              style={[
+                                styles.walkRowCard,
+                                {
+                                  borderColor: `${urg.fg}33`,
+                                  backgroundColor: urg.bg,
+                                  borderWidth: 1,
+                                  borderRadius: 14,
+                                  marginBottom: 8,
+                                  overflow: 'hidden',
+                                },
+                              ]}
                             >
-                              <Txt weight="bold" style={styles.walkShortNo}>
-                                {shortNo}
-                              </Txt>
-                              {name ? (
-                                <Txt weight="semibold" style={styles.walkName}>
-                                  {name}
-                                </Txt>
-                              ) : null}
-                              <Muted>{row.subtitle}</Muted>
-                              {row.progressLabel ? (
-                                <Txt weight="semibold" style={{ color: urg.fg, marginTop: 4 }}>
-                                  {row.progressLabel}
-                                </Txt>
-                              ) : null}
-                            </Pressable>
-                          </View>
-                          {row.progress != null ? (
-                            <View style={[styles.progressWrap, { paddingHorizontal: 12 }]}>
-                              <View style={styles.progressTrack}>
-                                <View
-                                  style={[
-                                    styles.progressFill,
-                                    {
-                                      width: `${Math.round(row.progress * 100)}%`,
-                                      backgroundColor: urg.fg,
-                                    },
-                                  ]}
+                              <View style={styles.walkRowInner}>
+                                <View style={[styles.urgencyRail, { backgroundColor: urg.fg }]} />
+                                <AnimalPhoto
+                                  animalId={row.animalId}
+                                  photoUrl={animal?.photoUrl}
+                                  species={animal?.species}
+                                  size={56}
+                                  style={styles.rowPhoto}
                                 />
+                                <Pressable
+                                  style={styles.walkRowBody}
+                                  onPress={() => openAnimal(row.animalId)}
+                                >
+                                  <Txt weight="bold" style={styles.walkShortNo}>
+                                    {shortNo}
+                                  </Txt>
+                                  {name ? (
+                                    <Txt weight="semibold" style={styles.walkName}>
+                                      {name}
+                                    </Txt>
+                                  ) : null}
+                                  <Muted>{row.subtitle}</Muted>
+                                  {row.progressLabel ? (
+                                    <Txt weight="semibold" style={{ color: urg.fg, marginTop: 4 }}>
+                                      {row.progressLabel}
+                                    </Txt>
+                                  ) : null}
+                                </Pressable>
                               </View>
+                              {row.progress != null ? (
+                                <View style={[styles.progressWrap, { paddingHorizontal: 12 }]}>
+                                  <View style={styles.progressTrack}>
+                                    <View
+                                      style={[
+                                        styles.progressFill,
+                                        {
+                                          width: `${Math.round(row.progress * 100)}%`,
+                                          backgroundColor: urg.fg,
+                                        },
+                                      ]}
+                                    />
+                                  </View>
+                                </View>
+                              ) : null}
+                              {canWrite ? (
+                                <View style={styles.rowActions}>
+                                  <PrimaryButton
+                                    label={t('breeding.recordAction')}
+                                    onPress={() => onWatchRecord(row)}
+                                  />
+                                </View>
+                              ) : null}
                             </View>
-                          ) : null}
-                          {canWrite ? (
-                            <View style={styles.rowActions}>
-                              <PrimaryButton
-                                label={t('breeding.recordAction')}
-                                onPress={() => onWatchRecord(row)}
-                              />
-                            </View>
-                          ) : null}
-                        </View>
-                      );
-                    })}
-                  </View>
-                );
-              })}
+                          );
+                        })}
+                      </View>
+                    );
+                  })()
+                : null}
             </View>
           ) : null}
 
@@ -676,94 +743,129 @@ export function BreedingScreen() {
                   <Muted>
                     {board.summary.totalActions} · {board.summary.overdue} late
                   </Muted>
-                  {board.groups.length === 0 && !loading ? (
+                  {(boardGroups?.length ?? 0) === 0 && !loading ? (
                     <EmptyState message={t('breeding.walkEmpty')} />
                   ) : null}
-                  {board.groups.map((group) => {
-                    const groupTint = GROUP_COLOUR[group.colour] ?? color.brandStrong;
-                    return (
-                    <View
-                      key={group.key}
-                      style={[
-                        styles.walkGroup,
-                        { borderColor: `${groupTint}44`, backgroundColor: `${groupTint}12` },
-                      ]}
+                  {(boardGroups?.length ?? 0) > 0 ? (
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.watchKindTrack}
                     >
-                      <Txt weight="semibold" style={[styles.walkGroupTitle, { color: groupTint }]}>
-                        {group.labelEn}
-                      </Txt>
-                      {group.subLabelEn ? <Muted>{group.subLabelEn}</Muted> : null}
-                      {group.items.map((row) => {
-                        const urg = URGENCY[row.urgency] ?? URGENCY.NORMAL!;
-                        const primary = row.actions.find((a) => a.primary) ?? row.actions[0];
-                        const secondary = row.actions.filter((a) => a !== primary).slice(0, 1);
+                      {(boardGroups ?? []).map((group) => {
+                        const active = group.key === (activeWalkGroup?.key ?? walkGroupKey);
                         return (
-                        <View
-                          key={row.taskId}
-                          style={[
-                            styles.walkRowCard,
-                            {
-                              borderColor: `${urg.fg}33`,
-                              backgroundColor: urg.bg,
-                              borderWidth: 1,
-                              borderRadius: 14,
-                              marginBottom: 8,
-                              overflow: 'hidden',
-                            },
-                          ]}
-                        >
-                          <View style={styles.walkRowInner}>
-                            <View style={[styles.urgencyRail, { backgroundColor: urg.fg }]} />
-                            <AnimalPhoto
-                              animalId={row.animalId}
-                              photoUrl={row.photoUrl}
-                              species={row.species}
-                              size={56}
-                              style={styles.rowPhoto}
-                            />
-                            <Pressable style={styles.walkRowBody} onPress={() => openAnimal(row.animalId)}>
-                              <Txt weight="bold" style={styles.walkShortNo}>
-                                {row.shortNo}
-                              </Txt>
-                              <Txt weight="semibold" style={styles.walkName}>
-                                {row.name ?? '—'}
-                              </Txt>
-                              {row.penName ? <Muted>{row.penName}</Muted> : null}
-                              <Muted>
-                                Do by: {row.doByEn}
-                              </Muted>
-                              {row.whyEn ? <Muted>Why: {row.whyEn}</Muted> : null}
-                              {row.lateEn ? (
-                                <Txt weight="semibold" style={styles.walkLate}>
-                                  {row.lateEn}
-                                </Txt>
-                              ) : null}
-                            </Pressable>
-                          </View>
-                          {canWrite ? (
-                            <View style={styles.rowActions}>
-                              {primary ? (
-                                <PrimaryButton
-                                  key={primary.key}
-                                  label={primary.labelEn}
-                                  onPress={() => runBoardAction(row, primary.key)}
-                                />
-                              ) : null}
-                              {secondary.map((action) => (
-                                <SecondaryButton
-                                  key={action.key}
-                                  label={action.labelEn}
-                                  onPress={() => runBoardAction(row, action.key)}
-                                />
-                              ))}
-                            </View>
-                          ) : null}
-                        </View>
+                          <Pressable
+                            key={group.key}
+                            onPress={() => setWalkGroupKey(group.key)}
+                            style={[styles.watchKindBtn, active && styles.segmentBtnOn]}
+                          >
+                            <Txt
+                              weight="semibold"
+                              style={[styles.watchKindText, active && styles.watchKindTextOn]}
+                            >
+                              {group.labelEn}
+                            </Txt>
+                            <Txt
+                              weight="bold"
+                              style={[styles.watchKindCountText, active && styles.watchKindTextOn]}
+                            >
+                              {group.items.length}
+                            </Txt>
+                          </Pressable>
                         );
                       })}
-                    </View>
-                    );
-                  })}
+                    </ScrollView>
+                  ) : null}
+                  {activeWalkGroup
+                    ? (() => {
+                        const group = activeWalkGroup;
+                        const groupTint = GROUP_COLOUR[group.colour] ?? color.brandStrong;
+                        return (
+                          <View
+                            key={group.key}
+                            style={[
+                              styles.walkGroup,
+                              { borderColor: `${groupTint}44`, backgroundColor: `${groupTint}12` },
+                            ]}
+                          >
+                            <Txt weight="semibold" style={[styles.walkGroupTitle, { color: groupTint }]}>
+                              {group.labelEn}
+                            </Txt>
+                            {group.subLabelEn ? <Muted>{group.subLabelEn}</Muted> : null}
+                            {group.items.map((row) => {
+                              const urg = URGENCY[row.urgency] ?? URGENCY.NORMAL!;
+                              const primary = row.actions.find((a) => a.primary) ?? row.actions[0];
+                              const secondary = row.actions.filter((a) => a !== primary).slice(0, 1);
+                              return (
+                                <View
+                                  key={row.taskId}
+                                  style={[
+                                    styles.walkRowCard,
+                                    {
+                                      borderColor: `${urg.fg}33`,
+                                      backgroundColor: urg.bg,
+                                      borderWidth: 1,
+                                      borderRadius: 14,
+                                      marginBottom: 8,
+                                      overflow: 'hidden',
+                                    },
+                                  ]}
+                                >
+                                  <View style={styles.walkRowInner}>
+                                    <View style={[styles.urgencyRail, { backgroundColor: urg.fg }]} />
+                                    <AnimalPhoto
+                                      animalId={row.animalId}
+                                      photoUrl={row.photoUrl}
+                                      species={row.species}
+                                      size={56}
+                                      style={styles.rowPhoto}
+                                    />
+                                    <Pressable
+                                      style={styles.walkRowBody}
+                                      onPress={() => openAnimal(row.animalId)}
+                                    >
+                                      <Txt weight="bold" style={styles.walkShortNo}>
+                                        {row.shortNo}
+                                      </Txt>
+                                      <Txt weight="semibold" style={styles.walkName}>
+                                        {row.name ?? '—'}
+                                      </Txt>
+                                      {row.penName ? <Muted>{row.penName}</Muted> : null}
+                                      <Muted>Do by: {row.doByEn}</Muted>
+                                      {row.whyEn ? <Muted>Why: {row.whyEn}</Muted> : null}
+                                      {row.lateEn ? (
+                                        <Txt weight="semibold" style={styles.walkLate}>
+                                          {row.lateEn}
+                                        </Txt>
+                                      ) : null}
+                                    </Pressable>
+                                  </View>
+                                  {canWrite ? (
+                                    <View style={styles.rowActions}>
+                                      {primary ? (
+                                        <PrimaryButton
+                                          key={primary.key}
+                                          label={primary.labelEn}
+                                          onPress={() => runBoardAction(row, primary.key)}
+                                        />
+                                      ) : null}
+                                      {secondary.map((action) => (
+                                        <SecondaryButton
+                                          key={action.key}
+                                          label={action.labelEn}
+                                          onPress={() => runBoardAction(row, action.key)}
+                                        />
+                                      ))}
+                                    </View>
+                                  ) : null}
+                                </View>
+                              );
+                            })}
+                          </View>
+                        );
+                      })()
+                    : null}
                   {board.decisionQueue.count > 0 ? (
                     <View style={styles.section}>
                       <SectionTitle>
@@ -1573,6 +1675,34 @@ const styles = StyleSheet.create({
   segmentBtnOn: { backgroundColor: color.brandStrong },
   segmentText: { fontSize: 15, color: color.textSecondary },
   segmentTextOn: { color: color.surface },
+  watchKindTrack: {
+    flexDirection: 'row',
+    gap: 4,
+    padding: 4,
+    marginBottom: 8,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(31, 77, 56, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(31, 77, 56, 0.12)',
+  },
+  watchKindBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 44,
+    paddingHorizontal: 14,
+    borderRadius: radius.pill,
+    borderWidth: 0,
+    backgroundColor: 'transparent',
+  },
+  watchKindText: { fontSize: 15, color: color.textSecondary },
+  watchKindTextOn: { color: color.surface },
+  watchKindCount: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  watchKindCountOn: {},
+  watchKindCountText: { fontSize: 13, color: color.brandStrong },
   section: { marginTop: 12, gap: 8 },
   walkGroup: {
     marginTop: 12,

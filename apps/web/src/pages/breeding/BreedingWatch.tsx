@@ -1,7 +1,8 @@
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import type { CountdownUrgency, WatchGroupDto, WatchItemDto } from '@farm/contracts';
+import type { CountdownUrgency, WatchGroupDto, WatchGroupKey, WatchItemDto } from '@farm/contracts';
 import { breedingWatch } from '../../api/breeding';
 import { readBreedingWatchCache, writeBreedingWatchCache } from '../../lib/breeding-offline';
 import { AnimalPhoto } from '../../components/AnimalPhoto';
@@ -62,6 +63,21 @@ export function BreedingWatch({
   });
   const watch = watchQ.data ?? cached ?? undefined;
   const offline = watchQ.isError && Boolean(cached);
+  const groups = watch?.groups ?? [];
+  const [activeKey, setActiveKey] = useState<WatchGroupKey | null>(null);
+
+  useEffect(() => {
+    if (groups.length === 0) {
+      setActiveKey(null);
+      return;
+    }
+    setActiveKey((prev) => (prev && groups.some((g) => g.key === prev) ? prev : groups[0]!.key));
+  }, [groups]);
+
+  const activeGroup = useMemo(
+    () => groups.find((g) => g.key === activeKey) ?? groups[0] ?? null,
+    [groups, activeKey],
+  );
 
   const openItem = (row: WatchItemDto) => {
     if (row.stage === 'IN_HEAT') {
@@ -88,99 +104,124 @@ export function BreedingWatch({
         </p>
       </div>
 
-      {!watch || watch.groups.length === 0 ? (
+      {!watch || groups.length === 0 ? (
         <p className="board-empty">{t('breeding.watch.empty')}</p>
       ) : (
-        watch.groups.map((group, gi) => (
-          <section
-            key={group.key}
-            className={`board-group board-group-${group.colour.toLowerCase()}`}
-            style={{
-              ['--group-colour' as string]: GROUP_COLOUR[group.colour],
-              animationDelay: `${gi * 40}ms`,
-            }}
+        <>
+          <div
+            className="watch-group-tabs"
+            role="tablist"
+            aria-label={t('breeding.watch.title')}
           >
-            <header className="board-group-head">
-              <h3 className="board-group-title">{np ? group.labelNp : group.labelEn}</h3>
-              <p className="board-sub">{group.items.length}</p>
-            </header>
-            <ul className="board-list">
-              {group.items.map((row) => {
-                const nextForm = formForStage(row.stage);
-                const urgencyColour = URGENCY[row.countdown.urgency];
-                return (
-                  <li
-                    key={row.animalId}
-                    className={`board-row watch-row watch-urgency-${row.countdown.urgency.toLowerCase()}`}
-                    style={{
-                      ['--urgency' as string]: urgencyColour,
-                      ['--urgency-wash' as string]: URGENCY_WASH[row.countdown.urgency],
-                    }}
-                  >
-                    <button type="button" className="board-animal" onClick={() => openItem(row)}>
-                      <span className="board-urgency" aria-hidden="true" />
-                      <AnimalPhoto
-                        photoUrl={row.photoUrl}
-                        species={row.species}
-                        size={56}
-                        className="watch-photo"
-                      />
-                      <span className="board-identity">
-                        <span className="board-tag">{row.shortNo}</span>
-                        <span className="board-name">{row.name ?? t('breeding.board.unnamed')}</span>
-                        {row.penName ? <span className="board-pen">{row.penName}</span> : null}
-                      </span>
-                      <span className="board-timing">
-                        {(np ? row.contextNp : row.contextEn) !==
-                          (np ? row.countdown.labelNp : row.countdown.labelEn) && (
-                          <span className="board-why">{np ? row.contextNp : row.contextEn}</span>
-                        )}
-                        <span className="board-late" style={{ color: urgencyColour }}>
-                          {np ? row.countdown.labelNp : row.countdown.labelEn}
+            {groups.map((group) => {
+              const selected = group.key === (activeGroup?.key ?? activeKey);
+              return (
+                <button
+                  key={group.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  className={`watch-group-tab ${selected ? 'selected' : ''}`}
+                  onClick={() => setActiveKey(group.key)}
+                >
+                  <span className="watch-group-tab-label">{np ? group.labelNp : group.labelEn}</span>
+                  <span className="watch-group-tab-count">{group.items.length}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {activeGroup ? (
+            <section
+              key={activeGroup.key}
+              className={`board-group board-group-${activeGroup.colour.toLowerCase()} watch-group-panel`}
+              style={{ ['--group-colour' as string]: GROUP_COLOUR[activeGroup.colour] }}
+              role="tabpanel"
+            >
+              <header className="board-group-head">
+                <h3 className="board-group-title">
+                  {np ? activeGroup.labelNp : activeGroup.labelEn}
+                </h3>
+                <p className="board-sub">{activeGroup.items.length}</p>
+              </header>
+              <ul className="board-list">
+                {activeGroup.items.map((row) => {
+                  const nextForm = formForStage(row.stage);
+                  const urgencyColour = URGENCY[row.countdown.urgency];
+                  return (
+                    <li
+                      key={row.animalId}
+                      className={`board-row watch-row watch-urgency-${row.countdown.urgency.toLowerCase()}`}
+                      style={{
+                        ['--urgency' as string]: urgencyColour,
+                        ['--urgency-wash' as string]: URGENCY_WASH[row.countdown.urgency],
+                      }}
+                    >
+                      <button type="button" className="board-animal" onClick={() => openItem(row)}>
+                        <span className="board-urgency" aria-hidden="true" />
+                        <AnimalPhoto
+                          photoUrl={row.photoUrl}
+                          species={row.species}
+                          size={56}
+                          className="watch-photo"
+                        />
+                        <span className="board-identity">
+                          <span className="board-tag">{row.shortNo}</span>
+                          <span className="board-name">{row.name ?? t('breeding.board.unnamed')}</span>
+                          {row.penName ? <span className="board-pen">{row.penName}</span> : null}
                         </span>
-                      </span>
-                    </button>
-                    <div className="board-actions watch-count">
-                      <div
-                        className="watch-bar"
-                        aria-hidden="true"
-                        style={{
-                          ['--watch-pct' as string]: `${Math.max(row.countdown.progressPct, 8)}%`,
-                          ['--watch-colour' as string]: urgencyColour,
-                        }}
-                      />
-                      {row.stage === 'IN_HEAT' ? (
-                        <button type="button" className="board-btn primary" onClick={() => openItem(row)}>
-                          {t('breeding.watch.openWalk')}
-                        </button>
-                      ) : nextForm ? (
-                        <button
-                          type="button"
-                          className={`board-btn ${
-                            row.countdown.urgency === 'OVERDUE' || row.countdown.urgency === 'IMMINENT'
-                              ? 'primary'
-                              : ''
-                          }`}
-                          onClick={() => openItem(row)}
-                        >
-                          {t(`breeding.watch.action.${nextForm}`)}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="board-btn"
-                          onClick={() => void navigate(`/animals/${row.animalId}`)}
-                        >
-                          {t('breeding.watch.openRecord')}
-                        </button>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        ))
+                        <span className="board-timing">
+                          {(np ? row.contextNp : row.contextEn) !==
+                            (np ? row.countdown.labelNp : row.countdown.labelEn) && (
+                            <span className="board-why">{np ? row.contextNp : row.contextEn}</span>
+                          )}
+                          <span className="board-late" style={{ color: urgencyColour }}>
+                            {np ? row.countdown.labelNp : row.countdown.labelEn}
+                          </span>
+                        </span>
+                      </button>
+                      <div className="board-actions watch-count">
+                        <div
+                          className="watch-bar"
+                          aria-hidden="true"
+                          style={{
+                            ['--watch-pct' as string]: `${Math.max(row.countdown.progressPct, 8)}%`,
+                            ['--watch-colour' as string]: urgencyColour,
+                          }}
+                        />
+                        {row.stage === 'IN_HEAT' ? (
+                          <button type="button" className="board-btn primary" onClick={() => openItem(row)}>
+                            {t('breeding.watch.openWalk')}
+                          </button>
+                        ) : nextForm ? (
+                          <button
+                            type="button"
+                            className={`board-btn ${
+                              row.countdown.urgency === 'OVERDUE' || row.countdown.urgency === 'IMMINENT'
+                                ? 'primary'
+                                : ''
+                            }`}
+                            onClick={() => openItem(row)}
+                          >
+                            {t(`breeding.watch.action.${nextForm}`)}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="board-btn"
+                            onClick={() => void navigate(`/animals/${row.animalId}`)}
+                          >
+                            {t('breeding.watch.openRecord')}
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ) : null}
+        </>
       )}
     </div>
   );

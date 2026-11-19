@@ -155,6 +155,32 @@ describe('buildBreedingBoard', () => {
     expect(board.groups[0]?.items[0]?.actions?.[0]?.key).toBe('RECORD_COLOSTRUM');
   });
 
+  it('drops colostrum past 48h so Walk is not flooded with dead FPT rows', () => {
+    const board = buildBreedingBoard({
+      date: '2026-03-17',
+      now: new Date('2026-03-17T00:00:00+05:45'),
+      role: 'WORKER',
+      animals: [
+        { id: 'a1', herdNumber: 'B1425', tag: 'B1425', name: null, species: 'BUFFALO', shed: 'Shed 1', photoUrl: null, penName: 'Shed 1', penSortOrder: 1, seqNo: 1425 },
+      ],
+      tasks: [
+        {
+          id: 't1',
+          type: 'COLOSTRUM_FEED',
+          titleEn: 'Colostrum',
+          titleNp: '',
+          dueAt: new Date('2026-02-25T06:00:00+05:45'),
+          priority: 'CRITICAL',
+          animalId: 'a1',
+          metadata: { n: 476 },
+        },
+      ],
+    });
+    expect(board.groups).toEqual([]);
+    expect(board.summary.totalActions).toBe(0);
+    expect(board.summary.overdue).toBe(0);
+  });
+
   it('marks late once with a short consequence', () => {
     const board = buildBreedingBoard({
       date: '2026-03-17',

@@ -97,6 +97,31 @@ describe('breeding watch', () => {
     expect(watch.totalAnimals).toBe(1);
   });
 
+  it('relabels Calving soon when every animal is past EDD', () => {
+    const watch = buildBreedingWatch({
+      now,
+      configBySpecies: cfg,
+      animals: [
+        animal({
+          id: 'a1',
+          tag: 'C04',
+          stage: 'CALVING_IMMINENT',
+          expectedCalvingDate: new Date('2026-03-22T00:00:00+05:45'),
+        }),
+        animal({
+          id: 'a2',
+          tag: 'C10',
+          stage: 'DRY_PREGNANT',
+          expectedCalvingDate: new Date('2026-03-22T00:00:00+05:45'),
+        }),
+      ],
+    });
+    const group = watch.groups.find((g) => g.key === 'CALVING_SOON');
+    expect(group?.labelEn).toBe('Calving overdue');
+    expect(group?.colour).toBe('RED');
+    expect(group?.items.every((row) => row.countdown.urgency === 'OVERDUE')).toBe(true);
+  });
+
   it('mirrors Walk service-window clock on IN_HEAT items', () => {
     // Still inside the 18h service window relative to `now`.
     const heatAt = new Date(now.getTime() - 6 * 60 * 60 * 1000);

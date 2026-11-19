@@ -8,6 +8,7 @@ import { ensureTask } from './task-writer';
 import {
   MOMENT_TASK_TYPES,
   MOMENT_EXPIRY_DAYS,
+  COLOSTRUM_EXPIRY_HOURS,
   WATCH_TASK_TYPES,
   WATCH_EXPIRY_DAYS,
   staleLadderStepIds,
@@ -89,6 +90,15 @@ export class NightlyJob {
       },
       data: { status: 'EXPIRED' },
     });
+    const colostrum = await this.prisma.task.updateMany({
+      where: {
+        farmId,
+        type: 'COLOSTRUM_FEED',
+        status: { in: ['PENDING', 'SNOOZED'] },
+        dueAt: { lt: new Date(now.getTime() - COLOSTRUM_EXPIRY_HOURS * 60 * 60 * 1000) },
+      },
+      data: { status: 'EXPIRED' },
+    });
     const watches = await this.prisma.task.updateMany({
       where: {
         farmId,
@@ -101,6 +111,7 @@ export class NightlyJob {
     const expired =
       ((result as { count?: number }).count ?? 0) +
       ((moments as { count?: number }).count ?? 0) +
+      ((colostrum as { count?: number }).count ?? 0) +
       ((watches as { count?: number }).count ?? 0);
     if (expired > 0) this.logger.log(`Expired ${expired} stale task(s) for farm ${farmId}`);
 

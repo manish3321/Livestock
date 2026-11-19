@@ -46,6 +46,9 @@ export const DECISION_TASK_TYPES: TaskType[] = [
   'PD_STALLED',
 ];
 
+/** After this many hours past birth, Walk drops COLOSTRUM_FEED — FPT window is gone. */
+export const COLOSTRUM_WALK_MAX_HOURS = 48;
+
 const GROUP_META: Record<
   BoardGroupKey,
   { labelEn: string; labelNp: string; colour: BoardGroupDto['colour']; subEn: string; subNp: string }
@@ -464,6 +467,13 @@ export function buildBreedingBoard(input: {
     if (!task.animalId) continue;
     const animal = byId.get(task.animalId);
     if (!animal) continue;
+    // Absorption window is ~6h; past 48h Walk only clutters — record via animal form if needed.
+    if (
+      task.type === 'COLOSTRUM_FEED' &&
+      Number(task.metadata?.n ?? 0) > COLOSTRUM_WALK_MAX_HOURS
+    ) {
+      continue;
+    }
     const late = task.dueAt.getTime() < start.getTime();
     if (late) overdue += 1;
     if (DECISION_TASK_TYPES.includes(task.type)) {

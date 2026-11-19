@@ -23,6 +23,7 @@ import { BreedingService } from './breeding.service';
 import { ReproStageService } from './repro-stage.service';
 import {
   BOARD_TASK_GROUP,
+  COLOSTRUM_WALK_MAX_HOURS,
   DECISION_TASK_TYPES,
   type BoardAnimalRow,
   type BoardTaskRow,
@@ -107,6 +108,7 @@ export class BreedingBoardService {
     const boardTasks: BoardTaskRow[] = [];
     const animals: BoardAnimalRow[] = [];
     const seen = new Set<string>();
+    const staleColostrumIds: string[] = [];
 
     for (const task of tasks) {
       const animal = task.animal;
@@ -131,6 +133,13 @@ export class BreedingBoardService {
           ? { startDate: enrollment.startDate, protocol: enrollment.protocol }
           : undefined,
       });
+      if (
+        task.type === 'COLOSTRUM_FEED' &&
+        Number(metadata.n ?? 0) > COLOSTRUM_WALK_MAX_HOURS
+      ) {
+        staleColostrumIds.push(task.id);
+        continue;
+      }
       boardTasks.push({
         id: task.id,
         type: task.type,
@@ -157,6 +166,18 @@ export class BreedingBoardService {
         seqNo: animal.seqNo,
         technicianName: lastService?.technicianName,
         technicianPhone: lastService?.technicianPhone,
+      });
+    }
+
+    // Self-heal when Vercel cron skipped — expire dead colostrum so SMS/overdue stop.
+    if (staleColostrumIds.length > 0) {
+      await this.prisma.task.updateMany({
+        where: {
+          farmId: user.farmId,
+          id: { in: staleColostrumIds },
+          status: { in: ['PENDING', 'SNOOZED'] },
+        },
+        data: { status: 'EXPIRED' },
       });
     }
 

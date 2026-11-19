@@ -1,8 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import type { BoardActionDto, BoardGroupDto, BoardItemDto, BreedingBoardDto } from '@farm/contracts';
+import type {
+  BoardActionDto,
+  BoardGroupDto,
+  BoardGroupKey,
+  BoardItemDto,
+  BreedingBoardDto,
+} from '@farm/contracts';
 import { breedingBoard, completeDryOff, completeSyncTask, enrollSync, recordHeatObservation, resolveDecision, suggestProtocol } from '../../api/breeding';
 import { useAuth } from '../../auth/auth-context';
 import { readBreedingBoardCache, writeBreedingBoardCache } from '../../lib/breeding-offline';
@@ -55,6 +61,7 @@ export function BreedingBoard({
   const navigate = useNavigate();
   const np = i18n.language === 'ne';
   const [openDecisions, setOpenDecisions] = useState(false);
+  const [activeKey, setActiveKey] = useState<BoardGroupKey | null>(null);
   const cached = readBreedingBoardCache();
 
   const boardQ = useQuery({
@@ -122,6 +129,20 @@ export function BreedingBoard({
 
   const board: BreedingBoardDto | undefined = boardQ.data ?? cached ?? undefined;
   const offline = boardQ.isError && Boolean(cached);
+  const groups = board?.groups ?? [];
+
+  useEffect(() => {
+    if (groups.length === 0) {
+      setActiveKey(null);
+      return;
+    }
+    setActiveKey((prev) => (prev && groups.some((g) => g.key === prev) ? prev : groups[0]!.key));
+  }, [groups]);
+
+  const activeGroup = useMemo(
+    () => groups.find((g) => g.key === activeKey) ?? groups[0] ?? null,
+    [groups, activeKey],
+  );
 
   const runAction = (item: BoardItemDto, action: BoardActionDto) => {
     if (action.phone) {
@@ -189,101 +210,133 @@ export function BreedingBoard({
         </p>
       </div>
 
-      {!board || board.groups.length === 0 ? (
+      {!board || groups.length === 0 ? (
         <p className="board-empty">{t('breeding.board.empty')}</p>
       ) : (
-        board.groups.map((group, gi) => (
-          <section
-            key={group.key}
-            className={`board-group board-group-${group.colour.toLowerCase()}`}
-            style={{ ['--group-colour' as string]: COLOUR[group.colour], animationDelay: `${gi * 40}ms` }}
+        <>
+          <div
+            className="watch-group-tabs"
+            role="tablist"
+            aria-label={t('breeding.tabs.walk')}
           >
-            <header className="board-group-head">
-              <h3 className="board-group-title">{np ? group.labelNp : group.labelEn}</h3>
-              {(np ? group.subLabelNp : group.subLabelEn) ? (
-                <p className="board-sub">{np ? group.subLabelNp : group.subLabelEn}</p>
-              ) : null}
-            </header>
-            <ul className="board-list">
-              {group.items.map((row) => {
-                const urgency = row.urgency in URGENCY ? row.urgency : 'NORMAL';
-                const primary = row.actions.find((a) => a.primary) ?? row.actions[0];
-                const secondary = row.actions.filter((a) => a !== primary).slice(0, 1);
-                return (
-                  <li
-                    key={row.taskId}
-                    className={`board-row board-urgency-${urgency.toLowerCase()}`}
-                    style={{
-                      ['--urgency' as string]: URGENCY[urgency],
-                      ['--urgency-wash' as string]: URGENCY_WASH[urgency],
-                    }}
-                  >
-                    <button
-                      type="button"
-                      className="board-animal"
-                      onClick={() =>
-                        onOpen({
-                          animalId: row.animalId,
-                          form: formForTask(row.taskType),
-                          taskId: row.taskId,
-                        })
-                      }
+            {groups.map((group) => {
+              const selected = group.key === (activeGroup?.key ?? activeKey);
+              return (
+                <button
+                  key={group.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  className={`watch-group-tab ${selected ? 'selected' : ''}`}
+                  onClick={() => setActiveKey(group.key)}
+                >
+                  <span className="watch-group-tab-label">{np ? group.labelNp : group.labelEn}</span>
+                  <span className="watch-group-tab-count">{group.items.length}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {activeGroup ? (
+            <section
+              key={activeGroup.key}
+              className={`board-group board-group-${activeGroup.colour.toLowerCase()} watch-group-panel`}
+              style={{ ['--group-colour' as string]: COLOUR[activeGroup.colour] }}
+              role="tabpanel"
+            >
+              <header className="board-group-head">
+                <h3 className="board-group-title">
+                  {np ? activeGroup.labelNp : activeGroup.labelEn}
+                </h3>
+                {(np ? activeGroup.subLabelNp : activeGroup.subLabelEn) ? (
+                  <p className="board-sub">
+                    {np ? activeGroup.subLabelNp : activeGroup.subLabelEn}
+                  </p>
+                ) : null}
+              </header>
+              <ul className="board-list">
+                {activeGroup.items.map((row) => {
+                  const urgency = row.urgency in URGENCY ? row.urgency : 'NORMAL';
+                  const primary = row.actions.find((a) => a.primary) ?? row.actions[0];
+                  const secondary = row.actions.filter((a) => a !== primary).slice(0, 1);
+                  return (
+                    <li
+                      key={row.taskId}
+                      className={`board-row board-urgency-${urgency.toLowerCase()}`}
+                      style={{
+                        ['--urgency' as string]: URGENCY[urgency],
+                        ['--urgency-wash' as string]: URGENCY_WASH[urgency],
+                      }}
                     >
-                      <span className="board-urgency" aria-hidden="true" />
-                      <AnimalPhoto
-                        photoUrl={row.photoUrl}
-                        species={row.species}
-                        size={56}
-                        className="watch-photo"
-                      />
-                      <span className="board-identity">
-                        <span className="board-tag">{row.shortNo}</span>
-                        <span className="board-name">{row.name ?? t('breeding.board.unnamed')}</span>
-                        {row.penName ? <span className="board-pen">{row.penName}</span> : null}
-                      </span>
-                      <span className="board-timing">
-                        <span className="board-doby">
-                          <span className="board-label">{t('breeding.board.doBy')}</span>{' '}
-                          {(np ? row.doByNp : row.doByEn) || (np ? row.contextNp : row.contextEn) || '—'}
+                      <button
+                        type="button"
+                        className="board-animal"
+                        onClick={() =>
+                          onOpen({
+                            animalId: row.animalId,
+                            form: formForTask(row.taskType),
+                            taskId: row.taskId,
+                          })
+                        }
+                      >
+                        <span className="board-urgency" aria-hidden="true" />
+                        <AnimalPhoto
+                          photoUrl={row.photoUrl}
+                          species={row.species}
+                          size={56}
+                          className="watch-photo"
+                        />
+                        <span className="board-identity">
+                          <span className="board-tag">{row.shortNo}</span>
+                          <span className="board-name">{row.name ?? t('breeding.board.unnamed')}</span>
+                          {row.penName ? <span className="board-pen">{row.penName}</span> : null}
                         </span>
-                        {(np ? row.whyNp : row.whyEn) ? (
-                          <span className="board-why">
-                            <span className="board-label">{t('breeding.board.why')}</span>{' '}
-                            {np ? row.whyNp : row.whyEn}
+                        <span className="board-timing">
+                          <span className="board-doby">
+                            <span className="board-label">{t('breeding.board.doBy')}</span>{' '}
+                            {(np ? row.doByNp : row.doByEn) ||
+                              (np ? row.contextNp : row.contextEn) ||
+                              '—'}
                           </span>
+                          {(np ? row.whyNp : row.whyEn) ? (
+                            <span className="board-why">
+                              <span className="board-label">{t('breeding.board.why')}</span>{' '}
+                              {np ? row.whyNp : row.whyEn}
+                            </span>
+                          ) : null}
+                          {(np ? row.lateNp : row.lateEn) ? (
+                            <span className="board-late">{np ? row.lateNp : row.lateEn}</span>
+                          ) : null}
+                        </span>
+                      </button>
+                      <div className="board-actions">
+                        {primary ? (
+                          <button
+                            type="button"
+                            className="board-btn primary"
+                            onClick={() => runAction(row, primary)}
+                          >
+                            {np ? primary.labelNp : primary.labelEn}
+                          </button>
                         ) : null}
-                        {(np ? row.lateNp : row.lateEn) ? (
-                          <span className="board-late">{np ? row.lateNp : row.lateEn}</span>
-                        ) : null}
-                      </span>
-                    </button>
-                    <div className="board-actions">
-                      {primary ? (
-                        <button
-                          type="button"
-                          className="board-btn primary"
-                          onClick={() => runAction(row, primary)}
-                        >
-                          {np ? primary.labelNp : primary.labelEn}
-                        </button>
-                      ) : null}
-                      {secondary.map((action) => (
-                        <button
-                          key={action.key}
-                          type="button"
-                          className="board-btn"
-                          onClick={() => runAction(row, action)}
-                        >
-                          {np ? action.labelNp : action.labelEn}
-                        </button>
-                      ))}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        ))
+                        {secondary.map((action) => (
+                          <button
+                            key={action.key}
+                            type="button"
+                            className="board-btn"
+                            onClick={() => runAction(row, action)}
+                          >
+                            {np ? action.labelNp : action.labelEn}
+                          </button>
+                        ))}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ) : null}
+        </>
       )}
 
       {board && board.decisionQueue.count > 0 && (

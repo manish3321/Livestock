@@ -15,6 +15,9 @@ export const MOMENT_TASK_TYPES: ReadonlySet<TaskType> = new Set<TaskType>([
 
 export const MOMENT_EXPIRY_DAYS = 3;
 
+/** Colostrum is useless on Walk after the FPT window; expire sooner than other moment tasks. */
+export const COLOSTRUM_EXPIRY_HOURS = 48;
+
 /**
  * Watch / check reminders that pile up when cron was flaky (pregnancy, calving, vax).
  * After a week overdue they only clutter Today's work — expire so the board stays usable.
