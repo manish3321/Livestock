@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { pageQuerySchema } from './common';
 import { optionalNepalMobileSchema } from './auth';
-import { ROLES, type Role } from './roles';
+import { ROLES, STAFF_ROLES, type Role } from './roles';
 import {
   APPROVAL_STATUSES,
   EXPENSE_CATEGORIES,
@@ -608,10 +608,11 @@ export const batchFeedCreateSchema = z.object({
 });
 export type BatchFeedCreate = z.infer<typeof batchFeedCreateSchema>;
 
+/** Farm ADMIN may only hire staff roles — never another ADMIN. */
 export const farmMemberCreateSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
   name: z.string().trim().min(1).max(120),
-  role: z.enum(ROLES),
+  role: z.enum(STAFF_ROLES),
   password: z.string().min(8).max(128),
   phone: optionalNepalMobileSchema,
   literacySupport: z.boolean().optional(),
@@ -622,13 +623,53 @@ export type FarmMemberCreate = z.infer<typeof farmMemberCreateSchema>;
 export const farmMemberUpdateSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   email: z.string().trim().toLowerCase().email().optional(),
-  role: z.enum(ROLES).optional(),
+  role: z.enum(STAFF_ROLES).optional(),
   isActive: z.boolean().optional(),
   phone: optionalNepalMobileSchema,
   literacySupport: z.boolean().optional(),
   password: z.string().min(8).max(128).optional(),
 });
 export type FarmMemberUpdate = z.infer<typeof farmMemberUpdateSchema>;
+
+export const platformClientCreateSchema = z.object({
+  name: z.string().trim().min(1).max(160),
+  location: z.string().trim().max(240).nullish(),
+  adminName: z.string().trim().min(1).max(120),
+  adminEmail: z.string().trim().toLowerCase().email(),
+  adminPassword: z.string().min(8).max(128),
+});
+export type PlatformClientCreate = z.infer<typeof platformClientCreateSchema>;
+
+export const platformClientUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(160).optional(),
+  location: z.string().trim().max(240).nullish(),
+  isActive: z.boolean().optional(),
+});
+export type PlatformClientUpdate = z.infer<typeof platformClientUpdateSchema>;
+
+export interface PlatformClientMemberDto {
+  userId: string;
+  email: string;
+  name: string;
+  role: Role;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface PlatformClientListItemDto {
+  farmId: string;
+  name: string;
+  location: string | null;
+  isActive: boolean;
+  adminName: string | null;
+  adminEmail: string | null;
+  staffCount: number;
+  createdAt: string;
+}
+
+export interface PlatformClientDetailDto extends PlatformClientListItemDto {
+  members: PlatformClientMemberDto[];
+}
 
 export interface FarmMemberDto {
   userId: string;

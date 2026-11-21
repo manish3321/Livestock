@@ -115,7 +115,7 @@ export function ScanAnywhere() {
   const [animal, setAnimal] = useState<PickedAnimal | null>(null);
   const [batchTarget, setBatchTarget] = useState<QrTarget | null>(null);
 
-  const allowedScan = !!user && modulesForRole(user.role).includes('scan');
+  const allowedScan = !!user?.role && modulesForRole(user.role).includes('scan');
   const onScanHub = location.pathname === '/scan' || location.pathname.startsWith('/scan/');
   const onShed = location.pathname === '/shed';
 
@@ -451,7 +451,7 @@ export function TopbarScanButton() {
   const { user } = useAuth();
   const location = useLocation();
   const { openScan } = useScanOverlay();
-  const allowedScan = !!user && modulesForRole(user.role).includes('scan');
+  const allowedScan = !!user?.role && modulesForRole(user.role).includes('scan');
   const onScanHub = location.pathname === '/scan' || location.pathname.startsWith('/scan/');
   const onShed = location.pathname === '/shed';
   if (!allowedScan || onScanHub || onShed) return null;

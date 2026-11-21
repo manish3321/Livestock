@@ -21,7 +21,7 @@ import type {
   RefreshRequest,
   TokenPair,
 } from '@farm/contracts';
-import { CurrentUser, Public } from '../common/decorators';
+import { AllowPlatform, CurrentUser, Public } from '../common/decorators';
 import type { RequestUser } from '../common/types';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { AuthService } from './auth.service';
@@ -54,6 +54,7 @@ export class AuthController {
     return this.auth.refresh(body.refreshToken);
   }
 
+  @AllowPlatform()
   @Post('logout')
   @HttpCode(204)
   @ApiOperation({ summary: 'Revoke the current session' })
@@ -61,18 +62,20 @@ export class AuthController {
     await this.auth.logout(user.sessionId);
   }
 
+  @AllowPlatform()
   @Get('me')
   @ApiOperation({ summary: 'Current principal, role, farm mode, and permission map' })
   me(@CurrentUser() user: RequestUser) {
-    return this.auth.me(user.id, user.farmId, user.role);
+    return this.auth.me(user);
   }
 
+  @AllowPlatform()
   @Patch('me')
   @ApiOperation({ summary: 'Update your own name or SMS phone number' })
   updateMe(
     @CurrentUser() user: RequestUser,
     @Body(new ZodValidationPipe(profileUpdateSchema)) body: ProfileUpdate,
   ) {
-    return this.auth.updateProfile(user.id, user.farmId, user.role, body);
+    return this.auth.updateProfile(user, body);
   }
 }

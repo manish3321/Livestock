@@ -215,7 +215,7 @@ export class FarmMembersService {
 function sharedAccount() {
   return new ForbiddenException({
     code: 'SHARED_ACCOUNT',
-    message: 'This person also uses another farm. Only they can change their email or password.',
+    message: 'This account’s email and password can only be changed by the account owner.',
   });
 }
 

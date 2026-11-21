@@ -12,10 +12,26 @@ export function RequireAuth() {
   return <Outlet />;
 }
 
+/** Platform operator only — farm JWTs get forbidden. */
+export function RequirePlatform() {
+  const { user } = useAuth();
+  if (!user?.platformAdmin) return <Navigate to="/forbidden" replace />;
+  return <Outlet />;
+}
+
+/** Farm users only — platform operators stay on /platform. */
+export function RequireFarm() {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.platformAdmin) return <Navigate to="/platform" replace />;
+  if (!user.farmId || !user.role) return <Navigate to="/forbidden" replace />;
+  return <Outlet />;
+}
+
 /** Blocks module routes the user's role cannot access. */
 export function RequireModule({ module }: { module: ModuleKey }) {
   const { user } = useAuth();
-  if (!user || !MODULE_ACCESS[module].includes(user.role)) {
+  if (!user?.role || !MODULE_ACCESS[module].includes(user.role)) {
     return <Navigate to="/forbidden" replace />;
   }
   return <Outlet />;

@@ -288,6 +288,14 @@ export function FarmProvider({ children }: { children: ReactNode }) {
       if (tokens.accessToken) {
         try {
           const me = (await api.me()) as AuthUser;
+          if (me.platformAdmin) {
+            await clearTokens();
+            storeRef.current.accessToken = null;
+            storeRef.current.refreshToken = null;
+            if (!cancelled) setUser(null);
+            persistStore(storeRef.current);
+            return;
+          }
           if (!cancelled) setUser(me);
           // Prefer incremental: SQLite already has the herd + pull cursor from last session.
           await hydrateFromNetwork(storeRef.current, api);
@@ -349,6 +357,14 @@ export function FarmProvider({ children }: { children: ReactNode }) {
   const login = useCallback(
     async (email: string, password: string) => {
       const res = await api.login(email, password, storeRef.current.deviceId);
+      if (res.user.platformAdmin) {
+        storeRef.current.accessToken = null;
+        storeRef.current.refreshToken = null;
+        await clearTokens();
+        setUser(null);
+        persist();
+        throw new Error('PLATFORM_WEB_ONLY');
+      }
       storeRef.current.accessToken = res.accessToken;
       storeRef.current.refreshToken = res.refreshToken;
       setUser(res.user);

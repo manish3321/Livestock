@@ -116,7 +116,7 @@ function AppLayoutInner() {
   });
   const pendingChanges = approver ? (pendingQuery.data?.count ?? 0) : 0;
 
-  if (!user) return null;
+  if (!user || !user.role) return null;
   const allowed = new Set(modulesForRole(user.role));
   const groups = navGroups(livestockModuleOrder(livestockTrackingMode));
 

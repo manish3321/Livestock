@@ -38,14 +38,27 @@ export class JwtAuthGuard implements CanActivate {
 
     try {
       const claims = this.tokens.verifyAccessToken(header.slice('Bearer '.length));
-      const user: RequestUser = {
-        id: claims.sub,
-        email: claims.email,
-        farmId: claims.farmId,
-        role: claims.role,
-        sessionId: claims.sessionId,
-        permissions: ROLE_PERMISSIONS[claims.role] ?? [],
-      };
+      const platformAdmin = 'platformAdmin' in claims && claims.platformAdmin === true;
+      const user: RequestUser = platformAdmin
+        ? {
+            id: claims.sub,
+            email: claims.email,
+            sessionId: claims.sessionId,
+            platformAdmin: true,
+            // Empty farm context — PermissionsGuard blocks farm routes; permissions stay empty.
+            farmId: '',
+            role: 'WORKER',
+            permissions: [],
+          }
+        : {
+            id: claims.sub,
+            email: claims.email,
+            sessionId: claims.sessionId,
+            platformAdmin: false,
+            farmId: claims.farmId,
+            role: claims.role,
+            permissions: ROLE_PERMISSIONS[claims.role] ?? [],
+          };
       (request as Request & { user: RequestUser }).user = user;
       return true;
     } catch {

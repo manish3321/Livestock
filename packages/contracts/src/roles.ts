@@ -9,6 +9,10 @@
 export const ROLES = ['ADMIN', 'MANAGER', 'WORKER', 'VET', 'COOP'] as const;
 export type Role = (typeof ROLES)[number];
 
+/** Roles a farm ADMIN may assign on /admin/members. ADMIN itself is platform-only. */
+export const STAFF_ROLES = ['MANAGER', 'WORKER', 'VET', 'COOP'] as const;
+export type StaffRole = (typeof STAFF_ROLES)[number];
+
 /** Product modules. Keys are stable identifiers used in routes. */
 export const MODULES = [
   'dashboard',

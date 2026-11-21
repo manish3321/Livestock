@@ -3,11 +3,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   ROLES,
+  STAFF_ROLES,
   formatDateTime,
   normalizeNepalMobile,
   type FarmMemberDto,
   type FarmMemberUpdate,
   type Role,
+  type StaffRole,
 } from '@farm/contracts';
 import { useAuth } from '../../auth/auth-context';
 import { api } from '../../api/client';
@@ -20,7 +22,7 @@ const EMPTY_NEW = {
   email: '',
   name: '',
   phone: '',
-  role: 'WORKER' as Role,
+  role: 'WORKER' as StaffRole,
   password: '',
   literacySupport: false,
 };
@@ -186,9 +188,9 @@ export function AdminMembersPage() {
               <select
                 id="m-role"
                 value={newForm.role}
-                onChange={(e) => setNewForm((f) => ({ ...f, role: e.target.value as Role }))}
+                onChange={(e) => setNewForm((f) => ({ ...f, role: e.target.value as StaffRole }))}
               >
-                {ROLES.map((r) => (
+                {STAFF_ROLES.map((r) => (
                   <option key={r} value={r}>
                     {t(`common.role.${r}`)}
                   </option>
@@ -321,7 +323,8 @@ function MemberEditor({ member, onClose }: { member: FarmMemberDto; onClose: () 
     };
     if (!member.sharedAccount && form.email.trim() !== member.email) body.email = form.email.trim();
     if (!member.isSelf) {
-      body.role = form.role;
+      // Farm callers may only assign staff roles — omit role when leaving an ADMIN unchanged.
+      if (form.role !== member.role) body.role = form.role as StaffRole;
       body.isActive = form.isActive;
     }
     patch.mutate(body, { onSuccess: () => setNotice(t('members.saved')) });
@@ -404,11 +407,13 @@ function MemberEditor({ member, onClose }: { member: FarmMemberDto; onClose: () 
               disabled={member.isSelf}
               onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as Role }))}
             >
-              {ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {t(`common.role.${r}`)}
-                </option>
-              ))}
+              {(member.role === 'ADMIN' ? (['ADMIN', ...STAFF_ROLES] as Role[]) : [...STAFF_ROLES]).map(
+                (r) => (
+                  <option key={r} value={r}>
+                    {t(`common.role.${r}`)}
+                  </option>
+                ),
+              )}
             </select>
             {member.isSelf && <p className="muted">{t('members.selfHint')}</p>}
           </div>

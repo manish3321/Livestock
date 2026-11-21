@@ -25,17 +25,23 @@ export function LoginScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState(false);
   const [unreachable, setUnreachable] = useState(false);
+  const [platformOnly, setPlatformOnly] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const onSubmit = async () => {
     setBusy(true);
     setError(false);
     setUnreachable(false);
+    setPlatformOnly(false);
     try {
       await login(email.trim(), password);
     } catch (err) {
-      const status = err instanceof ApiError ? err.status : undefined;
       const message = err instanceof Error ? err.message : '';
+      if (message === 'PLATFORM_WEB_ONLY') {
+        setPlatformOnly(true);
+        return;
+      }
+      const status = err instanceof ApiError ? err.status : undefined;
       setUnreachable(
         status === 0 ||
           status === 404 ||
@@ -113,9 +119,15 @@ export function LoginScreen() {
             returnKeyType="go"
             onSubmitEditing={() => void onSubmit()}
           />
-          {error ? (
+          {platformOnly || error ? (
             <Txt style={styles.error}>
-              {t(unreachable ? 'login.serverUnreachable' : 'login.failed')}
+              {t(
+                platformOnly
+                  ? 'login.platformWebOnly'
+                  : unreachable
+                    ? 'login.serverUnreachable'
+                    : 'login.failed',
+              )}
             </Txt>
           ) : null}
           <View style={{ marginTop: 8 }}>

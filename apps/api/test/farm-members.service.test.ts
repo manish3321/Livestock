@@ -204,9 +204,14 @@ describe('farm members CMS', () => {
     await expect(service.update(actor as any, shared.id, { password: 'hijack-123' })).rejects.toMatchObject({
       response: { code: 'SHARED_ACCOUNT' },
     });
-    await expect(service.update(actor as any, shared.id, { email: 'new@farm.test' })).rejects.toMatchObject({
-      response: { code: 'SHARED_ACCOUNT' },
-    });
+    try {
+      await service.update(actor as any, shared.id, { email: 'new@farm.test' });
+    } catch (err: any) {
+      const message = String(err.response?.message ?? '');
+      expect(err.response?.code).toBe('SHARED_ACCOUNT');
+      expect(message.toLowerCase()).not.toContain('another farm');
+      expect(message).not.toContain(OTHER_FARM);
+    }
     const row = await service.update(actor as any, shared.id, { phone: '+9779812345678' });
     expect(row.sharedAccount).toBe(true);
   });
@@ -216,6 +221,52 @@ describe('farm members CMS', () => {
     await expect(service.update(actor as any, stranger.id, { name: 'x' })).rejects.toMatchObject({
       response: { code: 'MEMBER_NOT_FOUND' },
     });
+  });
+
+  it('lists only this farm’s members — never farm B', async () => {
+    addMember(db, 'WORKER');
+    addMember(db, 'MANAGER', {}, OTHER_FARM);
+    const rows = await service.list(actor as any);
+    expect(rows.every((r) => db.memberships.find((m: MembershipRow) => m.userId === r.userId)?.farmId === FARM)).toBe(
+      true,
+    );
+    expect(rows).toHaveLength(2);
+  });
+
+  it('creates a member on actor.farmId even if the caller invents another farm id', async () => {
+    const row = await service.create(actor as any, {
+      email: 'newhire@farm.test',
+      name: 'New Hire',
+      role: 'WORKER',
+      password: 'Password123!',
+    } as any);
+    const membership = db.memberships.find((m: MembershipRow) => m.userId === row.userId);
+    expect(membership?.farmId).toBe(FARM);
+    expect(membership?.farmId).not.toBe(OTHER_FARM);
+  });
+
+  it('returns EMAIL_TAKEN without farm B details when the email is already used', async () => {
+    addMember(db, 'ADMIN', { email: 'taken@elsewhere.test' }, OTHER_FARM);
+    await expect(
+      service.create(actor as any, {
+        email: 'taken@elsewhere.test',
+        name: 'Clone',
+        role: 'WORKER',
+        password: 'Password123!',
+      } as any),
+    ).rejects.toMatchObject({ response: { code: 'EMAIL_TAKEN' } });
+    try {
+      await service.create(actor as any, {
+        email: 'taken@elsewhere.test',
+        name: 'Clone',
+        role: 'WORKER',
+        password: 'Password123!',
+      } as any);
+    } catch (err: any) {
+      const body = JSON.stringify(err.response ?? err);
+      expect(body).not.toContain(OTHER_FARM);
+      expect(body.toLowerCase()).not.toContain('another farm');
+    }
   });
 
   it('removes a worker, unassigns their tasks and blocks sign-in', async () => {

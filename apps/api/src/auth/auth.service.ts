@@ -1,5 +1,6 @@
 import {
   Injectable,
+  InternalServerErrorException,
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -15,6 +16,7 @@ import type {
 } from '@farm/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import type { RequestUser } from '../common/types';
 import { TokenService } from './token.service';
 
 const INVALID_CREDENTIALS = {
@@ -42,12 +44,45 @@ export class AuthService {
     const passwordOk = await bcrypt.compare(input.password, user.passwordHash);
     if (!passwordOk) throw new UnauthorizedException(INVALID_CREDENTIALS);
 
+    if (user.isPlatformAdmin && user.memberships.length > 0) {
+      this.logger.error(
+        `Platform admin ${user.id} has farm membership(s); refusing login`,
+      );
+      throw new InternalServerErrorException({
+        code: 'PLATFORM_ACCOUNT_CORRUPT',
+        message: 'Account configuration error',
+      });
+    }
+
+    if (user.isPlatformAdmin) {
+      const session = await this.createSession(user.id, input.platform, input.deviceName);
+      const { token: accessToken, expiresIn } = this.tokens.signAccessToken({
+        sub: user.id,
+        email: user.email,
+        sessionId: session.id,
+        platformAdmin: true,
+      });
+      await this.prisma.platformAudit.create({
+        data: {
+          actorId: user.id,
+          action: 'auth.login',
+          metadata: { platform: input.platform, requestId: requestId ?? null },
+        },
+      });
+      return {
+        accessToken,
+        refreshToken: session.refreshToken,
+        expiresIn,
+        user: this.toPlatformUser(user),
+      };
+    }
+
     const membership = user.memberships[0];
     if (!membership) {
-      throw new UnauthorizedException({
-        code: 'NO_FARM_MEMBERSHIP',
-        message: 'User does not belong to any farm',
-      });
+      throw new UnauthorizedException(INVALID_CREDENTIALS);
+    }
+    if (!membership.farm.isActive) {
+      throw new UnauthorizedException(INVALID_CREDENTIALS);
     }
 
     const role = membership.role as Role;
@@ -72,56 +107,35 @@ export class AuthService {
       accessToken,
       refreshToken: session.refreshToken,
       expiresIn,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        phone: user.phone,
-        farmId: membership.farmId,
-        farmName: membership.farm.name,
-        farmMode: membership.farm.mode === 'COMMERCIAL' ? 'COMMERCIAL' : 'HOUSEHOLD',
-        livestockTrackingMode:
-          membership.farm.livestockTrackingMode === 'BATCH' ? 'BATCH' : 'INDIVIDUAL',
-        role,
-        permissions: [...ROLE_PERMISSIONS[role]],
-      },
+      user: this.toFarmUser(user, membership.farmId, membership.farm, role),
     };
   }
 
-  async me(userId: string, farmId: string, role: Role): Promise<AuthUser> {
+  async me(actor: RequestUser): Promise<AuthUser> {
+    if (actor.platformAdmin) {
+      const user = await this.prisma.user.findUniqueOrThrow({ where: { id: actor.id } });
+      return this.toPlatformUser(user);
+    }
+    if (!actor.farmId || actor.platformAdmin) {
+      throw new UnauthorizedException(INVALID_CREDENTIALS);
+    }
     const [user, farm] = await Promise.all([
-      this.prisma.user.findUniqueOrThrow({ where: { id: userId } }),
-      this.prisma.farm.findUniqueOrThrow({ where: { id: farmId } }),
+      this.prisma.user.findUniqueOrThrow({ where: { id: actor.id } }),
+      this.prisma.farm.findUniqueOrThrow({ where: { id: actor.farmId } }),
     ]);
-    return {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      phone: user.phone,
-      farmId,
-      farmName: farm.name,
-      farmMode: farm.mode === 'COMMERCIAL' ? 'COMMERCIAL' : 'HOUSEHOLD',
-      livestockTrackingMode: farm.livestockTrackingMode === 'BATCH' ? 'BATCH' : 'INDIVIDUAL',
-      role,
-      permissions: [...ROLE_PERMISSIONS[role]],
-    };
+    return this.toFarmUser(user, actor.farmId, farm, actor.role);
   }
 
   /** Self-service name / SMS phone. Role and farm stay admin-only. */
-  async updateProfile(
-    userId: string,
-    farmId: string,
-    role: Role,
-    input: ProfileUpdate,
-  ): Promise<AuthUser> {
+  async updateProfile(actor: RequestUser, input: ProfileUpdate): Promise<AuthUser> {
     await this.prisma.user.update({
-      where: { id: userId },
+      where: { id: actor.id },
       data: {
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.phone !== undefined ? { phone: input.phone } : {}),
       },
     });
-    return this.me(userId, farmId, role);
+    return this.me(actor);
   }
 
   /**
@@ -161,9 +175,18 @@ export class AuthService {
       });
     }
 
-    const membership = session.user.memberships[0];
-    if (!membership || !session.user.isActive) {
+    if (!session.user.isActive) {
       throw new UnauthorizedException(INVALID_CREDENTIALS);
+    }
+
+    if (session.user.isPlatformAdmin && session.user.memberships.length > 0) {
+      this.logger.error(
+        `Platform admin ${session.user.id} has farm membership(s); refusing refresh`,
+      );
+      throw new InternalServerErrorException({
+        code: 'PLATFORM_ACCOUNT_CORRUPT',
+        message: 'Account configuration error',
+      });
     }
 
     const next = await this.createSession(
@@ -175,6 +198,21 @@ export class AuthService {
       where: { id: session.id },
       data: { revokedAt: new Date(), replacedById: next.id },
     });
+
+    if (session.user.isPlatformAdmin) {
+      const { token: accessToken, expiresIn } = this.tokens.signAccessToken({
+        sub: session.userId,
+        email: session.user.email,
+        sessionId: next.id,
+        platformAdmin: true,
+      });
+      return { accessToken, refreshToken: next.refreshToken, expiresIn };
+    }
+
+    const membership = session.user.memberships[0];
+    if (!membership || !membership.farm.isActive) {
+      throw new UnauthorizedException(INVALID_CREDENTIALS);
+    }
 
     const { token: accessToken, expiresIn } = this.tokens.signAccessToken({
       sub: session.userId,
@@ -192,6 +230,49 @@ export class AuthService {
       where: { id: sessionId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+  }
+
+  private toPlatformUser(user: {
+    id: string;
+    email: string;
+    name: string;
+    phone: string | null;
+  }): AuthUser {
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      phone: user.phone,
+      platformAdmin: true,
+      farmId: null,
+      farmName: null,
+      farmMode: null,
+      livestockTrackingMode: null,
+      role: null,
+      permissions: [],
+    };
+  }
+
+  private toFarmUser(
+    user: { id: string; email: string; name: string; phone: string | null },
+    farmId: string,
+    farm: { name: string; mode: string; livestockTrackingMode: string },
+    role: Role,
+  ): AuthUser {
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      phone: user.phone,
+      platformAdmin: false,
+      farmId,
+      farmName: farm.name,
+      farmMode: farm.mode === 'COMMERCIAL' ? 'COMMERCIAL' : 'HOUSEHOLD',
+      livestockTrackingMode:
+        farm.livestockTrackingMode === 'BATCH' ? 'BATCH' : 'INDIVIDUAL',
+      role,
+      permissions: [...ROLE_PERMISSIONS[role]],
+    };
   }
 
   private async createSession(

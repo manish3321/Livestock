@@ -22,9 +22,17 @@ export function LoginPage() {
     setError(false);
     setUnreachable(false);
     try {
-      await signIn(email, password);
+      const user = await signIn(email, password);
       const from = (location.state as { from?: { pathname: string } } | null)?.from;
-      navigate(from?.pathname ?? '/dashboard', { replace: true });
+      const home = user.platformAdmin ? '/platform' : '/dashboard';
+      const dest =
+        from?.pathname &&
+        (user.platformAdmin
+          ? from.pathname.startsWith('/platform')
+          : !from.pathname.startsWith('/platform'))
+          ? from.pathname
+          : home;
+      navigate(dest, { replace: true });
     } catch (err) {
       const status = err instanceof ApiRequestError ? err.error.statusCode : undefined;
       const message = err instanceof Error ? err.message : '';

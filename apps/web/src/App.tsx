@@ -1,9 +1,20 @@
 import { Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { AuthProvider } from './auth/auth-context';
-import { RequireAuth, RequireCommercial, RequireModule } from './auth/ProtectedRoute';
+import {
+  RequireAuth,
+  RequireCommercial,
+  RequireFarm,
+  RequireModule,
+  RequirePlatform,
+} from './auth/ProtectedRoute';
 import { AppLayout } from './layout/AppLayout';
 import { ForbiddenPage, NotFoundPage } from './pages/ErrorPages';
 import { LoginPage } from './pages/LoginPage';
+import {
+  PlatformClientDetailPage,
+  PlatformClientsPage,
+  PlatformLayout,
+} from './pages/platform/PlatformPages';
 import {
   BatchDetailPage,
   FishBatchesPage,
@@ -50,6 +61,14 @@ export function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route element={<RequireAuth />}>
+          <Route element={<RequirePlatform />}>
+            <Route path="/platform" element={<PlatformLayout />}>
+              <Route index element={<PlatformClientsPage />} />
+              <Route path="clients/:farmId" element={<PlatformClientDetailPage />} />
+            </Route>
+          </Route>
+
+          <Route element={<RequireFarm />}>
           <Route element={<AppLayout />}>
             <Route index element={<Navigate to="/dashboard" replace />} />
 
@@ -155,6 +174,7 @@ export function App() {
 
             <Route path="/forbidden" element={<ForbiddenPage />} />
             <Route path="*" element={<NotFoundPage />} />
+          </Route>
           </Route>
         </Route>
       </Routes>

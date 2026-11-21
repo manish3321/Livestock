@@ -39,6 +39,7 @@ import { TasksModule } from './tasks/tasks.module';
 import { WithholdsModule } from './withholds/withholds.module';
 import { VaccinationsModule } from './vaccinations/vaccinations.module';
 import { ProfitModule } from './profit/profit.module';
+import { PlatformModule } from './platform/platform.module';
 
 /** Cron does not run on Vercel serverless; skip the ESM schedule package there. */
 function cronSupport(): { imports: DynamicModule[]; providers: Provider[] } {
@@ -88,6 +89,7 @@ const cron = cronSupport();
     VaccinationsModule,
     ProfitModule,
     ChangeRequestsModule,
+    PlatformModule,
   ],
   controllers: [JobsController],
   providers: [

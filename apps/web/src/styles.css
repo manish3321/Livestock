@@ -3761,3 +3761,41 @@ button.kpi-hit {
 .shed-row-notdone .shed-row-stripe { background: var(--color-danger); }
 .shed-row-notdone:hover { box-shadow: inset 0 0 0 2px var(--color-danger); }
 .shed-row-notdone:disabled { opacity: 0.6; cursor: wait; }
+
+.platform-shell {
+  min-height: 100vh;
+  background: linear-gradient(165deg, #f3eee4 0%, #e8f0ea 100%);
+  color: var(--color-text-primary);
+}
+.platform-topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 24px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: #fffbf5;
+}
+.platform-kicker {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.platform-topbar h1 {
+  margin: 2px 0 0;
+  font-size: 1.6rem;
+  color: var(--color-brand-strong);
+}
+.platform-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.platform-main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px 16px 48px;
+}

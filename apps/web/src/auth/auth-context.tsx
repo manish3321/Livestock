@@ -15,11 +15,29 @@ const USER_KEY = 'farm.user';
 interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (email: string, password: string) => Promise<AuthUser>;
   signOut: () => Promise<void>;
   refreshUser: () => Promise<void>;
   patchUser: (partial: Partial<AuthUser>) => void;
   can: (permission: Permission) => boolean;
+}
+
+function normalizeUser(me: AuthUser): AuthUser {
+  return {
+    ...me,
+    platformAdmin: Boolean(me.platformAdmin),
+    farmId: me.farmId ?? null,
+    farmName: me.farmName ?? null,
+    farmMode: me.farmMode === 'COMMERCIAL' ? 'COMMERCIAL' : me.farmMode === 'HOUSEHOLD' ? 'HOUSEHOLD' : null,
+    livestockTrackingMode:
+      me.livestockTrackingMode === 'BATCH'
+        ? 'BATCH'
+        : me.livestockTrackingMode === 'INDIVIDUAL'
+          ? 'INDIVIDUAL'
+          : null,
+    role: me.role ?? null,
+    permissions: me.permissions ?? [],
+  };
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -42,10 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!apiClient.getAccessToken()) return;
     try {
       const me = await apiClient.api<AuthUser>('/v1/auth/me');
-      applyUser({
-        ...me,
-        farmMode: me.farmMode === 'COMMERCIAL' ? 'COMMERCIAL' : 'HOUSEHOLD',
-      });
+      applyUser(normalizeUser(me));
     } catch {
       /* keep cached user if refresh fails */
     }
@@ -56,10 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (stored && apiClient.getAccessToken()) {
       try {
         const parsed = JSON.parse(stored) as AuthUser;
-        setUser({
-          ...parsed,
-          farmMode: parsed.farmMode === 'COMMERCIAL' ? 'COMMERCIAL' : 'HOUSEHOLD',
-        });
+        setUser(normalizeUser(parsed));
       } catch {
         localStorage.removeItem(USER_KEY);
       }
@@ -81,10 +93,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = useCallback(
     async (email: string, password: string) => {
       const response = await apiClient.login(email, password);
-      applyUser({
-        ...response.user,
-        farmMode: response.user.farmMode === 'COMMERCIAL' ? 'COMMERCIAL' : 'HOUSEHOLD',
-      });
+      const next = normalizeUser(response.user);
+      applyUser(next);
+      return next;
     },
     [applyUser],
   );
@@ -105,7 +116,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const can = useCallback(
     (permission: Permission) =>
-      user !== null && ROLE_PERMISSIONS[user.role].includes(permission),
+      user !== null &&
+      user.role !== null &&
+      !user.platformAdmin &&
+      ROLE_PERMISSIONS[user.role].includes(permission),
     [user],
   );
 

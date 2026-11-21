@@ -18,6 +18,7 @@ export const en = {
       submit: 'Sign in',
       failed: 'Sign-in failed. Check your email and password.',
       serverUnreachable: 'Cannot reach the farm server. Try again in a moment.',
+      platformWebOnly: 'Use the website for platform access. This app is for farm staff only.',
     },
     nav: {
       dashboard: 'Home',

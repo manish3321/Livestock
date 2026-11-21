@@ -46,6 +46,8 @@ model User {
   phone        String?
   passwordHash String
   isActive     Boolean  @default(true)
+  /// Platform operator (superadmin). Not a farm role — no FarmMembership.
+  isPlatformAdmin Boolean @default(false)
   /// Voice/IVR is the default channel when the user asked for literacy support.
   literacySupport Boolean @default(false)
   createdAt    DateTime @default(now())
@@ -55,6 +57,7 @@ model User {
   sessions    RefreshSession[]
   devices     Device[]
   auditEvents AuditEvent[]
+  platformAudits PlatformAudit[]
   assignedTasks Task[] @relation("TaskAssignee")
   notificationLogs NotificationLog[]
   notificationPreferences NotificationPreference[]
@@ -68,6 +71,8 @@ model Farm {
   location  String?
   currency  String   @default("NPR")
   timezone  String   @default("Asia/Kathmandu")
+  /// Suspended farms cannot log in. Default true so existing farms keep working.
+  isActive  Boolean  @default(true)
   mode      FarmMode @default(HOUSEHOLD)
   livestockTrackingMode LivestockTrackingMode @default(INDIVIDUAL)
   /// Local clock hours the shed actually milks. Scan-to-record opens in
@@ -273,6 +278,21 @@ model AuditEvent {
   farm Farm  @relation(fields: [farmId], references: [id], onDelete: Cascade)
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  @@index([farmId, createdAt])
+}
+
+/// Platform-operator actions. Separate from AuditEvent (which always belongs to a farm).
+model PlatformAudit {
+  id        String   @id @default(uuid()) @db.Uuid
+  actorId   String   @db.Uuid
+  action    String
+  farmId    String?  @db.Uuid
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  actor User @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
   @@index([farmId, createdAt])
 }
 

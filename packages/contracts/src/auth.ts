@@ -55,18 +55,24 @@ export const profileUpdateSchema = z.object({
 });
 export type ProfileUpdate = z.infer<typeof profileUpdateSchema>;
 
+/**
+ * Logged-in principal. Platform operators have platformAdmin true and no farm.
+ * Farm users have farmId + role and platformAdmin false.
+ */
 export interface AuthUser {
   id: string;
   email: string;
   name: string;
   /** E.164 Nepal mobile for SMS alerts; null when not set. */
   phone?: string | null;
-  farmId: string;
-  farmName: string;
-  farmMode: 'HOUSEHOLD' | 'COMMERCIAL';
+  /** Platform operator (superadmin). Never a farm membership. */
+  platformAdmin: boolean;
+  farmId: string | null;
+  farmName: string | null;
+  farmMode: 'HOUSEHOLD' | 'COMMERCIAL' | null;
   /** Whether livestock is tracked animal-by-animal or as counted batches. */
-  livestockTrackingMode: 'INDIVIDUAL' | 'BATCH';
-  role: Role;
+  livestockTrackingMode: 'INDIVIDUAL' | 'BATCH' | null;
+  role: Role | null;
   permissions: Permission[];
 }
 
@@ -74,11 +80,19 @@ export interface LoginResponse extends TokenPair {
   user: AuthUser;
 }
 
-/** JWT access-token payload claims. */
-export interface AccessTokenClaims {
-  sub: string;
-  email: string;
-  farmId: string;
-  role: Role;
-  sessionId: string;
-}
+/** JWT access-token payload claims. Farm and platform tokens are distinct. */
+export type AccessTokenClaims =
+  | {
+      sub: string;
+      email: string;
+      sessionId: string;
+      platformAdmin: true;
+    }
+  | {
+      sub: string;
+      email: string;
+      sessionId: string;
+      farmId: string;
+      role: Role;
+      platformAdmin?: false;
+    };
