@@ -33,9 +33,14 @@ class E2ePrisma extends FakePrisma {
       name,
       passwordHash: '',
       isActive: true,
+      isPlatformAdmin: false,
       get memberships() {
         return [
-          { farmId: FARM_ID, role, farm: { id: FARM_ID, name: 'Evoqed Mixed Farm' } },
+          {
+            farmId: FARM_ID,
+            role,
+            farm: { id: FARM_ID, name: 'Evoqed Mixed Farm', isActive: true },
+          },
         ];
       },
       role,
@@ -95,7 +100,13 @@ class E2ePrisma extends FakePrisma {
   farm = {
     findUnique: async ({ where }: any) =>
       where.id === FARM_ID
-        ? { id: FARM_ID, name: 'Evoqed Mixed Farm', currency: 'NPR', timezone: 'Asia/Kathmandu' }
+        ? {
+            id: FARM_ID,
+            name: 'Evoqed Mixed Farm',
+            currency: 'NPR',
+            timezone: 'Asia/Kathmandu',
+            isActive: true,
+          }
         : null,
   };
 

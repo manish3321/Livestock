@@ -16,7 +16,7 @@ function contextFor(role: Role | null, required?: Permission[]): ExecutionContex
     switchToHttp: () => ({
       getRequest: () => ({
         user: role
-          ? { role, permissions: ROLE_PERMISSIONS[role] }
+          ? { role, farmId: 'farm-1', permissions: ROLE_PERMISSIONS[role] }
           : undefined,
       }),
     }),
