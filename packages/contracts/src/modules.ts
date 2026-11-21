@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { pageQuerySchema } from './common';
 import { optionalNepalMobileSchema } from './auth';
-import { STAFF_ROLES, type Role } from './roles';
+import { ROLES, STAFF_ROLES, type Role } from './roles';
 import {
   APPROVAL_STATUSES,
   EXPENSE_CATEGORIES,
@@ -647,10 +647,32 @@ export const platformClientUpdateSchema = z.object({
 });
 export type PlatformClientUpdate = z.infer<typeof platformClientUpdateSchema>;
 
+/** Platform CMS may create any farm role, including ADMIN. */
+export const platformMemberCreateSchema = z.object({
+  email: z.string().trim().toLowerCase().email(),
+  name: z.string().trim().min(1).max(120),
+  role: z.enum(ROLES),
+  password: z.string().min(8).max(128),
+  phone: optionalNepalMobileSchema,
+});
+export type PlatformMemberCreate = z.infer<typeof platformMemberCreateSchema>;
+
+/** Platform CMS edit of one farm member. Password reset signs them out everywhere. */
+export const platformMemberUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  email: z.string().trim().toLowerCase().email().optional(),
+  role: z.enum(ROLES).optional(),
+  isActive: z.boolean().optional(),
+  phone: optionalNepalMobileSchema,
+  password: z.string().min(8).max(128).optional(),
+});
+export type PlatformMemberUpdate = z.infer<typeof platformMemberUpdateSchema>;
+
 export interface PlatformClientMemberDto {
   userId: string;
   email: string;
   name: string;
+  phone: string | null;
   role: Role;
   isActive: boolean;
   createdAt: string;

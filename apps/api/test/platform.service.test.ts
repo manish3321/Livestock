@@ -3,7 +3,11 @@ import { randomUUID } from 'node:crypto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { farmMemberCreateSchema, farmMemberUpdateSchema } from '@farm/contracts';
+import {
+  farmMemberCreateSchema,
+  farmMemberUpdateSchema,
+  platformMemberCreateSchema,
+} from '@farm/contracts';
 import { PermissionsGuard } from '../src/auth/permissions.guard';
 import { PlatformService } from '../src/platform/platform.service';
 import type { RequestUser } from '../src/common/types';
@@ -26,6 +30,7 @@ function makeDb() {
     id: string;
     email: string;
     name: string;
+    phone: string | null;
     passwordHash: string;
     isActive: boolean;
     isPlatformAdmin: boolean;
@@ -80,10 +85,15 @@ function makeDb() {
       update: async ({ where, data }: any) => Object.assign(farms.find((f) => f.id === where.id)!, data),
     },
     user: {
-      findUnique: async ({ where }: any) => users.find((u) => u.email === where.email) ?? null,
+      findUnique: async ({ where }: any) => {
+        if (where.email) return users.find((u) => u.email === where.email) ?? null;
+        if (where.id) return users.find((u) => u.id === where.id) ?? null;
+        return null;
+      },
       create: async ({ data }: any) => {
         const row = {
           id: randomUUID(),
+          phone: null,
           isActive: true,
           isPlatformAdmin: false,
           createdAt: new Date(),
@@ -92,6 +102,7 @@ function makeDb() {
         users.push(row);
         return row;
       },
+      update: async ({ where, data }: any) => Object.assign(users.find((u) => u.id === where.id)!, data),
     },
     farmMembership: {
       create: async ({ data }: any) => {
@@ -101,6 +112,34 @@ function makeDb() {
       },
       findMany: async ({ where }: any) =>
         memberships.filter((m) => m.farmId === where.farmId).map((m) => ({ userId: m.userId })),
+      findFirst: async ({ where }: any) => {
+        const m = memberships.find((x) => x.farmId === where.farmId && x.userId === where.userId);
+        if (!m) return null;
+        const user = users.find((u) => u.id === m.userId)!;
+        return {
+          ...m,
+          user: {
+            ...user,
+            memberships: memberships.filter((x) => x.userId === m.userId).map((x) => ({ farmId: x.farmId })),
+          },
+        };
+      },
+      update: async ({ where, data }: any) => Object.assign(memberships.find((m) => m.id === where.id)!, data),
+      delete: async ({ where }: any) => {
+        const idx = memberships.findIndex((m) => m.id === where.id);
+        if (idx >= 0) memberships.splice(idx, 1);
+      },
+      count: async ({ where }: any) =>
+        memberships.filter((m) => {
+          if (m.farmId !== where.farmId) return false;
+          if (where.role && m.role !== where.role) return false;
+          if (where.userId?.not && m.userId === where.userId.not) return false;
+          if (where.user?.isActive !== undefined) {
+            const u = users.find((x) => x.id === m.userId);
+            if (!u || u.isActive !== where.user.isActive) return false;
+          }
+          return true;
+        }).length,
     },
     refreshSession: {
       updateMany: async ({ where, data }: any) => {
@@ -109,6 +148,9 @@ function makeDb() {
           if (ids.includes(s.userId) && !s.revokedAt) Object.assign(s, data);
         }
       },
+    },
+    task: {
+      updateMany: async () => ({ count: 0 }),
     },
     platformAudit: {
       create: async ({ data }: any) => {
@@ -135,6 +177,7 @@ function seedFarm(db: any, id: string, name: string, adminEmail: string) {
     id: randomUUID(),
     email: adminEmail,
     name: `${name} Admin`,
+    phone: null,
     passwordHash: 'x',
     isActive: true,
     isPlatformAdmin: false,
@@ -220,6 +263,73 @@ describe('platform tenancy', () => {
     await service.updateClient(actor, FARM_A, { isActive: true });
     expect(db.farms.find((f: any) => f.id === FARM_A)!.isActive).toBe(true);
   });
+
+  it('creates staff and ADMIN members on a client farm', async () => {
+    const worker = await service.createMember(actor, FARM_A, {
+      name: 'Worker A',
+      email: 'worker-a@farm.test',
+      role: 'WORKER',
+      password: 'Password123!',
+    });
+    expect(worker.role).toBe('WORKER');
+    expect(worker.isActive).toBe(true);
+
+    const admin2 = await service.createMember(actor, FARM_A, {
+      name: 'Admin Two',
+      email: 'admin2-a@farm.test',
+      role: 'ADMIN',
+      password: 'Password123!',
+    });
+    expect(admin2.role).toBe('ADMIN');
+    expect(db.audits.some((a: any) => a.action === 'platform.member.create')).toBe(true);
+  });
+
+  it('edits member details and can revoke then grant access', async () => {
+    const worker = await service.createMember(actor, FARM_A, {
+      name: 'Worker A',
+      email: 'worker-a@farm.test',
+      role: 'WORKER',
+      password: 'Password123!',
+    });
+    db.sessions.push({ userId: worker.userId, revokedAt: null });
+
+    const revoked = await service.updateMember(actor, FARM_A, worker.userId, {
+      name: 'Worker Renamed',
+      role: 'MANAGER',
+      isActive: false,
+    });
+    expect(revoked.name).toBe('Worker Renamed');
+    expect(revoked.role).toBe('MANAGER');
+    expect(revoked.isActive).toBe(false);
+    expect(db.sessions.find((s: any) => s.userId === worker.userId)!.revokedAt).toBeInstanceOf(Date);
+
+    const granted = await service.updateMember(actor, FARM_A, worker.userId, { isActive: true });
+    expect(granted.isActive).toBe(true);
+  });
+
+  it('refuses to revoke or remove the last active ADMIN', async () => {
+    const adminId = db.memberships.find((m: any) => m.farmId === FARM_A)!.userId;
+    await expect(
+      service.updateMember(actor, FARM_A, adminId, { isActive: false }),
+    ).rejects.toMatchObject({ response: { code: 'LAST_ADMIN' } });
+    await expect(service.removeMember(actor, FARM_A, adminId)).rejects.toMatchObject({
+      response: { code: 'LAST_ADMIN' },
+    });
+  });
+
+  it('removes a staff member from a client farm', async () => {
+    const worker = await service.createMember(actor, FARM_A, {
+      name: 'Worker A',
+      email: 'worker-a@farm.test',
+      role: 'WORKER',
+      password: 'Password123!',
+    });
+    await service.removeMember(actor, FARM_A, worker.userId);
+    expect(db.memberships.some((m: any) => m.userId === worker.userId && m.farmId === FARM_A)).toBe(
+      false,
+    );
+    expect(db.users.find((u: any) => u.id === worker.userId)!.isActive).toBe(false);
+  });
 });
 
 describe('farm member schemas reject ADMIN', () => {
@@ -236,6 +346,16 @@ describe('farm member schemas reject ADMIN', () => {
   it('update schema does not accept ADMIN', () => {
     const parsed = farmMemberUpdateSchema.safeParse({ role: 'ADMIN' });
     expect(parsed.success).toBe(false);
+  });
+
+  it('platform create schema accepts ADMIN', () => {
+    const parsed = platformMemberCreateSchema.safeParse({
+      email: 'x@farm.test',
+      name: 'X',
+      role: 'ADMIN',
+      password: 'Password123!',
+    });
+    expect(parsed.success).toBe(true);
   });
 });
 
