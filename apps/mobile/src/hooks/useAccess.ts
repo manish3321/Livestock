@@ -13,7 +13,7 @@ export function useAccess() {
 
   const can = useCallback(
     (permission: Permission) => {
-      if (!user) return false;
+      if (!user?.role) return false;
       if (user.permissions?.includes(permission)) return true;
       return hasPermission(user.role, permission);
     },
@@ -22,7 +22,7 @@ export function useAccess() {
 
   const canModule = useCallback(
     (module: ModuleKey) => {
-      if (!user) return false;
+      if (!user?.role) return false;
       return MODULE_ACCESS[module].includes(user.role);
     },
     [user],

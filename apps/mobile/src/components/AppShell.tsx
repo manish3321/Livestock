@@ -54,11 +54,11 @@ export function AppShell({
   const [profileOpen, setProfileOpen] = useState(false);
 
   const allowed = useMemo(() => {
-    if (!user) return new Set<ModuleKey>();
+    if (!user?.role) return new Set<ModuleKey>();
     return new Set(
       navigableModules(user.role, {
         household: user.farmMode === 'HOUSEHOLD',
-        trackingMode: user.livestockTrackingMode,
+        trackingMode: user.livestockTrackingMode ?? undefined,
       }),
     );
   }, [user]);
@@ -169,7 +169,7 @@ export function AppShell({
         <MoreDrawer
           open={moreOpen}
           onClose={() => setMoreOpen(false)}
-          farmName={user.farmName}
+          farmName={user.farmName ?? ''}
           household={household}
           groups={groups}
           activeModule={module}

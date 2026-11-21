@@ -53,7 +53,7 @@ export function InboxScreen() {
   const { api, store, persist, syncNow, revision, user } = useFarm();
   const { t, locale } = useLocale();
   const [pendingChanges, setPendingChanges] = useState(0);
-  const approver = user ? hasPermission(user.role, 'changes:approve') : false;
+  const approver = user?.role ? hasPermission(user.role, 'changes:approve') : false;
   useFocusEffect(
     useCallback(() => {
       if (!approver) return;

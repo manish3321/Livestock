@@ -91,7 +91,7 @@ export function ScanAnywhere() {
   const scanned = useRef(false);
   const searchReq = useRef(0);
 
-  const allowedScan = !!user && modulesForRole(user.role).includes('scan');
+  const allowedScan = !!user?.role && modulesForRole(user.role).includes('scan');
 
   const reset = useCallback(() => {
     setIdentifyMode('camera');

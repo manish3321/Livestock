@@ -30,7 +30,7 @@ export function ApprovalsScreen({ navigation }: Props) {
   const { api, user } = useFarm();
   const { t } = useLocale();
   const face = useTypeface();
-  const approver = user ? hasPermission(user.role, 'changes:approve') : false;
+  const approver = user?.role ? hasPermission(user.role, 'changes:approve') : false;
   const [tab, setTab] = useState<'pending' | 'done'>('pending');
   const [rows, setRows] = useState<ChangeRequestDto[]>([]);
   const [loading, setLoading] = useState(false);
