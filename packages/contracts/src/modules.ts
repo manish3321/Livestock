@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { pageQuerySchema } from './common';
 import { optionalNepalMobileSchema } from './auth';
-import { ROLES, STAFF_ROLES, type Role } from './roles';
+import { STAFF_ROLES, type Role } from './roles';
 import {
   APPROVAL_STATUSES,
   EXPENSE_CATEGORIES,
