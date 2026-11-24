@@ -231,7 +231,9 @@ export function BreedingBoard({
                   onClick={() => setActiveKey(group.key)}
                 >
                   <span className="watch-group-tab-label">{np ? group.labelNp : group.labelEn}</span>
-                  <span className="watch-group-tab-count">{group.items.length}</span>
+                  {group.items.length > 0 ? (
+                    <sup className="watch-group-tab-count">{group.items.length}</sup>
+                  ) : null}
                 </button>
               );
             })}
@@ -247,6 +249,11 @@ export function BreedingBoard({
               <header className="board-group-head">
                 <h3 className="board-group-title">
                   {np ? activeGroup.labelNp : activeGroup.labelEn}
+                  {activeGroup.items.length > 0 ? (
+                    <sup className="watch-group-tab-count board-group-count">
+                      {activeGroup.items.length}
+                    </sup>
+                  ) : null}
                 </h3>
                 {(np ? activeGroup.subLabelNp : activeGroup.subLabelEn) ? (
                   <p className="board-sub">

@@ -3450,14 +3450,38 @@ button.kpi-hit {
   color: #fffbf5;
   box-shadow: 0 4px 12px rgba(31, 77, 56, 0.22);
 }
-.watch-group-tab-count {
-  font-size: 0.85rem;
+.watch-group-tab-count,
+.nav-count-sup,
+.board-group-count {
+  font-size: 0.7em;
   font-weight: 700;
+  line-height: 1;
   opacity: 0.85;
+  vertical-align: super;
+  position: relative;
+  top: -0.35em;
+  margin-left: 2px;
 }
 .watch-group-tab:not(.selected) .watch-group-tab-count {
   color: var(--color-brand-strong);
   opacity: 1;
+}
+.choice-btn .watch-group-tab-count {
+  top: -0.45em;
+}
+.sidebar .nav-count-sup {
+  color: #fff;
+  opacity: 0.95;
+  font-size: 0.72em;
+  top: -0.4em;
+  margin-left: 3px;
+}
+.sidebar a.active .nav-count-sup {
+  color: #fff;
+}
+.board-group-count {
+  color: inherit;
+  opacity: 0.9;
 }
 .watch-group-panel {
   animation: breeding-panel-in 0.28s var(--ease-out);

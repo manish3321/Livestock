@@ -2,6 +2,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { pendingChangeCount } from '../api/change-requests';
+import { breedingBoard, breedingWatch } from '../api/breeding';
 import { useTranslation } from 'react-i18next';
 import { modulesForRole, type ModuleKey } from '@farm/contracts';
 import { useAuth } from '../auth/auth-context';
@@ -14,6 +15,7 @@ import {
 import { useFarmMode } from '../hooks/useFarmMode';
 import { setLocale } from '../i18n';
 import { ReminderRuntime } from '../components/ReminderRuntime';
+import { readBreedingBoardCache, readBreedingWatchCache } from '../lib/breeding-offline';
 import {
   HOUSEHOLD_HIDDEN,
   NON_NAV_MODULES,
@@ -116,8 +118,27 @@ function AppLayoutInner() {
   });
   const pendingChanges = approver ? (pendingQuery.data?.count ?? 0) : 0;
 
-  if (!user || !user.role) return null;
-  const allowed = new Set(modulesForRole(user.role));
+  const farmRole = user?.role ?? null;
+  const canBreeding = Boolean(farmRole) && modulesForRole(farmRole!).includes('breeding');
+  const watchNavQ = useQuery({
+    queryKey: ['breeding', 'watch'],
+    queryFn: breedingWatch,
+    enabled: canBreeding,
+    refetchInterval: 60_000,
+    placeholderData: readBreedingWatchCache() ?? undefined,
+  });
+  const boardNavQ = useQuery({
+    queryKey: ['breeding', 'board'],
+    queryFn: () => breedingBoard(),
+    enabled: canBreeding,
+    refetchInterval: 60_000,
+    placeholderData: readBreedingBoardCache() ?? undefined,
+  });
+  const breedingNavTotal =
+    (watchNavQ.data?.totalAnimals ?? 0) + (boardNavQ.data?.summary.totalActions ?? 0);
+
+  if (!user || !farmRole) return null;
+  const allowed = new Set(modulesForRole(farmRole));
   const groups = navGroups(livestockModuleOrder(livestockTrackingMode));
 
   const handleSignOut = async () => {
@@ -170,6 +191,9 @@ function AppLayoutInner() {
                 >
                   <ModuleIcon module={m} />
                   {t(`nav.${m}`)}
+                  {m === 'breeding' && breedingNavTotal > 0 ? (
+                    <sup className="nav-count-sup">{breedingNavTotal}</sup>
+                  ) : null}
                 </NavLink>
               ))}
               {group.labelKey === 'nav.group.home' && allowed.has('shed') && (
@@ -181,7 +205,9 @@ function AppLayoutInner() {
               {group.labelKey === 'nav.group.home' && allowed.has('inbox') && (
                 <NavLink to="/approvals">
                   {t('nav.approvals')}
-                  {pendingChanges > 0 && <span className="nav-badge">{pendingChanges}</span>}
+                  {pendingChanges > 0 ? (
+                    <sup className="nav-count-sup">{pendingChanges}</sup>
+                  ) : null}
                 </NavLink>
               )}
               {group.labelKey === 'nav.group.money' &&

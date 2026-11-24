@@ -6,7 +6,9 @@ import { formatDate, formatNPR, type PedigreeNodeDto, type SpeciesConfigDto } fr
 import { listAnimals } from '../../api/animals';
 import {
   animalPedigree,
+  breedingBoard,
   breedingMetrics,
+  breedingWatch,
   createBreeding,
   createHeat,
   deleteBreeding,
@@ -23,6 +25,7 @@ import {
   type BreedingDto,
   type HeatLogDto,
 } from '../../api/breeding';
+import { readBreedingBoardCache, readBreedingWatchCache } from '../../lib/breeding-offline';
 import { listSpeciesConfig } from '../../api/config';
 import { useAuth } from '../../auth/auth-context';
 import { FieldError } from '../../components/FieldError';
@@ -75,6 +78,19 @@ export function BreedingPage() {
     dueLabel: string;
     form?: BreedingStage;
   } | null>(null);
+
+  const watchCountQ = useQuery({
+    queryKey: ['breeding', 'watch'],
+    queryFn: breedingWatch,
+    placeholderData: readBreedingWatchCache() ?? undefined,
+  });
+  const boardCountQ = useQuery({
+    queryKey: ['breeding', 'board'],
+    queryFn: () => breedingBoard(),
+    placeholderData: readBreedingBoardCache() ?? undefined,
+  });
+  const watchTotal = watchCountQ.data?.totalAnimals ?? 0;
+  const walkTotal = boardCountQ.data?.summary.totalActions ?? 0;
 
   const breedingQ = useQuery({
     queryKey: ['breeding'],
@@ -250,6 +266,7 @@ export function BreedingPage() {
             }}
           >
             {t('breeding.tabs.watch')}
+            {watchTotal > 0 ? <sup className="watch-group-tab-count">{watchTotal}</sup> : null}
           </button>
           <button
             type="button"
@@ -259,6 +276,7 @@ export function BreedingPage() {
             onClick={() => setSearchParams(new URLSearchParams({ tab: 'walk' }), { replace: true })}
           >
             {t('breeding.tabs.walk')}
+            {walkTotal > 0 ? <sup className="watch-group-tab-count">{walkTotal}</sup> : null}
           </button>
           {!isWorker && (
             <button

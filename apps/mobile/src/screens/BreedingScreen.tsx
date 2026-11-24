@@ -625,12 +625,14 @@ export function BreedingScreen() {
                         >
                           {watchTitle(group.kind)}
                         </Txt>
-                        <Txt
-                          weight="bold"
-                          style={[styles.watchKindCountText, active && styles.watchKindTextOn]}
-                        >
-                          {group.items.length}
-                        </Txt>
+                        {group.items.length > 0 ? (
+                          <Txt
+                            weight="bold"
+                            style={[styles.watchKindCountText, active && styles.watchKindTextOn]}
+                          >
+                            {group.items.length}
+                          </Txt>
+                        ) : null}
                       </Pressable>
                     );
                   })}
@@ -766,12 +768,14 @@ export function BreedingScreen() {
                             >
                               {group.labelEn}
                             </Txt>
-                            <Txt
-                              weight="bold"
-                              style={[styles.watchKindCountText, active && styles.watchKindTextOn]}
-                            >
-                              {group.items.length}
-                            </Txt>
+                            {group.items.length > 0 ? (
+                              <Txt
+                                weight="bold"
+                                style={[styles.watchKindCountText, active && styles.watchKindTextOn]}
+                              >
+                                {group.items.length}
+                              </Txt>
+                            ) : null}
                           </Pressable>
                         );
                       })}
@@ -1702,7 +1706,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   watchKindCountOn: {},
-  watchKindCountText: { fontSize: 13, color: color.brandStrong },
+  watchKindCountText: {
+    fontSize: 11,
+    color: color.brandStrong,
+    lineHeight: 14,
+    marginTop: -6,
+    marginLeft: 1,
+  },
   section: { marginTop: 12, gap: 8 },
   walkGroup: {
     marginTop: 12,
