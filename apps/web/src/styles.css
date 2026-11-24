@@ -126,8 +126,11 @@ button {
   .btn:hover,
   .shortcut-tile:hover,
   .animal-card:hover,
-  .link-card:hover {
+  .link-card:hover,
+  .board-row:hover,
+  .board-btn:hover {
     transform: none !important;
+    box-shadow: none !important;
   }
 }
 
@@ -3217,10 +3220,25 @@ button.kpi-hit {
   border-radius: 14px;
   overflow: hidden;
   background: var(--urgency-wash, #fffbf5);
-  transition: transform 0.18s var(--ease-out), box-shadow 0.18s var(--ease-out);
+  transition:
+    transform 0.18s var(--ease-out),
+    box-shadow 0.18s var(--ease-out),
+    border-color 0.18s var(--ease-out);
+}
+.board-row:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(31, 77, 56, 0.12);
+  border-color: color-mix(in srgb, var(--urgency, var(--color-brand-strong)) 40%, var(--color-border));
 }
 .board-row:active {
   transform: scale(0.992);
+}
+.board-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(31, 77, 56, 0.14);
+}
+.board-btn.primary:hover {
+  filter: brightness(1.06);
 }
 .board-animal {
   display: flex;
