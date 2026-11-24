@@ -626,10 +626,7 @@ export function BreedingScreen() {
                           {watchTitle(group.kind)}
                         </Txt>
                         {group.items.length > 0 ? (
-                          <Txt
-                            weight="bold"
-                            style={[styles.watchKindCountText, active && styles.watchKindTextOn]}
-                          >
+                          <Txt weight="bold" style={styles.watchKindCountText}>
                             {group.items.length}
                           </Txt>
                         ) : null}
@@ -769,10 +766,7 @@ export function BreedingScreen() {
                               {group.labelEn}
                             </Txt>
                             {group.items.length > 0 ? (
-                              <Txt
-                                weight="bold"
-                                style={[styles.watchKindCountText, active && styles.watchKindTextOn]}
-                              >
+                              <Txt weight="bold" style={styles.watchKindCountText}>
                                 {group.items.length}
                               </Txt>
                             ) : null}
@@ -1708,7 +1702,7 @@ const styles = StyleSheet.create({
   watchKindCountOn: {},
   watchKindCountText: {
     fontSize: 11,
-    color: color.brandStrong,
+    color: color.danger,
     lineHeight: 14,
     marginTop: -6,
     marginLeft: 1,
