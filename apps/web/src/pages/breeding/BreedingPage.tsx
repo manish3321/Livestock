@@ -81,7 +81,7 @@ export function BreedingPage() {
 
   const watchCountQ = useQuery({
     queryKey: ['breeding', 'watch'],
-    queryFn: breedingWatch,
+    queryFn: () => breedingWatch(),
     placeholderData: readBreedingWatchCache() ?? undefined,
   });
   const boardCountQ = useQuery({

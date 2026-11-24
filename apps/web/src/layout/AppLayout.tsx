@@ -122,7 +122,7 @@ function AppLayoutInner() {
   const canBreeding = Boolean(farmRole) && modulesForRole(farmRole!).includes('breeding');
   const watchNavQ = useQuery({
     queryKey: ['breeding', 'watch'],
-    queryFn: breedingWatch,
+    queryFn: () => breedingWatch(),
     enabled: canBreeding,
     refetchInterval: 60_000,
     placeholderData: readBreedingWatchCache() ?? undefined,
