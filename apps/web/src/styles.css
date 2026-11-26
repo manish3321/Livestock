@@ -3484,7 +3484,8 @@ button.kpi-hit {
 .choice-btn .watch-group-tab-count {
   top: -0.45em;
 }
-.sidebar .nav-count-sup {
+.sidebar .nav-count-sup,
+.tab-bar .nav-count-sup {
   color: #ff5252;
   font-size: 0.72em;
   top: -0.4em;
@@ -3492,6 +3493,18 @@ button.kpi-hit {
 }
 .sidebar a.active .nav-count-sup {
   color: var(--color-danger);
+}
+.tab-bar-label {
+  position: relative;
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0;
+}
+.tab-bar .nav-count-sup {
+  position: absolute;
+  top: -0.55em;
+  right: -0.85em;
+  margin-left: 0;
 }
 .watch-group-panel {
   animation: breeding-panel-in 0.28s var(--ease-out);

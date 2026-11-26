@@ -1,8 +1,10 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { pendingChangeCount } from '../api/change-requests';
 import { breedingBoard, breedingWatch } from '../api/breeding';
+import { getDashboardSummary } from '../api/dashboard';
+import { listTasks } from '../api/tasks';
 import { useTranslation } from 'react-i18next';
 import { modulesForRole, type ModuleKey } from '@farm/contracts';
 import { useAuth } from '../auth/auth-context';
@@ -21,6 +23,11 @@ import {
   NON_NAV_MODULES,
   livestockModuleOrder,
 } from '../lib/navigation';
+
+function NavSup({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return <sup className="nav-count-sup">{count}</sup>;
+}
 
 /**
  * Sidebar groups. The livestock entries are spliced in from the farm's
@@ -109,7 +116,15 @@ function AppLayoutInner() {
     setMoreOpen(false);
   }, [location.pathname]);
 
+  const farmRole = user?.role ?? null;
+  const roleModules = farmRole ? modulesForRole(farmRole) : [];
+  const canBreeding = roleModules.includes('breeding');
+  const canInbox = roleModules.includes('inbox');
+  const canHealth = roleModules.includes('health');
+  const canInventory = roleModules.includes('inventory');
+  const canRevenue = roleModules.includes('revenue') && can('finance:read');
   const approver = can('changes:approve');
+
   const pendingQuery = useQuery({
     queryKey: ['change-requests-count'],
     queryFn: pendingChangeCount,
@@ -118,8 +133,6 @@ function AppLayoutInner() {
   });
   const pendingChanges = approver ? (pendingQuery.data?.count ?? 0) : 0;
 
-  const farmRole = user?.role ?? null;
-  const canBreeding = Boolean(farmRole) && modulesForRole(farmRole!).includes('breeding');
   const watchNavQ = useQuery({
     queryKey: ['breeding', 'watch'],
     queryFn: () => breedingWatch(),
@@ -134,8 +147,51 @@ function AppLayoutInner() {
     refetchInterval: 60_000,
     placeholderData: readBreedingBoardCache() ?? undefined,
   });
+  const inboxQ = useQuery({
+    queryKey: ['tasks'],
+    queryFn: listTasks,
+    enabled: canInbox,
+    refetchInterval: 60_000,
+  });
+  const dashQ = useQuery({
+    queryKey: ['dashboard', 'summary'],
+    queryFn: getDashboardSummary,
+    enabled: Boolean(user) && (canHealth || canInventory || canRevenue),
+    refetchInterval: 60_000,
+  });
+
   const breedingNavTotal =
     (watchNavQ.data?.totalAnimals ?? 0) + (boardNavQ.data?.summary.totalActions ?? 0);
+  const inboxNavTotal = useMemo(
+    () =>
+      (inboxQ.data?.items ?? []).filter(
+        (task) => task.status === 'PENDING' || task.status === 'SNOOZED',
+      ).length,
+    [inboxQ.data?.items],
+  );
+  const alerts = dashQ.data?.alerts;
+  const healthNavTotal =
+    (alerts?.healthOverdue.length ?? 0) + (alerts?.vaccineToday?.length ?? 0);
+  const inventoryNavTotal =
+    (alerts?.inventoryCritical.length ?? 0) + (alerts?.inventoryExpiring?.length ?? 0);
+  const revenueNavTotal = alerts?.unpaidRevenue?.length ?? 0;
+
+  const navCounts = useMemo(() => {
+    const counts: Partial<Record<ModuleKey, number>> = {};
+    if (inboxNavTotal > 0) counts.inbox = inboxNavTotal;
+    if (breedingNavTotal > 0) counts.breeding = breedingNavTotal;
+    if (healthNavTotal > 0) counts.health = healthNavTotal;
+    if (inventoryNavTotal > 0) counts.inventory = inventoryNavTotal;
+    if (canRevenue && revenueNavTotal > 0) counts.revenue = revenueNavTotal;
+    return counts;
+  }, [
+    inboxNavTotal,
+    breedingNavTotal,
+    healthNavTotal,
+    inventoryNavTotal,
+    canRevenue,
+    revenueNavTotal,
+  ]);
 
   if (!user || !farmRole) return null;
   const allowed = new Set(modulesForRole(farmRole));
@@ -191,9 +247,7 @@ function AppLayoutInner() {
                 >
                   <ModuleIcon module={m} />
                   {t(`nav.${m}`)}
-                  {m === 'breeding' && breedingNavTotal > 0 ? (
-                    <sup className="nav-count-sup">{breedingNavTotal}</sup>
-                  ) : null}
+                  <NavSup count={navCounts[m] ?? 0} />
                 </NavLink>
               ))}
               {group.labelKey === 'nav.group.home' && allowed.has('shed') && (
@@ -205,9 +259,7 @@ function AppLayoutInner() {
               {group.labelKey === 'nav.group.home' && allowed.has('inbox') && (
                 <NavLink to="/approvals">
                   {t('nav.approvals')}
-                  {pendingChanges > 0 ? (
-                    <sup className="nav-count-sup">{pendingChanges}</sup>
-                  ) : null}
+                  <NavSup count={pendingChanges} />
                 </NavLink>
               )}
               {group.labelKey === 'nav.group.money' &&
@@ -283,7 +335,10 @@ function AppLayoutInner() {
         {allowed.has('inbox') && (
           <NavLink to="/inbox" className={({ isActive }) => (isActive ? 'active' : '')}>
             <ModuleIcon module="inbox" size={20} />
-            {t('nav.inbox')}
+            <span className="tab-bar-label">
+              {t('nav.inbox')}
+              <NavSup count={navCounts.inbox ?? 0} />
+            </span>
           </NavLink>
         )}
         <button
