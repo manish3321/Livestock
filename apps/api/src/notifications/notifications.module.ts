@@ -1,5 +1,9 @@
 import { Global, Module } from '@nestjs/common';
-import { CompositeNotificationAdapter, type SmsConfig } from './composite-notification.adapter';
+import {
+  CompositeNotificationAdapter,
+  type EmailConfig,
+  type SmsConfig,
+} from './composite-notification.adapter';
 import { FcmNotificationAdapter, parseServiceAccount } from './fcm-notification.adapter';
 import { DevicesController, NotificationsController } from './notifications.controller';
 import { NotificationDispatchService } from './notification-dispatch.service';
@@ -18,7 +22,17 @@ function notificationAdapter() {
   }
 
   // Always use composite so Expo Push tokens work without FCM credentials.
-  return new CompositeNotificationAdapter(fcm, smsConfig());
+  return new CompositeNotificationAdapter(fcm, smsConfig(), emailConfig());
+}
+
+function emailConfig(): EmailConfig | null {
+  const from = process.env.MAIL_FROM?.trim();
+  if (!from) return null;
+  const resend = process.env.RESEND_API_KEY?.trim();
+  if (resend) return { provider: 'resend', apiKey: resend, from };
+  const smtpUrl = process.env.SMTP_URL?.trim();
+  if (smtpUrl) return { provider: 'smtp', smtpUrl, from };
+  return null;
 }
 
 /** Sparrow (Nepal) wins when its token is set; Twilio is the fallback. */

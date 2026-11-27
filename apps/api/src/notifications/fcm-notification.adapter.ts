@@ -1,7 +1,13 @@
 import { createSign } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { LoggingNotificationAdapter } from './logging-notification.adapter';
-import type { NotificationPort, PushMessage, SmsMessage, VoiceCall } from './notification.port';
+import type {
+  EmailMessage,
+  NotificationPort,
+  PushMessage,
+  SmsMessage,
+  VoiceCall,
+} from './notification.port';
 
 type ServiceAccount = {
   project_id: string;
@@ -47,12 +53,16 @@ export class FcmNotificationAdapter implements NotificationPort {
     }
   }
 
-  async sendSms(message: SmsMessage): Promise<void> {
+  async sendSms(message: SmsMessage): Promise<{ sent: boolean; detail: string }> {
     return this.fallback.sendSms(message);
   }
 
   async enqueueVoice(call: VoiceCall): Promise<void> {
     return this.fallback.enqueueVoice(call);
+  }
+
+  async sendEmail(message: EmailMessage): Promise<{ sent: boolean; detail: string }> {
+    return this.fallback.sendEmail(message);
   }
 
   private async accessToken(sa: ServiceAccount): Promise<string> {

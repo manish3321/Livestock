@@ -23,6 +23,10 @@ const envSchema = z.object({
   TWILIO_FROM_NUMBER: z.string().optional().default(''),
   SPARROW_SMS_TOKEN: z.string().optional().default(''),
   SPARROW_SMS_FROM: z.string().optional().default(''),
+  /** Optional email: set MAIL_FROM plus RESEND_API_KEY (preferred) or SMTP_URL. */
+  MAIL_FROM: z.string().optional().default(''),
+  RESEND_API_KEY: z.string().optional().default(''),
+  SMTP_URL: z.string().optional().default(''),
   NOTIFICATION_CRON_SECRET: z.string().optional().default(''),
   CRON_SECRET: z.string().optional().default(''),
 }).superRefine((data, ctx) => {

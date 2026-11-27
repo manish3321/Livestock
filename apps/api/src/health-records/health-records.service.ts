@@ -12,7 +12,7 @@ import {
   type UdderCheckCreate,
   type UdderCheckDto,
 } from '@farm/contracts';
-import { completeOpenTask, ensureTask } from '../jobs/task-writer';
+import { completeOpenTask, completeOpenTasksOfType, ensureTask } from '../jobs/task-writer';
 import type { HealthRecord, Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/types';
@@ -231,6 +231,40 @@ export class HealthRecordsService {
         explicitMilkUntil: input.milkWithholdUntil,
         explicitMeatUntil: input.meatWithholdUntil,
       });
+      if (input.type === 'VACCINATION') {
+        // Same Task row as Today’s Work: recording a vaccine closes open due tasks.
+        await completeOpenTasksOfType(
+          this.prisma,
+          { farmId: user.farmId, animalId: input.animalId, types: ['VACCINATION_DUE'] },
+          user.id,
+        );
+        if (nextDueAt) {
+          await ensureTask(this.prisma, {
+            farmId: user.farmId,
+            animalId: input.animalId,
+            type: 'VACCINATION_DUE',
+            titleEn: `${input.title} next due`,
+            titleNp: `${input.title} अर्को खुराक`,
+            dueAt: nextDueAt,
+            priority: 'NORMAL',
+            sourceRefType: 'healthRecord',
+            sourceRefId: row.id,
+          });
+        }
+      }
+      if (input.followUpAt) {
+        await ensureTask(this.prisma, {
+          farmId: user.farmId,
+          animalId: input.animalId,
+          type: input.type === 'VACCINATION' ? 'VACCINATION_DUE' : 'TREATMENT_FOLLOWUP',
+          titleEn: `Follow-up — ${input.title}`,
+          titleNp: `फलोअप — ${input.title}`,
+          dueAt: input.followUpAt,
+          priority: 'NORMAL',
+          sourceRefType: 'healthRecordFollowup',
+          sourceRefId: row.id,
+        });
+      }
       if (input.type === 'CHECKUP') {
         await completeOpenTask(
           this.prisma,

@@ -323,6 +323,9 @@ export function countdownFor(
       };
     }
     case 'ANESTRUS_SUSPECTED': {
+      // Stage is already anestrus-suspected (>30d quiet). "Silent heat" is the
+      // short-window buffalo check; long quiet stretches are true anestrus.
+      const longQuiet = quiet >= 60;
       const cd = countdown({
         kind: 'DAYS_QUIET',
         eventEn: 'heat',
@@ -332,8 +335,12 @@ export function countdownFor(
         unit: 'DAYS',
         total: null,
         elapsed: quiet,
-        labelEn: `${quiet} days quiet — silent heat likely`,
-        labelNp: `${quiet} दिन शान्त — मौन गर्मी हुनसक्छ`,
+        labelEn: longQuiet
+          ? `${quiet} days quiet — anestrus likely`
+          : `${quiet} days quiet — silent heat likely`,
+        labelNp: longQuiet
+          ? `${quiet} दिन शान्त — गर्मी नआएको हुनसक्छ`
+          : `${quiet} दिन शान्त — मौन गर्मी हुनसक्छ`,
       });
       return { countdown: cd, contextEn: cd.labelEn, contextNp: cd.labelNp, sortKey: -quiet };
     }

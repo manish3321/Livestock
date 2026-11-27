@@ -21,14 +21,20 @@ class FakePort implements NotificationPort {
   pushes: Array<{ token: string; message: PushMessage }> = [];
   sms: SmsMessage[] = [];
   voice: VoiceCall[] = [];
+  emails: Array<{ to: string; subject: string }> = [];
   async sendToDevice(fcmToken: string, message: PushMessage) {
     this.pushes.push({ token: fcmToken, message });
   }
   async sendSms(message: SmsMessage) {
     this.sms.push(message);
+    return { sent: true, detail: 'fake_sms_ok' };
   }
   async enqueueVoice(call: VoiceCall) {
     this.voice.push(call);
+  }
+  async sendEmail(message: { to: string; subject: string; body: string }) {
+    this.emails.push({ to: message.to, subject: message.subject });
+    return { sent: false, detail: 'email_not_configured' };
   }
 }
 
@@ -114,6 +120,9 @@ function makePrisma(state: {
       findFirst: async () => (state as { buffalo?: boolean }).buffalo
         ? { id: randomUUID() }
         : null,
+    },
+    user: {
+      findMany: async () => [],
     },
   };
 }

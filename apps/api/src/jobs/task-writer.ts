@@ -1,8 +1,18 @@
-import type { Prisma, TaskPriority, TaskType } from '@prisma/client';
+import type { Prisma, TaskPriority, TaskStatus, TaskType } from '@prisma/client';
+
+type TaskRow = { id: string; status: TaskStatus; dueAt: Date; titleEn: string; titleNp: string };
 
 type TaskDb = {
   task: {
+    findFirst: (args: {
+      where: Prisma.TaskWhereInput;
+      orderBy?: Prisma.TaskOrderByWithRelationInput;
+    }) => Promise<TaskRow | null>;
     create: (args: { data: Prisma.TaskUncheckedCreateInput }) => Promise<{ id?: string } | unknown>;
+    update: (args: {
+      where: { id: string };
+      data: Prisma.TaskUncheckedUpdateInput;
+    }) => Promise<{ id?: string } | unknown>;
     updateMany: (args: {
       where: Prisma.TaskWhereInput;
       data: Prisma.TaskUncheckedUpdateInput;
@@ -10,9 +20,20 @@ type TaskDb = {
   };
 };
 
-/** Idempotent insert: the pending-task unique index turns a repeat into a no-op. */
+/** Calendar day bounds in UTC for due-day matching (same animal + type + due day). */
+export function dueDayBounds(dueAt: Date): { gte: Date; lt: Date } {
+  const gte = new Date(Date.UTC(dueAt.getUTCFullYear(), dueAt.getUTCMonth(), dueAt.getUTCDate()));
+  const lt = new Date(gte);
+  lt.setUTCDate(lt.getUTCDate() + 1);
+  return { gte, lt };
+}
+
+/**
+ * Idempotent open-task upsert: one PENDING/SNOOZED row per farm + animal + type + due day.
+ * Updates title/priority/refs on an existing open row instead of inserting a duplicate.
+ */
 export async function ensureTask(
-  db: Pick<TaskDb, 'task'> & { task: Pick<TaskDb['task'], 'create'> },
+  db: Pick<TaskDb, 'task'>,
   data: {
     farmId: string;
     type: TaskType;
@@ -25,15 +46,47 @@ export async function ensureTask(
     sourceRefId?: string | null;
   },
 ): Promise<string | null> {
+  const { gte, lt } = dueDayBounds(data.dueAt);
+  const animalId = data.animalId ?? null;
+
+  const existing = await db.task.findFirst({
+    where: {
+      farmId: data.farmId,
+      type: data.type,
+      status: { in: ['PENDING', 'SNOOZED'] },
+      deletedAt: null,
+      dueAt: { gte, lt },
+      ...(animalId ? { animalId } : { animalId: null }),
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  if (existing) {
+    await db.task.update({
+      where: { id: existing.id },
+      data: {
+        titleEn: data.titleEn,
+        titleNp: data.titleNp,
+        dueAt: data.dueAt,
+        dueDayUtc: gte,
+        priority: data.priority ?? 'NORMAL',
+        sourceRefType: data.sourceRefType ?? null,
+        sourceRefId: data.sourceRefId ?? null,
+      },
+    });
+    return existing.id;
+  }
+
   try {
     const row = (await db.task.create({
       data: {
         farmId: data.farmId,
-        animalId: data.animalId ?? null,
+        animalId,
         type: data.type,
         titleEn: data.titleEn,
         titleNp: data.titleNp,
         dueAt: data.dueAt,
+        dueDayUtc: gte,
         priority: data.priority ?? 'NORMAL',
         source: 'AUTO',
         sourceRefType: data.sourceRefType ?? null,
@@ -42,7 +95,19 @@ export async function ensureTask(
     })) as { id?: string };
     return row?.id ?? null;
   } catch {
-    return null;
+    // Race: unique index (or parallel create) — re-read the open row.
+    const raced = await db.task.findFirst({
+      where: {
+        farmId: data.farmId,
+        type: data.type,
+        status: { in: ['PENDING', 'SNOOZED'] },
+        deletedAt: null,
+        dueAt: { gte, lt },
+        ...(animalId ? { animalId } : { animalId: null }),
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    return raced?.id ?? null;
   }
 }
 

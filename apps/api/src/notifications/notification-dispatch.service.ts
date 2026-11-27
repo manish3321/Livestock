@@ -289,7 +289,11 @@ export class NotificationDispatchService {
       let smsCount = smsThisMonth;
 
       const groups = groupSameType(
-        pending.filter((task) => shouldNotify({ task, recipient, staffing })),
+        pending.filter((task) => {
+          const row = open.find((o) => o.id === task.id);
+          const overdue = row ? isOverdueHigh(row.dueAt, now) : false;
+          return shouldNotify({ task, recipient, staffing, overdue });
+        }),
       );
       for (const group of groups) {
         if (recipient.muted.has(group.type)) continue;
@@ -326,7 +330,66 @@ export class NotificationDispatchService {
         if (delivered.sms) smsCount += 1;
       }
     }
+
+    await this.notifyPlatformOperators(farmId, pending, open, now, stats);
     return stats;
+  }
+
+  /**
+   * Platform operators get email or an in-app NotificationLog only — never farm SMS.
+   */
+  private async notifyPlatformOperators(
+    farmId: string,
+    pending: Array<GroupableTask & { assignedToId: string | null }>,
+    open: Array<{ id: string; dueAt: Date; priority: string }>,
+    now: Date,
+    stats: DispatchStats,
+  ): Promise<void> {
+    if (pending.length === 0) return;
+    const ops = await this.prisma.user.findMany({
+      where: { isPlatformAdmin: true, isActive: true },
+      select: { id: true, email: true },
+    });
+    if (ops.length === 0) return;
+
+    const groups = groupSameType(pending);
+    for (const group of groups) {
+      const overdue = group.tasks.some((t) => {
+        const row = open.find((o) => o.id === t.id);
+        return row ? isOverdueHigh(row.dueAt, now) : false;
+      });
+      if (!overdue && group.priority !== 'CRITICAL' && group.priority !== 'HIGH') continue;
+      const subject = `[Evoqed Farm Management] ${group.titleEn}`;
+      const body = `${group.tasks.length} task(s): ${group.tasks.map((t) => t.titleEn).join('; ')}`;
+      for (const op of ops) {
+        const emailResult = await this.notifier.sendEmail({
+          to: op.email,
+          subject,
+          body,
+        });
+        await this.prisma.notificationLog.create({
+          data: {
+            farmId,
+            userId: op.id,
+            taskId: group.tasks[0]?.id ?? null,
+            channel: 'EMAIL',
+            subject,
+            body,
+            sent: emailResult.sent,
+            sentAt: now,
+            costNpr: null,
+            payload: {
+              kind: 'platform_operator',
+              emailDetail: emailResult.detail,
+              taskIds: group.tasks.map((t) => t.id),
+              priority: group.priority,
+              overdue,
+            },
+          },
+        });
+        if (emailResult.sent) stats.sent += 1;
+      }
+    }
   }
 
   private async deliver(input: {
@@ -389,14 +452,19 @@ export class NotificationDispatchService {
       });
     if (smsOk && input.recipient.phone) {
       const encoded = smsEncoding(body);
-      await this.notifier.sendSms({
+      const smsResult = await this.notifier.sendSms({
         to: input.recipient.phone,
         body,
         encoding: encoded.encoding,
       });
-      await this.writeLog(input, 'SMS', title, body, SMS_COST_NPR);
-      smsSent = true;
-      sent = true;
+      await this.writeLog(input, 'SMS', title, body, smsResult.sent ? SMS_COST_NPR : 0, {
+        sent: smsResult.sent,
+        smsDetail: smsResult.detail,
+      });
+      if (smsResult.sent) {
+        smsSent = true;
+        sent = true;
+      }
     }
 
     return sent ? { sms: smsSent } : null;
@@ -414,7 +482,9 @@ export class NotificationDispatchService {
     subject: string,
     body: string,
     costNpr: number,
+    opts?: { sent?: boolean; smsDetail?: string },
   ): Promise<void> {
+    const delivered = opts?.sent ?? true;
     await this.prisma.notificationLog.create({
       data: {
         farmId: input.farmId,
@@ -423,14 +493,15 @@ export class NotificationDispatchService {
         channel,
         subject,
         body,
-        sent: true,
+        sent: delivered,
         sentAt: input.now,
-        costNpr: costNpr || null,
+        costNpr: delivered && costNpr ? costNpr : null,
         payload: {
           kind: input.kind,
           type: input.group.type as TaskType,
           priority: input.group.priority,
           taskIds: input.group.tasks.map((t) => t.id),
+          ...(opts?.smsDetail ? { smsDetail: opts.smsDetail } : {}),
         },
       },
     });

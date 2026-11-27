@@ -983,6 +983,13 @@ export class BreedingService {
         },
         ['COLOSTRUM_1'],
       );
+      await this.scheduleCalfFeeding21Days({
+        farmId: user.farmId,
+        calfId: calf.animalId,
+        shortNo: calf.herdNumber ?? label,
+        calvingAt,
+        calvingEventId: created.event.id,
+      });
     }
     await this.writeReminders(
       user.farmId,
@@ -1733,6 +1740,66 @@ export class BreedingService {
 
   private async refreshStage(farmId: string, animalId: string, trigger: string): Promise<void> {
     await this.reproStage?.recomputeAnimal(farmId, animalId, trigger);
+  }
+
+  /**
+   * First 21 days after a live calf: separate Today’s Work checks for colostrum,
+   * dam’s milk, and other feed. Completing one does not complete the others
+   * (different TaskType). Keeps +2/+8/+16h COLOSTRUM_* rules untouched.
+   */
+  private async scheduleCalfFeeding21Days(args: {
+    farmId: string;
+    calfId: string;
+    shortNo: string;
+    calvingAt: Date;
+    calvingEventId: string;
+  }): Promise<void> {
+    // Skip day-1 COLOSTRUM_FEED — +2/+8/+16h COLOSTRUM_* rules own that window.
+    const schedule: Array<{
+      type: 'COLOSTRUM_FEED' | 'CALF_HEALTH_CHECK' | 'FEED_TRANSITION';
+      days: number[];
+      titleEn: (d: number) => string;
+      titleNp: (d: number) => string;
+      slot: number;
+    }> = [
+      {
+        type: 'COLOSTRUM_FEED',
+        days: [2, 7, 14, 21],
+        titleEn: (d) => `Day ${d} colostrum check — ${args.shortNo}`,
+        titleNp: (d) => `दिन ${d} बिगौती — ${args.shortNo}`,
+        slot: 201,
+      },
+      {
+        type: 'CALF_HEALTH_CHECK',
+        days: [1, 3, 7, 14, 21],
+        titleEn: (d) => `Day ${d} mother’s milk — ${args.shortNo}`,
+        titleNp: (d) => `दिन ${d} आमाको दूध — ${args.shortNo}`,
+        slot: 202,
+      },
+      {
+        type: 'FEED_TRANSITION',
+        days: [1, 3, 7, 14, 21],
+        titleEn: (d) => `Day ${d} other feed — ${args.shortNo}`,
+        titleNp: (d) => `दिन ${d} अन्य दाना — ${args.shortNo}`,
+        slot: 203,
+      },
+    ];
+    for (const kind of schedule) {
+      for (const day of kind.days) {
+        const dueAt = atNepalHour(addDays(args.calvingAt, day), 8);
+        await ensureTask(this.prisma, {
+          farmId: args.farmId,
+          animalId: args.calfId,
+          type: kind.type,
+          titleEn: kind.titleEn(day),
+          titleNp: kind.titleNp(day),
+          dueAt,
+          priority: day <= 3 ? 'HIGH' : 'NORMAL',
+          sourceRefType: 'calfFeeding21',
+          sourceRefId: derivedSlotId(args.calvingEventId, kind.slot + day),
+        });
+      }
+    }
   }
 
   private async writeReminders(

@@ -22,10 +22,12 @@ function user(): RequestUser {
 
 describe('tasks.complete', () => {
   const tasks: any[] = [];
+  const health: any[] = [];
   let service: TasksService;
 
   beforeEach(() => {
     tasks.length = 0;
+    health.length = 0;
     const prisma: any = {
       task: {
         findFirst: async ({ where }: any) =>
@@ -44,6 +46,15 @@ describe('tasks.complete', () => {
             if (where.completedAt?.gte && t.completedAt && t.completedAt < where.completedAt.gte) return false;
             return true;
           }).length,
+      },
+      healthRecord: {
+        findFirst: async ({ where }: any) =>
+          health.find((h) => h.id === where.id && h.farmId === where.farmId) ?? null,
+        update: async ({ where, data }: any) => {
+          const row = health.find((h) => h.id === where.id);
+          Object.assign(row, data);
+          return row;
+        },
       },
     };
     service = new TasksService(prisma, fakeAudit);
@@ -131,6 +142,43 @@ describe('tasks.complete', () => {
       if (i < 2) expect(result.offerMute).toBeUndefined();
       else expect(result.offerMute).toBe(true);
     }
+  });
+
+  it('updates the linked HealthRecord when a vaccination follow-up is completed', async () => {
+    const healthId = randomUUID();
+    const taskId = randomUUID();
+    health.push({
+      id: healthId,
+      farmId: FARM,
+      title: 'TEST FMD',
+      followUpAt: new Date('2026-12-01T00:00:00Z'),
+      notes: 'TEST health e2e',
+    });
+    tasks.push({
+      id: taskId,
+      farmId: FARM,
+      animalId: randomUUID(),
+      type: 'VACCINATION_DUE',
+      status: 'PENDING',
+      titleEn: 'TEST FMD follow-up',
+      titleNp: 'TEST',
+      dueAt: new Date(),
+      priority: 'NORMAL',
+      assignedToId: null,
+      source: 'AUTO',
+      sourceRefType: 'healthRecordFollowup',
+      sourceRefId: healthId,
+      snoozeCount: 0,
+      snoozedUntil: null,
+      completedAt: null,
+      dismissReason: null,
+      batchId: null,
+      deletedAt: null,
+    });
+    const done = await service.complete(user(), taskId, {});
+    expect(done.status).toBe('DONE');
+    expect(health[0].followUpAt).toBeNull();
+    expect(health[0].notes).toMatch(/Follow-up completed via Today's Work/);
   });
 
   it('does not offer to mute a CRITICAL type', async () => {

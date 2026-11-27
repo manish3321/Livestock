@@ -2558,6 +2558,8 @@ model Task {
   titleEn       String
   titleNp       String
   dueAt         DateTime
+  /// UTC calendar day of dueAt — DB default + trigger; used by open-task unique indexes.
+  dueDayUtc     DateTime     @default(dbgenerated("(timezone('UTC', \"dueAt\"))::date")) @db.Date
   priority      TaskPriority @default(NORMAL)
   status        TaskStatus   @default(PENDING)
   assignedToId  String?      @db.Uuid

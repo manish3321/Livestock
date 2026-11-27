@@ -128,6 +128,7 @@ export class TasksService {
       },
       include: { animal: { select: TASK_ANIMAL_SELECT } },
     });
+    await this.syncHealthFollowUpOnComplete(user.farmId, task);
     await this.audit.record({
       farmId: user.farmId,
       userId: user.id,
@@ -138,6 +139,44 @@ export class TasksService {
     });
     await this.notifications?.acknowledge(user.farmId, id);
     return toDto(row);
+  }
+
+  /**
+   * Completing a vaccination / treatment follow-up on Today's Work updates the
+   * linked HealthRecord (clears followUpAt, stamps notes) so Health and inbox agree.
+   */
+  private async syncHealthFollowUpOnComplete(
+    farmId: string,
+    task: { type: TaskType; sourceRefType: string | null; sourceRefId: string | null },
+  ): Promise<void> {
+    if (task.type !== 'VACCINATION_DUE' && task.type !== 'TREATMENT_FOLLOWUP') return;
+    if (!task.sourceRefId) return;
+    const healthRefs = new Set([
+      'healthRecord',
+      'healthRecordFollowup',
+      'healthEventFollowup',
+    ]);
+    if (task.sourceRefType && !healthRefs.has(task.sourceRefType)) return;
+
+    const existing = await this.prisma.healthRecord.findFirst({
+      where: { id: task.sourceRefId, farmId },
+    });
+    if (!existing) return;
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    const line = `Follow-up completed via Today's Work on ${stamp}.`;
+    const notes =
+      existing.notes && existing.notes.includes('Follow-up completed via Today')
+        ? existing.notes
+        : [existing.notes?.trim(), line].filter(Boolean).join('\n');
+
+    await this.prisma.healthRecord.update({
+      where: { id: existing.id },
+      data: {
+        followUpAt: null,
+        notes,
+      },
+    });
   }
 
   async snooze(

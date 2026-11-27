@@ -1,11 +1,21 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { FcmNotificationAdapter } from './fcm-notification.adapter';
 import { LoggingNotificationAdapter } from './logging-notification.adapter';
-import type { NotificationPort, PushMessage, SmsMessage, VoiceCall } from './notification.port';
+import type {
+  EmailMessage,
+  NotificationPort,
+  PushMessage,
+  SmsMessage,
+  VoiceCall,
+} from './notification.port';
 
 export type SmsConfig =
   | { provider: 'sparrow'; token: string; from: string }
   | { provider: 'twilio'; accountSid: string; authToken: string; from: string };
+
+export type EmailConfig =
+  | { provider: 'resend'; apiKey: string; from: string }
+  | { provider: 'smtp'; smtpUrl: string; from: string };
 
 function isExpoPushToken(token: string): boolean {
   return token.startsWith('ExponentPushToken[') || token.startsWith('ExpoPushToken[');
@@ -29,6 +39,7 @@ export class CompositeNotificationAdapter implements NotificationPort {
   constructor(
     private readonly fcm: FcmNotificationAdapter | null,
     private readonly sms: SmsConfig | null,
+    private readonly email: EmailConfig | null = null,
   ) {}
 
   async sendToDevice(token: string, message: PushMessage): Promise<void> {
@@ -43,14 +54,12 @@ export class CompositeNotificationAdapter implements NotificationPort {
     await this.log.sendToDevice(token, message);
   }
 
-  async sendSms(message: SmsMessage): Promise<void> {
+  async sendSms(message: SmsMessage): Promise<{ sent: boolean; detail: string }> {
     if (!this.sms) {
-      await this.log.sendSms(message);
-      return;
+      return this.log.sendSms(message);
     }
     if (this.sms.provider === 'sparrow') {
-      await this.sendSparrow(this.sms, message);
-      return;
+      return this.sendSparrow(this.sms, message);
     }
     const twilio = this.sms;
     const auth = Buffer.from(`${twilio.accountSid}:${twilio.authToken}`).toString('base64');
@@ -70,20 +79,52 @@ export class CompositeNotificationAdapter implements NotificationPort {
         body,
       },
     );
+    const text = await res.text();
     if (!res.ok) {
-      const text = await res.text();
       this.logger.warn(`Twilio SMS ${res.status}: ${text.slice(0, 200)}`);
+      return { sent: false, detail: `twilio_${res.status}` };
     }
+    return { sent: true, detail: text.slice(0, 200) || 'twilio_ok' };
   }
 
   async enqueueVoice(call: VoiceCall): Promise<void> {
     return this.log.enqueueVoice(call);
   }
 
+  async sendEmail(message: EmailMessage): Promise<{ sent: boolean; detail: string }> {
+    if (!this.email) {
+      return this.log.sendEmail(message);
+    }
+    if (this.email.provider === 'resend') {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.email.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: this.email.from,
+          to: [message.to],
+          subject: message.subject,
+          text: message.body,
+        }),
+      });
+      const text = await res.text();
+      if (!res.ok) {
+        this.logger.warn(`Resend email ${res.status}: ${text.slice(0, 200)}`);
+        return { sent: false, detail: `resend_${res.status}` };
+      }
+      return { sent: true, detail: text.slice(0, 200) };
+    }
+    // SMTP_URL is accepted for config discovery; raw SMTP needs a client we do not vendor.
+    this.logger.warn('SMTP_URL is set but only RESEND_API_KEY delivery is implemented');
+    return { sent: false, detail: 'smtp_not_implemented_use_RESEND_API_KEY' };
+  }
+
   private async sendSparrow(
     config: Extract<SmsConfig, { provider: 'sparrow' }>,
     message: SmsMessage,
-  ): Promise<void> {
+  ): Promise<{ sent: boolean; detail: string }> {
     const body = new URLSearchParams({
       token: config.token,
       from: config.from,
@@ -95,10 +136,12 @@ export class CompositeNotificationAdapter implements NotificationPort {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body,
     });
+    const text = await res.text();
     if (!res.ok) {
-      const text = await res.text();
       this.logger.warn(`Sparrow SMS ${res.status}: ${text.slice(0, 200)}`);
+      return { sent: false, detail: `sparrow_${res.status}` };
     }
+    return { sent: true, detail: text.slice(0, 200) || 'sparrow_ok' };
   }
 
   private async sendExpo(token: string, message: PushMessage): Promise<void> {

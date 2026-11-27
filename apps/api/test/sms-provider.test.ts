@@ -41,7 +41,19 @@ describe('SMS providers', () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     const adapter = new CompositeNotificationAdapter(null, null);
-    await adapter.sendSms({ to: '+9779812345678', body: 'test', encoding: 'GSM7' });
+    const result = await adapter.sendSms({ to: '+9779812345678', body: 'test', encoding: 'GSM7' });
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(result).toEqual({ sent: false, detail: 'sms_not_configured' });
+  });
+
+  it('returns sent:true when Sparrow responds OK', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"response_code":200}', { status: 200 })));
+    const adapter = new CompositeNotificationAdapter(null, {
+      provider: 'sparrow',
+      token: 'tok',
+      from: 'FarmAlert',
+    });
+    const result = await adapter.sendSms({ to: '9812345678', body: 'ok', encoding: 'GSM7' });
+    expect(result.sent).toBe(true);
   });
 });

@@ -113,6 +113,8 @@ export function shouldNotify(input: {
   task: { type: string; priority: string; assignedToId?: string | null };
   recipient: { id: string; role: string };
   staffing: FarmStaffing;
+  /** Overdue HIGH/CRITICAL work also reaches farm managers (and admin). */
+  overdue?: boolean;
 }): boolean {
   const { task, recipient, staffing } = input;
   const role = recipient.role;
@@ -121,6 +123,7 @@ export function shouldNotify(input: {
   const critical = task.priority === 'CRITICAL';
   if (role === 'VET') return VET_TASK_TYPES.has(task.type) && (critical || !task.assignedToId);
   if (critical) return true;
+  if (input.overdue && (role === 'MANAGER' || role === 'ADMIN')) return true;
   if (task.assignedToId) return false;
   if (audienceFor(task.type) === 'MANAGEMENT') return role === 'ADMIN' || role === 'MANAGER';
   if (role === 'WORKER') return true;
