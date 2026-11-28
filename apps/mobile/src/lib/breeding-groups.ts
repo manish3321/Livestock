@@ -254,7 +254,8 @@ export function buildWatchRows(
         animalId: a.id,
         label: animalLabel(a),
         subtitle: left != null ? `Due in ${left}d` : 'Pregnant',
-        progress: elapsed != null ? clamp01(elapsed / gestation) : null,
+        progress:
+          elapsed != null && gestation != null ? clamp01(elapsed / gestation) : null,
         progressLabel: left != null ? `${Math.max(0, left)}d` : null,
         breedingId: open?.id,
         recordAction: 'animal',
