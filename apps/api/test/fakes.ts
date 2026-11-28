@@ -395,8 +395,38 @@ export class FakePrisma {
 
   task = {
     create: async ({ data }: any) => {
-      const row = { id: randomUUID(), status: 'PENDING', ...data };
+      const row = {
+        id: randomUUID(),
+        status: 'PENDING',
+        deletedAt: null,
+        createdAt: new Date(),
+        ...data,
+      };
       this.tasks.push(row);
+      return row;
+    },
+    findFirst: async ({ where }: any) => {
+      const gte = where.dueAt?.gte as Date | undefined;
+      const lt = where.dueAt?.lt as Date | undefined;
+      const exactDue = where.dueAt instanceof Date ? (where.dueAt as Date) : undefined;
+      return (
+        this.tasks.find((task: any) => {
+          if (where.id && task.id !== where.id) return false;
+          if (where.farmId && task.farmId !== where.farmId) return false;
+          if (where.animalId === null && task.animalId != null) return false;
+          if (where.animalId && task.animalId !== where.animalId) return false;
+          if (where.type && task.type !== where.type) return false;
+          if (where.status?.in && !where.status.in.includes(task.status)) return false;
+          if (where.deletedAt === null && task.deletedAt) return false;
+          if (exactDue && task.dueAt?.getTime() !== exactDue.getTime()) return false;
+          if (gte && lt && (task.dueAt < gte || task.dueAt >= lt)) return false;
+          return true;
+        }) ?? null
+      );
+    },
+    update: async ({ where, data }: any) => {
+      const row = this.tasks.find((task: any) => task.id === where.id);
+      if (row) Object.assign(row, data);
       return row;
     },
     updateMany: async ({ where, data }: any) => {

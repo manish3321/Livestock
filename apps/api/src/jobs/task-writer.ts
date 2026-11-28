@@ -28,9 +28,33 @@ export function dueDayBounds(dueAt: Date): { gte: Date; lt: Date } {
   return { gte, lt };
 }
 
+/** Dose slots are hours apart on the same calendar day — match the exact due instant. */
+const EXACT_DUE_TYPES = new Set<TaskType>(['MEDICATION_DOSE']);
+
+function openTaskWhere(
+  data: { farmId: string; type: TaskType; dueAt: Date; animalId?: string | null },
+): Prisma.TaskWhereInput {
+  const animalId = data.animalId ?? null;
+  const dueAt = EXACT_DUE_TYPES.has(data.type)
+    ? data.dueAt
+    : (() => {
+        const { gte, lt } = dueDayBounds(data.dueAt);
+        return { gte, lt };
+      })();
+  return {
+    farmId: data.farmId,
+    type: data.type,
+    status: { in: ['PENDING', 'SNOOZED'] },
+    deletedAt: null,
+    dueAt,
+    ...(animalId ? { animalId } : { animalId: null }),
+  };
+}
+
 /**
- * Idempotent open-task upsert: one PENDING/SNOOZED row per farm + animal + type + due day.
- * Updates title/priority/refs on an existing open row instead of inserting a duplicate.
+ * Idempotent open-task upsert: one PENDING/SNOOZED row per farm + animal + type + due day
+ * (exact dueAt for MEDICATION_DOSE). Updates title/priority/refs on an existing open row
+ * instead of inserting a duplicate.
  */
 export async function ensureTask(
   db: Pick<TaskDb, 'task'>,
@@ -46,18 +70,12 @@ export async function ensureTask(
     sourceRefId?: string | null;
   },
 ): Promise<string | null> {
-  const { gte, lt } = dueDayBounds(data.dueAt);
+  const { gte } = dueDayBounds(data.dueAt);
   const animalId = data.animalId ?? null;
+  const where = openTaskWhere(data);
 
   const existing = await db.task.findFirst({
-    where: {
-      farmId: data.farmId,
-      type: data.type,
-      status: { in: ['PENDING', 'SNOOZED'] },
-      deletedAt: null,
-      dueAt: { gte, lt },
-      ...(animalId ? { animalId } : { animalId: null }),
-    },
+    where,
     orderBy: { createdAt: 'asc' },
   });
 
@@ -97,14 +115,7 @@ export async function ensureTask(
   } catch {
     // Race: unique index (or parallel create) — re-read the open row.
     const raced = await db.task.findFirst({
-      where: {
-        farmId: data.farmId,
-        type: data.type,
-        status: { in: ['PENDING', 'SNOOZED'] },
-        deletedAt: null,
-        dueAt: { gte, lt },
-        ...(animalId ? { animalId } : { animalId: null }),
-      },
+      where,
       orderBy: { createdAt: 'asc' },
     });
     return raced?.id ?? null;

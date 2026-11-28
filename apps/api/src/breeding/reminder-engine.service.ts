@@ -57,6 +57,10 @@ export class ReminderEngineService {
     planned = planned.filter(
       (row) => !ANESTRUS_LADDER.has(row.code) || row.dueAt.getTime() <= anestrusEnd.getTime(),
     );
+    // Closing/missed advance via checkServiceWindows — never write them on HEAT fire.
+    planned = planned.filter(
+      (row) => row.code !== 'SERVICE_WINDOW_CLOSING' && row.code !== 'SERVICE_WINDOW_MISSED',
+    );
     return this.write(farmId, ctx.animalId, planned);
   }
 

@@ -1814,6 +1814,10 @@ export class BreedingService {
     const cfg = await this.speciesConfig.forSpecies(ctx.species);
     let planned = planReminders(SYSTEM_REMINDER_RULES, ctx, cfg);
     if (onlyCodes) planned = planned.filter((row) => onlyCodes.includes(row.code));
+    // Closing/missed are advanced by the hourly service-window job, not at heat log time.
+    planned = planned.filter(
+      (row) => row.code !== 'SERVICE_WINDOW_CLOSING' && row.code !== 'SERVICE_WINDOW_MISSED',
+    );
     for (const task of planned) {
       await ensureTask(this.prisma, {
         farmId,

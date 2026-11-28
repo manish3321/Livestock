@@ -72,19 +72,29 @@ describe('Phase 8 health depth', () => {
     },
     task: {
       create: async ({ data }: any) => {
-        const row = { id: randomUUID(), status: 'PENDING', ...data };
+        const row = { id: randomUUID(), status: 'PENDING', deletedAt: null, createdAt: new Date(), ...data };
         tasks.push(row);
         return row;
       },
-      findFirst: async ({ where }: any) =>
-        tasks.find((t) => {
-          if (where.farmId && t.farmId !== where.farmId) return false;
-          if (where.animalId && t.animalId !== where.animalId) return false;
-          if (where.type && t.type !== where.type) return false;
-          if (where.status?.in && !where.status.in.includes(t.status)) return false;
-          if (where.sourceRefId && t.sourceRefId !== where.sourceRefId) return false;
-          return true;
-        }) ?? null,
+      findFirst: async ({ where }: any) => {
+        const gte = where.dueAt?.gte as Date | undefined;
+        const lt = where.dueAt?.lt as Date | undefined;
+        const exactDue = where.dueAt instanceof Date ? (where.dueAt as Date) : undefined;
+        return (
+          tasks.find((t) => {
+            if (where.farmId && t.farmId !== where.farmId) return false;
+            if (where.animalId === null && t.animalId != null) return false;
+            if (where.animalId && t.animalId !== where.animalId) return false;
+            if (where.type && t.type !== where.type) return false;
+            if (where.status?.in && !where.status.in.includes(t.status)) return false;
+            if (where.sourceRefId && t.sourceRefId !== where.sourceRefId) return false;
+            if (where.deletedAt === null && t.deletedAt) return false;
+            if (exactDue && t.dueAt?.getTime() !== exactDue.getTime()) return false;
+            if (gte && lt && (t.dueAt < gte || t.dueAt >= lt)) return false;
+            return true;
+          }) ?? null
+        );
+      },
       update: async ({ where, data }: any) => {
         const row = tasks.find((t) => t.id === where.id);
         if (row) Object.assign(row, data);

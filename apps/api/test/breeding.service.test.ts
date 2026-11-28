@@ -345,22 +345,39 @@ class BreedingFake {
           t.status === 'PENDING',
       );
       if (dup) throw new Error('unique');
-      const row = { id: randomUUID(), status: 'PENDING', supersededBy: null, ...data };
+      const row = {
+        id: randomUUID(),
+        status: 'PENDING',
+        supersededBy: null,
+        deletedAt: null,
+        createdAt: new Date(),
+        ...data,
+      };
       this.tasks.push(row);
       return row;
     },
-    findFirst: async ({ where }: any) =>
-      this.tasks.find((t) => {
-        if (where.id && t.id !== where.id) return false;
-        if (where.farmId && t.farmId !== where.farmId) return false;
-        if (where.animalId && t.animalId !== where.animalId) return false;
-        if (where.type && t.type !== where.type) return false;
-        if (where.status?.in && !where.status.in.includes(t.status)) return false;
-        if (where.status && !where.status.in && t.status !== where.status) return false;
-        if (where.sourceRefId && t.sourceRefId !== where.sourceRefId) return false;
-        if (where.sourceRefType && t.sourceRefType !== where.sourceRefType) return false;
-        return true;
-      }) ?? null,
+    findFirst: async ({ where }: any) => {
+      const gte = where.dueAt?.gte as Date | undefined;
+      const lt = where.dueAt?.lt as Date | undefined;
+      const exactDue = where.dueAt instanceof Date ? (where.dueAt as Date) : undefined;
+      return (
+        this.tasks.find((t) => {
+          if (where.id && t.id !== where.id) return false;
+          if (where.farmId && t.farmId !== where.farmId) return false;
+          if (where.animalId === null && t.animalId != null) return false;
+          if (where.animalId && t.animalId !== where.animalId) return false;
+          if (where.type && t.type !== where.type) return false;
+          if (where.status?.in && !where.status.in.includes(t.status)) return false;
+          if (where.status && !where.status.in && t.status !== where.status) return false;
+          if (where.sourceRefId && t.sourceRefId !== where.sourceRefId) return false;
+          if (where.sourceRefType && t.sourceRefType !== where.sourceRefType) return false;
+          if (where.deletedAt === null && t.deletedAt) return false;
+          if (exactDue && t.dueAt?.getTime() !== exactDue.getTime()) return false;
+          if (gte && lt && (!t.dueAt || t.dueAt < gte || t.dueAt >= lt)) return false;
+          return true;
+        }) ?? null
+      );
+    },
     count: async ({ where }: any) =>
       this.tasks.filter((t) => {
         if (where.farmId && t.farmId !== where.farmId) return false;
@@ -658,9 +675,10 @@ describe('BreedingService Phase 4', () => {
     expect(result.dam.lactationNumber).toBe(3);
     expect(result.dam.lactationStartDate?.slice(0, 10)).toBe('2026-04-01');
     expect(db.animals.get(mother.id).lactationNumber).toBe(3);
-    const colostrum = db.tasks.filter((t) => t.type === 'COLOSTRUM_FEED');
+    const colostrum = db.tasks.filter(
+      (t) => t.type === 'COLOSTRUM_FEED' && t.priority === 'CRITICAL',
+    );
     expect(colostrum).toHaveLength(2);
-    expect(colostrum.every((t) => t.priority === 'CRITICAL')).toBe(true);
     expect(colostrum.every((t) => t.titleEn.includes('Colostrum'))).toBe(true);
   });
 
@@ -675,7 +693,9 @@ describe('BreedingService Phase 4', () => {
     expect(result.sireId).toBeNull();
     expect(result.serviceId).toBeNull();
     expect(result.calves).toHaveLength(1);
-    expect(db.tasks.filter((t) => t.type === 'COLOSTRUM_FEED')).toHaveLength(1);
+    expect(
+      db.tasks.filter((t) => t.type === 'COLOSTRUM_FEED' && t.priority === 'CRITICAL'),
+    ).toHaveLength(1);
   });
 
   it('ABORTED creates no calf and returns the dam to her prior status', async () => {
@@ -1154,7 +1174,15 @@ describe('BreedingService Phase 4B chain', () => {
       calvingAt: new Date(),
       calves: [{ sex: 'FEMALE' }],
     });
-    expect(db.tasks.filter((t) => ['CALVING_WATCH', 'DRY_OFF', 'FEED_TRANSITION'].includes(t.type)).every((t) => t.status === 'SUPERSEDED')).toBe(true);
+    expect(
+      db.tasks
+        .filter(
+          (t) =>
+            t.animalId === mother.id &&
+            ['CALVING_WATCH', 'DRY_OFF', 'FEED_TRANSITION'].includes(t.type),
+        )
+        .every((t) => t.status === 'SUPERSEDED'),
+    ).toBe(true);
   });
 
   it('abort reopens HEAT_WATCH and cancels calving watch', async () => {

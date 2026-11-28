@@ -366,7 +366,8 @@ export const SYSTEM_REMINDER_RULES: ReminderRuleDef[] = [
   },
   {
     code: 'ANESTRUS_WATCH',
-    taskType: 'SILENT_HEAT_CHECK',
+    // HEAT_WATCH so buffalo SILENT_HEAT_CHECK (04:00) is not overwritten same day.
+    taskType: 'HEAT_WATCH',
     triggerStage: 'ANESTRUS_SUSPECTED',
     priority: 'NORMAL',
     channels: ['PUSH'],
