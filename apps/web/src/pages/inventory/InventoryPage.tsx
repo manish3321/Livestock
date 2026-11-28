@@ -94,8 +94,11 @@ export function InventoryPage() {
       requestRestock(id, { quantity }),
     onSuccess: (_data, vars) => {
       setRestockQty((prev) => ({ ...prev, [vars.id]: '' }));
+      setError(null);
       void qc.invalidateQueries({ queryKey: ['inventory'] });
+      void qc.invalidateQueries({ queryKey: ['dashboard'] });
     },
+    onError: (err: Error) => setError(err.message),
   });
 
   const movementMut = useMutation({
@@ -138,7 +141,8 @@ export function InventoryPage() {
       {
         key: 'stock',
         header: t('inventory.stock'),
-        render: (row) => `${row.currentStock} / ${row.minimumStock} ${row.unit}`,
+        render: (row) =>
+          `${row.currentStock} ${row.unit} · ${t('inventory.minimumStock')} ${row.minimumStock}`,
       },
       {
         key: 'valuation',

@@ -51,10 +51,31 @@ function openTaskWhere(
   };
 }
 
+function dismissedSameDueDayWhere(
+  data: { farmId: string; type: TaskType; dueAt: Date; animalId?: string | null },
+): Prisma.TaskWhereInput {
+  const animalId = data.animalId ?? null;
+  const dueAt = EXACT_DUE_TYPES.has(data.type)
+    ? data.dueAt
+    : (() => {
+        const { gte, lt } = dueDayBounds(data.dueAt);
+        return { gte, lt };
+      })();
+  return {
+    farmId: data.farmId,
+    type: data.type,
+    status: 'DISMISSED',
+    deletedAt: null,
+    dueAt,
+    ...(animalId ? { animalId } : { animalId: null }),
+  };
+}
+
 /**
  * Idempotent open-task upsert: one PENDING/SNOOZED row per farm + animal + type + due day
  * (exact dueAt for MEDICATION_DOSE). Updates title/priority/refs on an existing open row
- * instead of inserting a duplicate.
+ * instead of inserting a duplicate. Does not recreate a task the user already dismissed
+ * for that due day, and does not overwrite a snoozed dueAt.
  */
 export async function ensureTask(
   db: Pick<TaskDb, 'task'>,
@@ -80,13 +101,13 @@ export async function ensureTask(
   });
 
   if (existing) {
+    const keepDueAt = existing.status === 'SNOOZED';
     await db.task.update({
       where: { id: existing.id },
       data: {
         titleEn: data.titleEn,
         titleNp: data.titleNp,
-        dueAt: data.dueAt,
-        dueDayUtc: gte,
+        ...(keepDueAt ? {} : { dueAt: data.dueAt, dueDayUtc: gte }),
         priority: data.priority ?? 'NORMAL',
         sourceRefType: data.sourceRefType ?? null,
         sourceRefId: data.sourceRefId ?? null,
@@ -94,6 +115,13 @@ export async function ensureTask(
     });
     return existing.id;
   }
+
+  // User already dismissed this work for the due day — do not bring it back.
+  const dismissed = await db.task.findFirst({
+    where: dismissedSameDueDayWhere(data),
+    orderBy: { createdAt: 'desc' },
+  });
+  if (dismissed) return null;
 
   try {
     const row = (await db.task.create({

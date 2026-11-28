@@ -196,6 +196,11 @@ export const INVENTORY_CATEGORIES = [
   'SUPPLIES',
 ] as const;
 
+export const inventoryListQuerySchema = pageQuerySchema.extend({
+  alert: z.enum(INVENTORY_ALERT_LEVELS).optional(),
+});
+export type InventoryListQuery = z.infer<typeof inventoryListQuerySchema>;
+
 export const inventoryCreateSchema = z.object({
   name: z.string().min(1).max(120),
   category: z.enum(INVENTORY_CATEGORIES),

@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { formatDate, formatNPR, type FeedCreate } from '@farm/contracts';
-import { listAnimals } from '../../api/animals';
+import { listAnimals, searchAnimals } from '../../api/animals';
 import { listBatches } from '../../api/batches';
 import { createFeed, getFeedFcr, listFeed, type FeedLogDto } from '../../api/feed';
 import { listInventory } from '../../api/inventory';
@@ -12,6 +12,7 @@ import { DataTable, type Column } from '../../components/DataTable';
 import { FieldError } from '../../components/FieldError';
 import { ErrorState, LoadingState } from '../../components/PageState';
 import { StatusChip } from '../../components/StatusChip';
+import { SuggestInput, type SuggestOption } from '../../components/SuggestInput';
 import { useFarmMode } from '../../hooks/useFarmMode';
 import { inRange, notFuture, required, useFieldErrors } from '../../lib/form-errors';
 
@@ -29,6 +30,10 @@ export function FeedPage() {
     accepted: true,
     occurredAt: new Date(),
   });
+  const [animalLabel, setAnimalLabel] = useState('');
+  const [batchLabel, setBatchLabel] = useState('');
+  const [inventoryLabel, setInventoryLabel] = useState('');
+  const [animalQuery, setAnimalQuery] = useState('');
   const { errors: fieldErrors, validate, clearField, fieldProps } = useFieldErrors('feed');
 
   useEffect(() => {
@@ -48,6 +53,11 @@ export function FeedPage() {
     queryFn: () => listAnimals({ pageSize: 200 }),
     enabled: showForm,
   });
+  const animalSearchQ = useQuery({
+    queryKey: ['animals', 'feed-search', animalQuery],
+    queryFn: () => searchAnimals(animalQuery.trim()),
+    enabled: showForm && animalQuery.trim().length >= 1,
+  });
   const batchesQ = useQuery({
     queryKey: ['batches', 'feed-select'],
     queryFn: () => listBatches({ pageSize: 200 }),
@@ -58,6 +68,55 @@ export function FeedPage() {
     queryFn: () => listInventory({ pageSize: 200 }),
     enabled: showForm,
   });
+
+  const feedTypeOptions = useMemo<SuggestOption[]>(() => {
+    const fromLogs = (query.data?.items ?? []).map((row) => row.feedType).filter(Boolean);
+    const fromInv = (inventoryQ.data?.items ?? [])
+      .filter((i) => i.category === 'FEED')
+      .map((i) => i.name);
+    const seen = new Set<string>();
+    const out: SuggestOption[] = [];
+    for (const name of [...fromInv, ...fromLogs]) {
+      const key = name.trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push({ value: name, label: name });
+    }
+    return out;
+  }, [inventoryQ.data?.items, query.data?.items]);
+
+  const animalOptions = useMemo<SuggestOption[]>(() => {
+    const remote = animalSearchQ.data ?? [];
+    const local = animalsQ.data?.items ?? [];
+    const source = remote.length > 0 ? remote : local;
+    return source.map((a) => ({
+      value: a.id,
+      label: a.tag + (a.name ? ` · ${a.name}` : ''),
+      hint: 'shortNo' in a && a.shortNo ? `#${a.shortNo}` : undefined,
+    }));
+  }, [animalSearchQ.data, animalsQ.data?.items]);
+
+  const batchOptions = useMemo<SuggestOption[]>(
+    () =>
+      (batchesQ.data?.items ?? []).map((b) => ({
+        value: b.id,
+        label: b.name,
+        hint: b.kind,
+      })),
+    [batchesQ.data?.items],
+  );
+
+  const inventoryOptions = useMemo<SuggestOption[]>(
+    () =>
+      (inventoryQ.data?.items ?? [])
+        .filter((i) => i.category === 'FEED')
+        .map((i) => ({
+          value: i.id,
+          label: i.name,
+          hint: `${i.currentStock} ${i.unit}`,
+        })),
+    [inventoryQ.data?.items],
+  );
 
   const save = useMutation({
     mutationFn: () =>
@@ -76,6 +135,10 @@ export function FeedPage() {
     onSuccess: () => {
       setShowForm(false);
       setForm({ feedType: '', accepted: true, occurredAt: new Date() });
+      setAnimalLabel('');
+      setBatchLabel('');
+      setInventoryLabel('');
+      setAnimalQuery('');
       void qc.invalidateQueries({ queryKey: ['feed'] });
     },
   });
@@ -186,12 +249,18 @@ export function FeedPage() {
           <div className="form-grid">
             <div className="field">
               <label htmlFor="feed-feedType">{t('feed.feedType')}</label>
-              <input
-                {...fieldProps('feedType')}
+              <SuggestInput
+                id="feed-feedType"
                 value={form.feedType ?? ''}
-                onChange={(e) => {
+                displayValue={form.feedType ?? ''}
+                options={feedTypeOptions}
+                allowCustom
+                placeholder={t('feed.feedType')}
+                aria-invalid={Boolean(fieldErrors.feedType)}
+                aria-describedby={fieldErrors.feedType ? 'feed-feedType-error' : undefined}
+                onChange={({ value }) => {
                   clearField('feedType');
-                  setForm((p) => ({ ...p, feedType: e.target.value }));
+                  setForm((p) => ({ ...p, feedType: value }));
                 }}
               />
               <FieldError id="feed-feedType-error" message={fieldErrors.feedType} />
@@ -232,57 +301,58 @@ export function FeedPage() {
             </div>
             <div className="field">
               <label htmlFor="feed-animal">{t('feed.animal')}</label>
-              <select
+              <SuggestInput
                 id="feed-animal"
                 value={form.animalId ?? ''}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, animalId: e.target.value || undefined }))
-                }
-              >
-                <option value="">{t('feed.selectAnimal')}</option>
-                {(animalsQ.data?.items ?? []).map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.tag}
-                    {a.name ? ` · ${a.name}` : ''}
-                  </option>
-                ))}
-              </select>
+                displayValue={animalLabel}
+                options={animalOptions}
+                allowCustom={false}
+                placeholder={t('feed.selectAnimal')}
+                onInputChange={setAnimalQuery}
+                onChange={({ value, label, option }) => {
+                  setAnimalLabel(label);
+                  setForm((p) => ({ ...p, animalId: value || undefined }));
+                  if (option) setAnimalQuery(label);
+                }}
+              />
             </div>
             <div className="field">
               <label htmlFor="feed-batch">{t('feed.herdBatch')}</label>
-              <select
+              <SuggestInput
                 id="feed-batch"
                 value={form.herdBatchId ?? ''}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, herdBatchId: e.target.value || undefined }))
-                }
-              >
-                <option value="">{t('feed.selectBatch')}</option>
-                {(batchesQ.data?.items ?? []).map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name} ({b.kind})
-                  </option>
-                ))}
-              </select>
+                displayValue={batchLabel}
+                options={batchOptions}
+                allowCustom={false}
+                placeholder={t('feed.selectBatch')}
+                onChange={({ value, label }) => {
+                  setBatchLabel(label);
+                  setForm((p) => ({ ...p, herdBatchId: value || undefined }));
+                }}
+              />
             </div>
             <div className="field">
               <label htmlFor="feed-inv">{t('feed.inventory')}</label>
-              <select
+              <SuggestInput
                 id="feed-inv"
                 value={form.inventoryItemId ?? ''}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, inventoryItemId: e.target.value || undefined }))
-                }
-              >
-                <option value="">{t('feed.noInventoryItem')}</option>
-                {(inventoryQ.data?.items ?? [])
-                  .filter((i) => i.category === 'FEED')
-                  .map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name}
-                    </option>
-                  ))}
-              </select>
+                displayValue={inventoryLabel}
+                options={inventoryOptions}
+                allowCustom={false}
+                placeholder={t('feed.noInventoryItem')}
+                onChange={({ value, label, option }) => {
+                  setInventoryLabel(label);
+                  const inv = (inventoryQ.data?.items ?? []).find((i) => i.id === value);
+                  setForm((p) => ({
+                    ...p,
+                    inventoryItemId: value || undefined,
+                    feedType: p.feedType?.trim() ? p.feedType : option?.label || p.feedType,
+                    costPerKg:
+                      p.costPerKg ??
+                      (inv?.unitCost != null ? Number(inv.unitCost) : p.costPerKg),
+                  }));
+                }}
+              />
             </div>
             <div className="field">
               <label htmlFor="feed-cond">{t('feed.condition')}</label>

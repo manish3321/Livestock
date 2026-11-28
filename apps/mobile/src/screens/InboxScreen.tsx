@@ -131,7 +131,14 @@ export function InboxScreen() {
     nav.navigate(dest.name, dest.params);
   };
 
+  const dropLocalTask = (taskId: string) => {
+    store.tasks.delete(taskId);
+    persist();
+    setTasks((prev) => prev.filter((row) => row.id !== taskId));
+  };
+
   const complete = async (task: TaskDto) => {
+    dropLocalTask(task.id);
     try {
       await api.completeTask(task.id, { byScan: false });
       await load();
@@ -155,13 +162,15 @@ export function InboxScreen() {
   };
 
   const dismissWith = async (task: TaskDto, reason: TaskDismissReason) => {
+    dropLocalTask(task.id);
+    setDismissId(null);
     try {
       const row = await api.patch<TaskDto>(`/v1/tasks/${task.id}/dismiss`, { reason });
-      setDismissId(null);
       if (row.offerMute) setMuteOffer(row);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : t('errors.generic'));
+      await load();
     }
   };
 

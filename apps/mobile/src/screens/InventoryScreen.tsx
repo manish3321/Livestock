@@ -339,7 +339,8 @@ export function InventoryScreen() {
                 </View>
                 <Muted>{row.category}</Muted>
                 <Txt>
-                  {t('inventory.stock')}: {row.currentStock} / {row.minimumStock} {row.unit}
+                  {t('inventory.stock')}: {row.currentStock} {row.unit} · {t('inventory.minimumStock')}{' '}
+                  {row.minimumStock}
                 </Txt>
                 <Muted>
                   {t('inventory.valuation')}: {fmt.npr(row.valuation)}

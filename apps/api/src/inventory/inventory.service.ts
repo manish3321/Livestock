@@ -6,8 +6,8 @@ import {
 import {
   inventoryAlertLevel,
   type InventoryCreate,
+  type InventoryListQuery,
   type InventoryUpdate,
-  type PageQuery,
   type PageResult,
   type RestockCreate,
   type StockMovementCreate,
@@ -69,20 +69,20 @@ export class InventoryService {
 
   async list(
     user: RequestUser,
-    query: PageQuery,
+    query: InventoryListQuery,
   ): Promise<PageResult<InventoryItemDto>> {
-    const where = { farmId: user.farmId, deletedAt: null };
-    const [rows, total] = await Promise.all([
-      this.prisma.inventoryItem.findMany({
-        where,
-        orderBy: { name: 'asc' },
-        skip: (query.page - 1) * query.pageSize,
-        take: query.pageSize,
-      }),
-      this.prisma.inventoryItem.count({ where }),
-    ]);
+    const rows = await this.prisma.inventoryItem.findMany({
+      where: { farmId: user.farmId, deletedAt: null },
+      orderBy: { name: 'asc' },
+    });
+    let items = rows.map(toDto);
+    if (query.alert) {
+      items = items.filter((row) => row.alertLevel === query.alert);
+    }
+    const total = items.length;
+    const start = (query.page - 1) * query.pageSize;
     return {
-      items: rows.map(toDto),
+      items: items.slice(start, start + query.pageSize),
       page: query.page,
       pageSize: query.pageSize,
       total,
@@ -183,21 +183,44 @@ export class InventoryService {
     });
   }
 
+  /**
+   * Restock from the shed UI: add quantity to stock immediately and keep a RECEIVED
+   * request + IN movement for audit. (Pending-only requests had no receive UI.)
+   */
   async requestRestock(
     user: RequestUser,
     itemId: string,
     input: RestockCreate,
     requestId?: string,
   ): Promise<RestockRequestDto> {
-    await this.requireItem(user.farmId, itemId);
-    const req = await this.prisma.restockRequest.create({
-      data: {
-        farmId: user.farmId,
-        itemId,
-        quantity: input.quantity,
-        notes: input.notes,
-        requestedBy: user.id,
-      },
+    const item = await this.requireItem(user.farmId, itemId);
+    const qty = Number(input.quantity);
+    const req = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.restockRequest.create({
+        data: {
+          farmId: user.farmId,
+          itemId,
+          quantity: qty,
+          notes: input.notes,
+          requestedBy: user.id,
+          status: 'RECEIVED',
+        },
+      });
+      await tx.inventoryItem.update({
+        where: { id: item.id },
+        data: { currentStock: Number(item.currentStock) + qty },
+      });
+      await tx.stockMovement.create({
+        data: {
+          farmId: user.farmId,
+          itemId: item.id,
+          type: 'IN',
+          quantity: qty,
+          reason: input.notes?.trim() || `Restock received (${created.id})`,
+          userId: user.id,
+        },
+      });
+      return created;
     });
     await this.audit.record({
       farmId: user.farmId,
@@ -205,7 +228,7 @@ export class InventoryService {
       action: 'inventory.restock',
       entityType: 'inventoryItem',
       entityId: itemId,
-      metadata: { quantity: input.quantity },
+      metadata: { quantity: qty, status: 'RECEIVED' },
       requestId,
     });
     return toRestockDto(req);

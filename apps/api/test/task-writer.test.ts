@@ -38,7 +38,9 @@ describe('ensureTask due-day dedupe', () => {
               if (where.animalId === null && t.animalId != null) return false;
               if (where.animalId && t.animalId !== where.animalId) return false;
               if (where.status?.in && !where.status.in.includes(t.status)) return false;
+              if (typeof where.status === 'string' && t.status !== where.status) return false;
               if (gte && lt && (t.dueAt < gte || t.dueAt >= lt)) return false;
+              if (where.dueAt instanceof Date && t.dueAt.getTime() !== where.dueAt.getTime()) return false;
               return true;
             }) ?? null
           );
@@ -118,6 +120,58 @@ describe('ensureTask due-day dedupe', () => {
     expect(gte.toISOString()).toBe('2026-11-26T00:00:00.000Z');
     expect(lt.toISOString()).toBe('2026-11-27T00:00:00.000Z');
   });
+
+  it('does not recreate a task dismissed for the same due day', async () => {
+    const animalId = randomUUID();
+    const dueAt = new Date('2026-11-26T08:00:00.000Z');
+    const id = await ensureTask(db, {
+      farmId: FARM,
+      animalId,
+      type: 'HEAT_WATCH',
+      titleEn: 'Check heat',
+      titleNp: 'हेर्नुहोस्',
+      dueAt,
+    });
+    const row = tasks.find((t) => t.id === id)!;
+    row.status = 'DISMISSED';
+    const again = await ensureTask(db, {
+      farmId: FARM,
+      animalId,
+      type: 'HEAT_WATCH',
+      titleEn: 'Check heat again',
+      titleNp: 'फेरि',
+      dueAt: new Date('2026-11-26T18:00:00.000Z'),
+    });
+    expect(again).toBeNull();
+    expect(tasks.filter((t) => t.status === 'PENDING')).toHaveLength(0);
+  });
+
+  it('keeps snoozed dueAt when ensureTask runs again', async () => {
+    const animalId = randomUUID();
+    const dueAt = new Date('2026-11-26T08:00:00.000Z');
+    const id = await ensureTask(db, {
+      farmId: FARM,
+      animalId,
+      type: 'HEAT_WATCH',
+      titleEn: 'Check heat',
+      titleNp: 'हेर्नुहोस्',
+      dueAt,
+    });
+    const row = tasks.find((t) => t.id === id)!;
+    row.status = 'SNOOZED';
+    row.dueAt = new Date('2026-11-26T20:00:00.000Z');
+    await ensureTask(db, {
+      farmId: FARM,
+      animalId,
+      type: 'HEAT_WATCH',
+      titleEn: 'Check heat updated',
+      titleNp: 'अपडेट',
+      dueAt,
+    });
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].dueAt.toISOString()).toBe('2026-11-26T20:00:00.000Z');
+    expect(tasks[0].titleEn).toBe('Check heat updated');
+  });
 });
 
 describe('one Task row: inbox complete and breeding complete', () => {
@@ -139,6 +193,10 @@ describe('one Task row: inbox complete and breeding complete', () => {
               if (t.type !== where.type) return false;
               if (where.animalId && t.animalId !== where.animalId) return false;
               if (where.status?.in && !where.status.in.includes(t.status)) return false;
+              if (typeof where.status === 'string' && t.status !== where.status) return false;
+              if (where.dueAt?.gte && where.dueAt?.lt) {
+                if (t.dueAt < where.dueAt.gte || t.dueAt >= where.dueAt.lt) return false;
+              }
               return true;
             }) ?? null
           );

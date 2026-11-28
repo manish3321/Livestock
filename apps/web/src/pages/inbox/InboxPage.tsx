@@ -34,8 +34,24 @@ export function InboxPage() {
     },
   });
 
+  const removeTaskFromCache = (id: string) => {
+    qc.setQueryData<{ items: TaskDto[]; page?: number; pageSize?: number; total?: number }>(
+      ['tasks'],
+      (prev) => {
+        if (!prev) return prev;
+        const items = prev.items.filter((row) => row.id !== id);
+        cacheTasksForOffline(items);
+        return { ...prev, items, total: items.length };
+      },
+    );
+  };
+
   const complete = useMutation({
     mutationFn: (id: string) => completeTask(id),
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: ['tasks'] });
+      removeTaskFromCache(id);
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
   });
 
@@ -48,8 +64,12 @@ export function InboxPage() {
   const dismiss = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: TaskDismissReason }) =>
       dismissTask(id, { reason }),
-    onSuccess: (row) => {
+    onMutate: async ({ id }) => {
+      await qc.cancelQueries({ queryKey: ['tasks'] });
+      removeTaskFromCache(id);
       setDismissId(null);
+    },
+    onSuccess: (row) => {
       if (row.offerMute) setMuteOffer(row);
       void qc.invalidateQueries({ queryKey: ['tasks'] });
     },
@@ -162,7 +182,7 @@ export function InboxPage() {
                     onClick={() => {
                       if (!navigator.onLine) {
                         enqueueReminderOp({ kind: 'complete', taskId: task.id });
-                        cacheTasksForOffline(readCachedTasks().filter((row) => row.id !== task.id));
+                        removeTaskFromCache(task.id);
                         return;
                       }
                       complete.mutate(task.id);
@@ -195,7 +215,7 @@ export function InboxPage() {
                       if (!navigator.onLine) {
                         enqueueReminderOp({ kind: 'dismiss', taskId: task.id, reason });
                         setDismissId(null);
-                        cacheTasksForOffline(readCachedTasks().filter((row) => row.id !== task.id));
+                        removeTaskFromCache(task.id);
                         return;
                       }
                       dismiss.mutate({ id: task.id, reason });

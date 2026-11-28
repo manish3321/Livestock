@@ -15,15 +15,15 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   inventoryCreateSchema,
   inventoryUpdateSchema,
-  pageQuerySchema,
+  inventoryListQuerySchema,
   restockCreateSchema,
   stockLotCreateSchema,
   stockMovementCreateSchema,
 } from '@farm/contracts';
 import type {
   InventoryCreate,
+  InventoryListQuery,
   InventoryUpdate,
-  PageQuery,
   PageResult,
   RestockCreate,
   StockMovementCreate,
@@ -66,7 +66,7 @@ export class InventoryController {
   @ApiOperation({ summary: 'List inventory items' })
   list(
     @CurrentUser() user: RequestUser,
-    @Query(new ZodValidationPipe(pageQuerySchema)) query: PageQuery,
+    @Query(new ZodValidationPipe(inventoryListQuerySchema)) query: InventoryListQuery,
   ): Promise<PageResult<InventoryItemDto>> {
     return this.inventory.list(user, query);
   }
@@ -129,7 +129,7 @@ export class InventoryController {
 
   @Post(':id/restock')
   @RequirePermissions('inventory:restock-request')
-  @ApiOperation({ summary: 'Request restock' })
+  @ApiOperation({ summary: 'Receive restock and add quantity to stock' })
   restock(
     @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) id: string,
