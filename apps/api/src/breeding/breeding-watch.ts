@@ -173,17 +173,34 @@ function dimOf(animal: WatchAnimal, now: Date): number | null {
   return wholeDays(animal.lactationStart, now);
 }
 
-function daysQuietOf(animal: WatchAnimal, now: Date): number {
-  const from = animal.lastHeatAt ?? animal.lactationStart ?? animal.dateOfBirth;
-  if (!from) return 0;
+/** Quiet days from last heat or lactation only — never DOB or “now”. */
+function daysQuietOf(animal: WatchAnimal, now: Date): number | null {
+  const from = animal.lastHeatAt ?? animal.lactationStart;
+  if (!from) return null;
   return Math.max(0, wholeDays(from, now));
 }
 
-function cycleDayOf(animal: WatchAnimal, cycleDays: number, now: Date): number {
+function cycleDayOf(animal: WatchAnimal, cycleDays: number, now: Date): number | null {
   const quiet = daysQuietOf(animal, now);
+  if (quiet == null) return null;
   if (cycleDays <= 0) return quiet;
   const day = quiet % cycleDays;
   return day === 0 && quiet > 0 ? cycleDays : Math.max(1, day || 1);
+}
+
+function needDataCountdown(labelEn: string, labelNp: string) {
+  return countdown({
+    kind: 'DAYS_QUIET',
+    eventEn: 'data',
+    eventNp: 'डाटा',
+    targetDate: null,
+    remaining: 0,
+    unit: 'DAYS',
+    total: null,
+    elapsed: 0,
+    labelEn,
+    labelNp,
+  });
 }
 
 function daysToCalving(animal: WatchAnimal, now: Date): number | null {
@@ -220,7 +237,11 @@ export function countdownFor(
     case 'DRY_PREGNANT':
     case 'PREGNANT_DRYOFF_DUE':
     case 'PREGNANT_EARLY': {
-      const remaining = toCalving ?? 0;
+      if (toCalving == null || !animal.expectedCalvingDate) {
+        const cd = needDataCountdown('Add expected calving date', 'अपेक्षित ब्याउने मिति हाल्नुहोस्');
+        return { countdown: cd, contextEn: cd.labelEn, contextNp: cd.labelNp, sortKey: 0 };
+      }
+      const remaining = toCalving;
       const elapsed = cfg.gestationDays - remaining;
       const cd = countdown({
         kind: 'DAYS_TO_EVENT',
@@ -249,7 +270,11 @@ export function countdownFor(
       };
     }
     case 'FRESH': {
-      const elapsed = dim ?? 0;
+      if (dim == null || !animal.lactationStart) {
+        const cd = needDataCountdown('Add lactation start', 'दूध सुरु मिति हाल्नुहोस्');
+        return { countdown: cd, contextEn: cd.labelEn, contextNp: cd.labelNp, sortKey: 0 };
+      }
+      const elapsed = dim;
       const remaining = FRESH_DAYS - elapsed;
       const cd = countdown({
         kind: 'ELAPSED_OF_TARGET',
@@ -266,7 +291,11 @@ export function countdownFor(
       return { countdown: cd, contextEn: cd.labelEn, contextNp: cd.labelNp, sortKey: elapsed };
     }
     case 'VOLUNTARY_WAIT': {
-      const elapsed = dim ?? 0;
+      if (dim == null || !animal.lactationStart) {
+        const cd = needDataCountdown('Add lactation start', 'दूध सुरु मिति हाल्नुहोस्');
+        return { countdown: cd, contextEn: cd.labelEn, contextNp: cd.labelNp, sortKey: 0 };
+      }
+      const elapsed = dim;
       const remaining = cfg.voluntaryWaitingDays - elapsed;
       const cd = countdown({
         kind: 'ELAPSED_OF_TARGET',
@@ -285,9 +314,11 @@ export function countdownFor(
       return { countdown: cd, contextEn: cd.labelEn, contextNp: cd.labelNp, sortKey: -elapsed };
     }
     case 'IN_HEAT': {
-      const end = animal.lastHeatAt
-        ? addHours(animal.lastHeatAt, cfg.serviceWindowEndHours)
-        : now;
+      if (!animal.lastHeatAt) {
+        const cd = needDataCountdown('Add heat observation time', 'गर्मी देखिएको समय हाल्नुहोस्');
+        return { countdown: cd, contextEn: cd.labelEn, contextNp: cd.labelNp, sortKey: 0 };
+      }
+      const end = addHours(animal.lastHeatAt, cfg.serviceWindowEndHours);
       const remaining = Math.ceil((end.getTime() - now.getTime()) / HOUR_MS);
       const elapsed = cfg.serviceWindowEndHours - remaining;
       const clock = end.toLocaleTimeString('en-GB', {
@@ -325,6 +356,10 @@ export function countdownFor(
       };
     }
     case 'ANESTRUS_SUSPECTED': {
+      if (quiet == null) {
+        const cd = needDataCountdown('Add last heat or lactation start', 'अन्तिम गर्मी वा दूध सुरु हाल्नुहोस्');
+        return { countdown: cd, contextEn: cd.labelEn, contextNp: cd.labelNp, sortKey: 0 };
+      }
       // Stage is already anestrus-suspected (>30d quiet). "Silent heat" is the
       // short-window buffalo check; long quiet stretches are true anestrus.
       const longQuiet = quiet >= 60;
@@ -348,6 +383,10 @@ export function countdownFor(
     }
     case 'AWAITING_HEAT': {
       const day = cycleDayOf(animal, cfg.estrusCycleDays, now);
+      if (day == null || quiet == null) {
+        const cd = needDataCountdown('Add last heat or lactation start', 'अन्तिम गर्मी वा दूध सुरु हाल्नुहोस्');
+        return { countdown: cd, contextEn: cd.labelEn, contextNp: cd.labelNp, sortKey: 0 };
+      }
       const remaining = cfg.estrusCycleDays - day;
       const dueToday = day >= cfg.estrusCycleDays - 1;
       const cd = countdown({
@@ -372,11 +411,13 @@ export function countdownFor(
     }
     case 'SERVED_UNCONFIRMED':
     case 'PREGNANCY_CHECK_DUE': {
-      const since = animal.lastServiceAt ? wholeDays(animal.lastServiceAt, now) : 0;
+      if (!animal.lastServiceAt) {
+        const cd = needDataCountdown('Add service date', 'सेवा मिति हाल्नुहोस्');
+        return { countdown: cd, contextEn: cd.labelEn, contextNp: cd.labelNp, sortKey: 0 };
+      }
+      const since = wholeDays(animal.lastServiceAt, now);
       const remaining = cfg.pregnancyCheckEarliestDays - since;
-      const checkAt = animal.lastServiceAt
-        ? addDays(animal.lastServiceAt, cfg.pregnancyCheckEarliestDays)
-        : now;
+      const checkAt = addDays(animal.lastServiceAt, cfg.pregnancyCheckEarliestDays);
       const dueNow = remaining <= 0;
       const cd = countdown({
         kind: 'DAYS_TO_EVENT',
@@ -581,11 +622,11 @@ export function buildReproTimeline(input: {
   const { animal, cfg } = input;
   const labelsEarly = STAGE_LABEL[animal.stage];
 
-  // No DOB and no lactation/pregnancy: do not invent a calving cycle or fake due dates.
+  // Lactation/pregnancy track needs a real cycle anchor — never invent from DOB alone.
   const hasCycleAnchor = Boolean(
     animal.lactationStart || animal.lastServiceAt || animal.expectedCalvingDate,
   );
-  if (animal.stage === 'NEED_AGE' || (!hasCycleAnchor && !animal.dateOfBirth)) {
+  if (animal.stage === 'NEED_AGE' || !hasCycleAnchor) {
     return {
       animalId: animal.id,
       shortNo: animal.herdNumber ?? animal.tag,
@@ -609,7 +650,7 @@ export function buildReproTimeline(input: {
     };
   }
 
-  const origin = animal.lactationStart ?? animal.dateOfBirth ?? now;
+  const origin = animal.lactationStart ?? animal.lastServiceAt!;
   const serviceAt = animal.lastServiceAt;
   const edd = animal.expectedCalvingDate;
   const dryOffAt =
@@ -676,12 +717,18 @@ export function buildReproTimeline(input: {
     },
   ];
 
-  const end = edd ?? now;
-  const span = Math.max(1, end.getTime() - origin.getTime());
+  const end = edd ?? (serviceAt ? addDays(serviceAt, cfg.gestationDays) : null);
+  const span =
+    end != null ? Math.max(1, end.getTime() - origin.getTime()) : Math.max(1, now.getTime() - origin.getTime());
   const here = Math.min(1, Math.max(0, (now.getTime() - origin.getTime()) / span));
   const pregnant = animal.stage.startsWith('PREGNANT') || animal.stage === 'DRY_PREGNANT' || animal.stage === 'CALVING_IMMINENT';
+  const daysTo = daysToCalving(animal, now);
   const daysPregnant =
-    serviceAt != null ? wholeDays(serviceAt, now) : edd != null ? cfg.gestationDays - (daysToCalving(animal, now) ?? 0) : null;
+    serviceAt != null
+      ? wholeDays(serviceAt, now)
+      : edd != null && daysTo != null
+        ? cfg.gestationDays - daysTo
+        : null;
   const labels = STAGE_LABEL[animal.stage];
   const headlineEn =
     pregnant && daysPregnant != null

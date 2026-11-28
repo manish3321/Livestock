@@ -548,7 +548,8 @@ export class MilkService {
       return result.items;
     }
     const price = await this.effectivePrice(user);
-    const rate = price.effectivePrice > 0 ? price.effectivePrice : 80;
+    // No farm milk price on record → revenue stays 0 (do not invent NPR/L).
+    const rate = price.effectivePrice > 0 ? price.effectivePrice : 0;
     const from = new Date(Date.now() - 30 * DAY);
     const animals = await this.prisma.animal.findMany({
       where: {
@@ -564,7 +565,8 @@ export class MilkService {
         health: { where: { performedAt: { gte: from } } },
       },
     });
-    const labourShare = animals.length ? 50 : 0;
+    // Labour is not allocated without a real farm labour cost — do not invent NPR 50/hd.
+    const labourShare = 0;
     const rows = animals.map((a) => {
       const litres = a.production.reduce((s, p) => s + Number(p.quantity), 0);
       const feed = a.feedLogs.reduce((s, f) => s + Number(f.totalCost ?? 0), 0);

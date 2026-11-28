@@ -1048,8 +1048,11 @@ function resolveDateOfBirth(data: {
     return { dateOfBirth: data.dateOfBirth, dobIsEstimated: data.dobIsEstimated ?? false };
   }
   if (data.ageAtAcquisitionMonths !== undefined) {
-    const from = data.purchaseDate ?? new Date();
-    const derived = new Date(from.getTime() - data.ageAtAcquisitionMonths * MONTH_MS);
+    // Do not invent purchase day as “today” — without purchaseDate age cannot be grounded.
+    if (!data.purchaseDate) {
+      return { dateOfBirth: undefined, dobIsEstimated: false };
+    }
+    const derived = new Date(data.purchaseDate.getTime() - data.ageAtAcquisitionMonths * MONTH_MS);
     return { dateOfBirth: derived, dobIsEstimated: true };
   }
   // Nothing to go on. Still a valid animal; age-based figures simply cannot be

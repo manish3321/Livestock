@@ -1237,7 +1237,7 @@ describe('Nightly anestrus ladder', () => {
     expect(db.tasks.some((t) => t.type === 'SILENT_HEAT_CHECK')).toBe(false);
   });
 
-  it('ANESTRUS_DECISION body contains a rupee figure at 150+ days', async () => {
+  it('ANESTRUS_DECISION offers CIDR/wait/sell at 150+ days without inventing NPR when yield is unknown', async () => {
     const db = new BreedingFake();
     db.farms = [{ id: FARM, effectivePriceNpr: 48.36, milkPriceNpr: 62 }];
     const animal = dam({
@@ -1250,7 +1250,8 @@ describe('Nightly anestrus ladder', () => {
     await breedingJobs(db).job.runFarm(FARM, new Date());
     const decision = db.tasks.find((t) => t.type === 'ANESTRUS_DECISION');
     expect(decision).toBeTruthy();
-    expect(decision.titleEn).toMatch(/NPR \d+/);
+    expect(decision.titleEn).toMatch(/CIDR/i);
+    expect(decision.titleEn).not.toMatch(/NPR\s*0\b/);
   });
 
   it('does not reopen a service window for a heat that was already bred', async () => {

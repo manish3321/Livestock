@@ -169,13 +169,24 @@ export function planReminders(
   ctx: ReminderContext,
   cfg: SpeciesConfigDto,
 ): PlannedReminder[] {
+  const costOfDelay = ctx.costOfDelay != null && ctx.costOfDelay > 0 ? ctx.costOfDelay : null;
+  const aiCost = ctx.aiCost != null && ctx.aiCost > 0 ? ctx.aiCost : null;
   const vars: Record<string, string | number> = {
     shortNo: ctx.shortNo,
     daysQuiet: ctx.daysQuiet ?? 0,
     n: ctx.daysSinceService ?? 0,
-    costOfDelay: ctx.costOfDelay ?? 0,
+    costOfDelay: costOfDelay ?? 0,
     serviceCount: ctx.serviceCount ?? 0,
-    aiCost: ctx.aiCost ?? 0,
+    aiCost: aiCost ?? 0,
+    costClause:
+      costOfDelay != null
+        ? ` Delay is costing about NPR ${costOfDelay}.`
+        : '',
+    costClauseNp:
+      costOfDelay != null ? ` ढिलाइ करिब रु ${costOfDelay} पर्छ।` : '',
+    aiCostClause:
+      aiCost != null ? ` Cumulative AI cost: NPR ${aiCost}.` : '',
+    aiCostClauseNp: aiCost != null ? ` जम्मा एआई खर्च: रु ${aiCost}।` : '',
     ...ctx.vars,
   };
   const out: PlannedReminder[] = [];

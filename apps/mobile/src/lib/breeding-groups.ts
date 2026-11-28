@@ -132,16 +132,17 @@ export function buildWatchRows(
       ((daysLeft != null && daysLeft <= 14) || (recordDaysLeft != null && recordDaysLeft <= 14))
     ) {
       if (!claim(a.id)) continue;
-      const left = daysLeft ?? recordDaysLeft ?? 0;
-      const gestation = cfg?.gestationDays ?? 300;
-      const elapsed = gestation - Math.max(0, left);
+      const left = daysLeft ?? recordDaysLeft;
+      if (left == null) continue;
+      const gestation = cfg?.gestationDays;
+      const elapsed = gestation != null ? gestation - Math.max(0, left) : null;
       rows.push({
         key: `calvingSoon-${a.id}`,
         kind: 'calvingSoon',
         animalId: a.id,
         label: animalLabel(a),
         subtitle: left <= 0 ? 'Due today' : `${left}d left`,
-        progress: clamp01(elapsed / gestation),
+        progress: elapsed != null && gestation != null ? clamp01(elapsed / gestation) : null,
         progressLabel: `${Math.max(0, left)}d`,
         breedingId: open?.id,
         recordAction: 'calving',
@@ -174,9 +175,16 @@ export function buildWatchRows(
     }
 
     // Too soon — past fresh window but still inside voluntary waiting
-    const waiting = cfg?.voluntaryWaitingDays ?? 60;
-    const tooSoon = daysUntilReady(a.lactationStartDate, waiting);
-    if (!a.isPregnant && tooSoon != null && daysSinceCalving != null && daysSinceCalving > 21) {
+    const waiting = cfg?.voluntaryWaitingDays;
+    const tooSoon =
+      waiting != null ? daysUntilReady(a.lactationStartDate, waiting) : null;
+    if (
+      !a.isPregnant &&
+      waiting != null &&
+      tooSoon != null &&
+      daysSinceCalving != null &&
+      daysSinceCalving > 21
+    ) {
       if (!claim(a.id)) continue;
       const elapsed = waiting - tooSoon;
       rows.push({
@@ -199,7 +207,8 @@ export function buildWatchRows(
       open.matingDate
     ) {
       const since = daysBetween(new Date(open.matingDate), now);
-      const earliest = cfg?.pregnancyCheckEarliestDays ?? 45;
+      const earliest = cfg?.pregnancyCheckEarliestDays;
+      if (earliest == null) continue;
       if (since >= earliest && !a.isPregnant) {
         if (!claim(a.id)) continue;
         rows.push({
@@ -236,8 +245,9 @@ export function buildWatchRows(
     if (a.isPregnant || open?.pregnancyStatus === 'CONFIRMED') {
       if (!claim(a.id)) continue;
       const left = daysLeft ?? recordDaysLeft;
-      const gestation = cfg?.gestationDays ?? 300;
-      const elapsed = left != null ? gestation - Math.max(0, left) : null;
+      const gestation = cfg?.gestationDays;
+      const elapsed =
+        left != null && gestation != null ? gestation - Math.max(0, left) : null;
       rows.push({
         key: `carrying-${a.id}`,
         kind: 'carrying',
@@ -252,28 +262,52 @@ export function buildWatchRows(
       continue;
     }
 
-    // Heifers
-    if (a.status === 'HEIFER' || a.status === 'GROWING') {
-      if (!claim(a.id)) continue;
+    // Heifers / unserved young stock — need DOB before first-service plan
+    if (
+      a.status === 'HEIFER' ||
+      a.status === 'GROWING' ||
+      ((a.lactationNumber ?? 0) === 0 && !a.isPregnant && !open)
+    ) {
       const age = monthsOld(a.dateOfBirth);
-      const target = cfg?.ageFirstServiceMonths ?? 24;
+      const target = cfg?.ageFirstServiceMonths;
+      if (age == null || target == null) {
+        if (!claim(a.id)) continue;
+        rows.push({
+          key: `heifers-${a.id}`,
+          kind: 'heifers',
+          animalId: a.id,
+          label: animalLabel(a),
+          subtitle: 'Add date of birth',
+          progress: null,
+          progressLabel: null,
+          recordAction: 'animal',
+        });
+        continue;
+      }
+      if (!claim(a.id)) continue;
       rows.push({
         key: `heifers-${a.id}`,
         kind: 'heifers',
         animalId: a.id,
         label: animalLabel(a),
-        subtitle: age != null ? `${age} mo` : 'Heifer',
-        progress: age != null ? clamp01(age / target) : null,
-        progressLabel: age != null ? `${age}/${target} mo` : null,
-        recordAction: 'service',
+        subtitle: age < target ? `${age} mo — not ready` : `${age} mo — ready`,
+        progress: clamp01(age / target),
+        progressLabel: `${age}/${target} mo`,
+        recordAction: age >= target ? 'service' : 'animal',
       });
       continue;
     }
 
-    // Watching for heat — open, past VWP (or never calved)
-    if (!a.isPregnant && (tooSoon == null || tooSoon <= 0)) {
+    // Watching for heat — only with a real lactation start and past VWP
+    // (daysUntilReady returns null when ready OR when lac start missing)
+    if (
+      !a.isPregnant &&
+      a.lactationStartDate &&
+      waiting != null &&
+      tooSoon == null
+    ) {
       if (!claim(a.id)) continue;
-      const cycle = cfg?.estrusCycleDays ?? 21;
+      const cycle = cfg?.estrusCycleDays;
       rows.push({
         key: `watchingHeat-${a.id}`,
         kind: 'watchingHeat',
@@ -281,7 +315,7 @@ export function buildWatchRows(
         label: animalLabel(a),
         subtitle: open?.daysOpen != null ? `${open.daysOpen}d open` : 'Open',
         progress: null,
-        progressLabel: `${cycle}d cycle`,
+        progressLabel: cycle != null ? `${cycle}d cycle` : null,
         recordAction: 'heat',
       });
     }

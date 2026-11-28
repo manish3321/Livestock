@@ -75,7 +75,7 @@ export function BreedingPage() {
     kind: BreedingStage;
     animalId: string;
     breedingId?: string;
-    dueLabel: string;
+    dueLabel?: string;
     form?: BreedingStage;
   } | null>(null);
 
@@ -219,9 +219,11 @@ export function BreedingPage() {
             {t('breeding.nextStep.saved')} → {t('breeding.nextStep.nextIs')}{' '}
             {t(`breeding.nextStep.${nextStep.kind}`)}
           </h3>
-          <p>
-            {t('breeding.nextStep.due')}: {nextStep.dueLabel}
-          </p>
+          {nextStep.dueLabel ? (
+            <p>
+              {t('breeding.nextStep.due')}: {nextStep.dueLabel}
+            </p>
+          ) : null}
           {nextStep.form ? (
             <button
               type="button"
@@ -455,14 +457,14 @@ export function BreedingPage() {
               const cfg = configBySpecies.get(
                 females.find((a) => a.id === result.motherId)?.species ?? '',
               );
-              const days = cfg?.pregnancyCheckEarliestDays ?? 45;
+              const days = cfg?.pregnancyCheckEarliestDays;
               const due = new Date(result.matingDate);
-              due.setDate(due.getDate() + days);
+              if (days != null) due.setDate(due.getDate() + days);
               showNextStep({
                 kind: 'service',
                 animalId: result.motherId,
                 breedingId: result.id,
-                dueLabel: formatDueClock(due.toISOString()),
+                dueLabel: days != null ? formatDueClock(due.toISOString()) : undefined,
                 form: 'pd',
               });
             }}

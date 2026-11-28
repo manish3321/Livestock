@@ -124,9 +124,7 @@ export class BreedingBoardService {
         expectedCalving: animal.expectedCalvingDate,
         // COLOSTRUM_FEED tasks hang on the calf — use DOB for hours since birth.
         lactationStart:
-          task.type === 'COLOSTRUM_FEED'
-            ? (animal.dateOfBirth ?? animal.lactationStartDate)
-            : animal.lactationStartDate,
+          task.type === 'COLOSTRUM_FEED' ? animal.dateOfBirth : animal.lactationStartDate,
         estrusCycleDays: cfg.estrusCycleDays,
         serviceWindowEndHours: cfg.serviceWindowEndHours,
         enrollment: enrollment
@@ -298,7 +296,13 @@ export class BreedingBoardService {
       },
       orderBy: { observedAt: 'desc' },
     });
-    const quietFrom = lastHeat?.observedAt ?? animal.lactationStartDate ?? new Date();
+    const quietFrom = lastHeat?.observedAt ?? animal.lactationStartDate;
+    if (!quietFrom) {
+      throw new BadRequestException({
+        code: 'NEED_BREEDING_ANCHOR',
+        message: 'Add last heat or lactation start before suggesting a protocol',
+      });
+    }
     const daysQuiet = Math.floor((Date.now() - quietFrom.getTime()) / DAY_MS);
     const code = suggestProtocolCode(animal.species, daysQuiet);
     const protocol = await this.prisma.syncProtocol.findUnique({ where: { code } });
@@ -555,7 +559,7 @@ export class BreedingBoardService {
         changedBy: user.id,
       },
     });
-    const until = animal.expectedCalvingDate ?? addDays(new Date(), 60);
+    const until = animal.expectedCalvingDate ?? null;
     const existing = await this.prisma.animalMarker.findFirst({
       where: { farmId: user.farmId, animalId: animal.id, meaning: 'DRY', removedAt: null },
     });
@@ -690,12 +694,14 @@ export class BreedingBoardService {
       };
     }
     if (type === 'HEAT_WATCH') {
-      const from = args.lastHeatAt ?? args.lactationStart ?? now;
+      const from = args.lastHeatAt ?? args.lactationStart;
+      if (!from) return {};
       const n = Math.max(1, Math.round((now.getTime() - from.getTime()) / DAY_MS) % args.estrusCycleDays || args.estrusCycleDays);
       return { n };
     }
     if (type === 'SILENT_HEAT_CHECK') {
-      const from = args.lastHeatAt ?? args.lactationStart ?? now;
+      const from = args.lastHeatAt ?? args.lactationStart;
+      if (!from) return {};
       return { n: Math.floor((now.getTime() - from.getTime()) / DAY_MS) };
     }
     if (type === 'PREGNANCY_CHECK' && args.lastServiceAt) {

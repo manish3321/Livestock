@@ -407,9 +407,9 @@ export const SYSTEM_REMINDER_RULES: ReminderRuleDef[] = [
     priority: 'HIGH',
     channels: ['PUSH', 'SMS'],
     titleEn:
-      '{shortNo} has not shown heat for {daysQuiet} days. Delay is costing about NPR {costOfDelay}. Options: CIDR protocol, continue waiting, or sell. None of these is recommended — the number is the advice.',
+      '{shortNo} has not shown heat for {daysQuiet} days.{costClause} Options: CIDR protocol, continue waiting, or sell.',
     titleNp:
-      '{shortNo} लाई {daysQuiet} दिन देखि गर्मी आएको छैन। ढिलाइ करिब रु {costOfDelay} पर्छ। विकल्प: सिडर, पर्खिने, वा बेच्ने। कुनै सिफारिस छैन — अंक नै सल्लाह हो।',
+      '{shortNo} लाई {daysQuiet} दिन देखि गर्मी आएको छैन।{costClauseNp} विकल्प: सिडर, पर्खिने, वा बेच्ने।',
     actionKeys: ['cidr', 'wait', 'sell'],
   },
   {
@@ -419,9 +419,9 @@ export const SYSTEM_REMINDER_RULES: ReminderRuleDef[] = [
     priority: 'HIGH',
     channels: ['PUSH'],
     titleEn:
-      '{shortNo} is on service {serviceCount}. Check in this order: energy deficit in the ration, uterine infection, AI timing, semen handling. Cumulative AI cost: NPR {aiCost}.',
+      '{shortNo} is on service {serviceCount}. Check in this order: energy deficit in the ration, uterine infection, AI timing, semen handling.{aiCostClause}',
     titleNp:
-      '{shortNo} को {serviceCount} औं सेवा। यो क्रममा हेर्नुहोस्: दानामा उर्जा कमी, पाठेघरको संक्रमण, एआई समय, वीर्य ह्यान्डलिङ। जम्मा एआई खर्च: रु {aiCost}।',
+      '{shortNo} को {serviceCount} औं सेवा। यो क्रममा हेर्नुहोस्: दानामा उर्जा कमी, पाठेघरको संक्रमण, एआई समय, वीर्य ह्यान्डलिङ।{aiCostClauseNp}',
     actionKeys: ['vet', 'wait'],
   },
   {
@@ -507,8 +507,8 @@ export const SYSTEM_REMINDER_RULES: ReminderRuleDef[] = [
     offsetDays: 180,
     priority: 'HIGH',
     channels: ['PUSH'],
-    titleEn: '{shortNo} has been ready to breed for 180 days. Accumulated rearing cost: NPR {aiCost}.',
-    titleNp: '{shortNo} १८० दिनदेखि प्रजनन तयार छ। जम्मा हुर्काइ खर्च: रु {aiCost}।',
+    titleEn: '{shortNo} has been ready to breed for 180 days — decide: serve, wait, or sell.',
+    titleNp: '{shortNo} १८० दिनदेखि प्रजनन तयार छ — सेवा, पर्खने, वा बेच्ने निर्णय गर्नुहोस्।',
     actionKeys: ['service', 'wait', 'sell'],
   },
 ];

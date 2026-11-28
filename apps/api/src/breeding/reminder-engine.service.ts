@@ -535,12 +535,15 @@ export class ReminderEngineService {
       where: { farmId, date: { gte: since } },
       select: { litres: true },
     });
+    if (metrics.length === 0) return 0;
     const yieldLitres =
-      metrics.length > 0
-        ? metrics.reduce((sum, row) => sum + Number(row.litres), 0) / metrics.length
-        : 8;
-    const price =
-      farm?.effectivePriceNpr != null ? Number(farm.effectivePriceNpr) : Number(farm?.milkPriceNpr ?? 62);
+      metrics.reduce((sum, row) => sum + Number(row.litres), 0) / metrics.length;
+    const rawPrice = farm?.effectivePriceNpr ?? farm?.milkPriceNpr;
+    if (rawPrice == null) return 0;
+    const price = Number(rawPrice);
+    if (!Number.isFinite(yieldLitres) || yieldLitres <= 0 || !Number.isFinite(price) || price <= 0) {
+      return 0;
+    }
     return costOfOpenDays(days, yieldLitres, price);
   }
 }

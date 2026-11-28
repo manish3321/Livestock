@@ -73,12 +73,15 @@ export function nextDueDate(
       const seasonal = seasonalDue(protocol.triggerMonth, now);
       return seasonal <= horizon ? (seasonal < now ? now : seasonal) : null;
     }
-    if (protocol.triggerAgeDays != null && animal.dateOfBirth) {
+    if (protocol.triggerAgeDays != null) {
+      // Age-gated first dose needs a known DOB — never invent “due today”.
+      if (!animal.dateOfBirth) return null;
       const first = new Date(animal.dateOfBirth.getTime() + protocol.triggerAgeDays * DAY);
       const due = first < now ? now : first;
       return due <= horizon ? due : null;
     }
-    return now <= horizon ? now : null;
+    // No prior dose and no schedule anchor → do not invent a due date.
+    return null;
   }
 
   if (protocol.boosterAfterDays && !lastWasBooster) {

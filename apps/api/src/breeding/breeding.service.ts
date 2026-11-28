@@ -163,12 +163,13 @@ export class BreedingService {
     const serviceDate = input.serviceDate ?? input.matingDate!;
     const method = (input.method ?? input.matingType ?? 'NATURAL') as 'NATURAL' | 'AI' | 'EMBRYO_TRANSFER';
     const dueDate = addDays(serviceDate, cfg.gestationDays);
-    const since = mother.lactationStartDate ?? new Date(0);
     const prior = await this.prisma.breedingService.count({
       where: {
         farmId: user.farmId,
         animalId: mother.id,
-        serviceDate: { gte: since },
+        ...(mother.lactationStartDate
+          ? { serviceDate: { gte: mother.lactationStartDate } }
+          : {}),
         result: { not: 'PREGNANT' },
       },
     });
@@ -247,7 +248,13 @@ export class BreedingService {
     });
     if (serviceNo >= 3) {
       const lactationServices = await this.prisma.breedingService.findMany({
-        where: { farmId: user.farmId, animalId: mother.id, serviceDate: { gte: since } },
+        where: {
+          farmId: user.farmId,
+          animalId: mother.id,
+          ...(mother.lactationStartDate
+            ? { serviceDate: { gte: mother.lactationStartDate } }
+            : {}),
+        },
         select: { costNpr: true },
       });
       const aiCost = lactationServices.reduce((sum, row) => sum + Number(row.costNpr ?? 0), 0);
@@ -440,14 +447,23 @@ export class BreedingService {
       });
     }
 
-    const since = animal.lactationStartDate ?? new Date(0);
-    const heatCount = await this.prisma.heatEvent.count({
-      where: { farmId: user.farmId, animalId: animal.id, observedAt: { gte: since } },
-    });
-    const serviceCount = await this.prisma.breedingService.count({
-      where: { farmId: user.farmId, animalId: animal.id, serviceDate: { gte: since } },
-    });
-    if (heatCount >= 3 && serviceCount === 0) {
+    const since = animal.lactationStartDate;
+    const heatCount = since
+      ? await this.prisma.heatEvent.count({
+          where: { farmId: user.farmId, animalId: animal.id, observedAt: { gte: since } },
+        })
+      : await this.prisma.heatEvent.count({
+          where: { farmId: user.farmId, animalId: animal.id },
+        });
+    const serviceCount = since
+      ? await this.prisma.breedingService.count({
+          where: { farmId: user.farmId, animalId: animal.id, serviceDate: { gte: since } },
+        })
+      : await this.prisma.breedingService.count({
+          where: { farmId: user.farmId, animalId: animal.id },
+        });
+    // Only flag cycling-unbred when we know the open period (fresh lactation or never-calved).
+    if (heatCount >= 3 && serviceCount === 0 && (since || (animal.lactationNumber ?? 0) === 0)) {
       await ensureTask(this.prisma, {
         farmId: user.farmId,
         animalId: animal.id,
@@ -1655,12 +1671,15 @@ export class BreedingService {
     for (const animal of animals) {
       if (EXIT.includes(animal.status)) continue;
       const cfg = cfgBySpecies.get(animal.species as Species);
-      const cycle = cfg?.estrusCycleDays ?? 21;
+      const cycle = cfg?.estrusCycleDays;
+      if (cycle == null || cycle <= 0) continue;
       const lastCalving = [...calvings].reverse().find((c) => c.damId === animal.id);
       const pregnantService = [...services]
         .filter((s) => s.animalId === animal.id && s.result === 'PREGNANT')
         .sort((a, b) => b.serviceDate.getTime() - a.serviceDate.getTime())[0];
-      const openStart = lastCalving?.calvingAt ?? animal.lactationStartDate ?? windowStart;
+      const openStart = lastCalving?.calvingAt ?? animal.lactationStartDate;
+      // No calving / lactation anchor → do not invent a year of expected heats.
+      if (!openStart) continue;
       const openEnd = animal.isPregnant && pregnantService ? pregnantService.serviceDate : now;
       const from = openStart > windowStart ? openStart : windowStart;
       const to = openEnd < now ? openEnd : now;

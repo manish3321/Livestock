@@ -275,8 +275,14 @@ function factsFromLists(
   services: Array<{ serviceDate: Date; result: string }>,
   heats: Array<{ observedAt: Date }>,
 ): ReproStageFacts {
-  const sinceLactation = animal.lactationStartDate ?? new Date(0);
-  const thisLactation = services.filter((row) => row.serviceDate >= sinceLactation);
+  const sinceLactation = animal.lactationStartDate;
+  // Never-calved: all services are pre-first-calving. Missing lac start on a
+  // multiparous cow: do not invent epoch — treat this-lactation services as unknown.
+  const thisLactation = sinceLactation
+    ? services.filter((row) => row.serviceDate >= sinceLactation)
+    : (animal.lactationNumber ?? 0) === 0
+      ? services
+      : [];
   const pending = thisLactation.find((row) => row.result === 'PENDING');
   const lastHeat = heats[0];
   const lastHeatOrCalving = latestDate(lastHeat?.observedAt, animal.lactationStartDate);

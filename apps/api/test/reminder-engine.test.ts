@@ -154,7 +154,7 @@ describe('reminder rule table', () => {
   it('puts a rupee figure in ANESTRUS_DECISION and does not flag a recommended option', () => {
     const rule = SYSTEM_REMINDER_RULES.find((row) => row.code === 'ANESTRUS_DECISION')!;
     expect(rule.actionKeys).toEqual(['cidr', 'wait', 'sell']);
-    expect(rule.titleEn.toLowerCase()).toContain('none of these is recommended');
+    expect(rule.titleEn.toLowerCase()).toContain('options: cidr');
     const planned = planReminders(
       SYSTEM_REMINDER_RULES,
       ctx({
