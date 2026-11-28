@@ -11,6 +11,7 @@ export function TopBar({
   onProfile,
   profileLabel,
   userInitial,
+  hasNotifications = false,
 }: {
   farmName: string;
   todayLabel: string;
@@ -19,6 +20,8 @@ export function TopBar({
   onProfile: () => void;
   profileLabel: string;
   userInitial?: string;
+  /** Red profile dot when inbox / approvals have open work. */
+  hasNotifications?: boolean;
 }) {
   const showEn = localeLabel === 'नेपाली' || localeLabel.toLowerCase().includes('ne');
 
@@ -66,7 +69,7 @@ export function TopBar({
             ⋯
           </Txt>
         )}
-        <View style={styles.notifyDot} />
+        {hasNotifications ? <View style={styles.notifyDot} /> : null}
       </Pressable>
     </View>
   );

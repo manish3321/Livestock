@@ -7,6 +7,7 @@ import type { RootStackParamList } from '../../navigation/types';
 import { color } from '../../theme/tokens';
 import { useLocale } from '../../locale/LocaleProvider';
 import { Txt } from '../ui';
+import { NavSup } from './NavSup';
 
 export type DrawerDest =
   | { type: 'module'; module: ModuleKey }
@@ -20,6 +21,8 @@ export function MoreDrawer({
   groups,
   activeModule,
   allowed,
+  counts,
+  pendingApprovals = 0,
   showProfit,
   showAdminMembers,
   showAdminAudit,
@@ -32,6 +35,8 @@ export function MoreDrawer({
   groups: NavGroup[];
   activeModule?: ModuleKey;
   allowed: Set<ModuleKey>;
+  counts?: Partial<Record<ModuleKey, number>>;
+  pendingApprovals?: number;
   showProfit: boolean;
   showAdminMembers: boolean;
   showAdminAudit: boolean;
@@ -68,17 +73,22 @@ export function MoreDrawer({
                   </Txt>
                   {items.map((m) => {
                     const on = activeModule === m;
+                    const count = counts?.[m] ?? 0;
                     return (
                       <Pressable
                         key={m}
                         onPress={() => onNavigate({ type: 'module', module: m })}
                         style={[styles.navItem, on && styles.navItemActive]}
                         accessibilityRole="button"
+                        accessibilityLabel={count > 0 ? `${t(`nav.${m}`)}, ${count}` : t(`nav.${m}`)}
                       >
                         <ModuleIcon module={m} size={18} color={on ? color.brandStrong : color.textSecondary} />
-                        <Txt weight="medium" style={[styles.navText, on && styles.navTextOn]}>
-                          {t(`nav.${m}`)}
-                        </Txt>
+                        <View style={styles.navLabelRow}>
+                          <Txt weight="medium" style={[styles.navText, on && styles.navTextOn]}>
+                            {t(`nav.${m}`)}
+                          </Txt>
+                          <NavSup count={count} />
+                        </View>
                       </Pressable>
                     );
                   })}
@@ -101,6 +111,25 @@ export function MoreDrawer({
                         </Txt>
                       </Pressable>
                     </>
+                  ) : null}
+                  {group.labelKey === 'nav.group.home' && allowed.has('inbox') ? (
+                    <Pressable
+                      onPress={() => onNavigate({ type: 'route', route: 'Approvals' })}
+                      style={styles.navItem}
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        pendingApprovals > 0
+                          ? `${t('nav.approvals')}, ${pendingApprovals}`
+                          : t('nav.approvals')
+                      }
+                    >
+                      <View style={styles.navLabelRow}>
+                        <Txt weight="medium" style={styles.navText}>
+                          {t('nav.approvals')}
+                        </Txt>
+                        <NavSup count={pendingApprovals} />
+                      </View>
+                    </Pressable>
                   ) : null}
                   {group.labelKey === 'nav.group.money' && showProfit ? (
                     <Pressable
@@ -201,6 +230,12 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: color.border,
   },
-  navText: { fontSize: 14, color: color.textPrimary, flex: 1 },
+  navLabelRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    flexWrap: 'wrap',
+  },
+  navText: { fontSize: 14, color: color.textPrimary },
   navTextOn: { color: color.brandStrong, fontWeight: '600' },
 });

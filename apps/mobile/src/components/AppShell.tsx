@@ -13,6 +13,7 @@ import { Txt } from './ui';
 import { RequireCommercial, RequireModule } from '../navigation/RequireModule';
 import { useFarm } from '../state/FarmProvider';
 import { useAccess } from '../hooks/useAccess';
+import { useNavCounts } from '../hooks/useNavCounts';
 import { useLocale } from '../locale/LocaleProvider';
 import { livestockModuleOrder, navGroups, navigableModules, MODULE_ROUTE } from '../navigation/modules';
 import type { RootStackParamList } from '../navigation/types';
@@ -50,8 +51,22 @@ export function AppShell({
   const { user, logout, online, syncing } = useFarm();
   const { can, household, commercial } = useAccess();
   const { locale, t, toggleLocale } = useLocale();
+  const navCounts = useNavCounts();
   const [moreOpen, setMoreOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+
+  const tabCounts = useMemo(() => {
+    const next: Partial<Record<TabKey, number>> = {};
+    if (navCounts.modules.inbox) next.inbox = navCounts.modules.inbox;
+    const moreTotal =
+      (navCounts.modules.breeding ?? 0) +
+      (navCounts.modules.health ?? 0) +
+      (navCounts.modules.inventory ?? 0) +
+      (navCounts.modules.revenue ?? 0) +
+      navCounts.pendingApprovals;
+    if (moreTotal > 0) next.more = moreTotal;
+    return next;
+  }, [navCounts]);
 
   const allowed = useMemo(() => {
     if (!user?.role) return new Set<ModuleKey>();
@@ -120,6 +135,7 @@ export function AppShell({
         }}
         profileLabel={t('profile.account')}
         userInitial={user?.name?.slice(0, 1).toUpperCase()}
+        hasNotifications={navCounts.totalNotifications > 0}
       />
       <OfflineBanner
         mode={syncing ? 'syncing' : online ? 'online' : 'offline'}
@@ -158,6 +174,7 @@ export function AppShell({
         <BottomTabBar
           active={activeTab}
           allowed={allowed}
+          counts={tabCounts}
           onPress={onTab}
           onScan={() => {
             setMoreOpen(false);
@@ -174,6 +191,8 @@ export function AppShell({
           groups={groups}
           activeModule={module}
           allowed={allowed}
+          counts={navCounts.modules}
+          pendingApprovals={navCounts.pendingApprovals}
           showProfit={Boolean(can('finance:read') && commercial && !household)}
           showAdminMembers={can('users:manage')}
           showAdminAudit={can('audit:read')}

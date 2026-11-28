@@ -31,6 +31,7 @@ export const ne = {
       cohort: 'ब्यान्ड',
       dailySheet: 'दैनिक पाना',
       inbox: 'काम',
+      approvals: 'स्वीकृति',
       profit: 'नाफा / पशु',
       expenses: 'खर्चहरू',
       revenue: 'आम्दानी',

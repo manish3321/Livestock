@@ -6,17 +6,21 @@ import { color, fonts, keyline, radius } from '../../theme/tokens';
 import { useLocale } from '../../locale/LocaleProvider';
 import { useTypeface } from '../ui';
 import { useScanOverlay } from '../ScanAnywhere';
+import { NavSup } from './NavSup';
 
 export type TabKey = 'dashboard' | 'shed' | 'inbox' | 'more';
 
 export function BottomTabBar({
   active,
   allowed,
+  counts,
   onPress,
   onScan,
 }: {
   active: TabKey | null;
   allowed: Set<ModuleKey>;
+  /** Open-task / module badges — inbox is the total notifications count on the tab. */
+  counts?: Partial<Record<TabKey, number>>;
   onPress: (key: TabKey) => void;
   /** Prefer stack navigation — Modal overlay is unreliable under native-stack. */
   onScan?: () => void;
@@ -65,6 +69,9 @@ export function BottomTabBar({
   const renderTab = (tab: (typeof tabs)[number]) => {
     const on = active === tab.key;
     const tint = on ? '#FFFDF9' : color.textMuted;
+    const count = counts?.[tab.key] ?? 0;
+    const a11y =
+      count > 0 ? `${tab.label}, ${count}` : tab.label;
     return (
       <Pressable
         key={tab.key}
@@ -72,22 +79,25 @@ export function BottomTabBar({
         style={[styles.item, on && styles.itemOn]}
         accessibilityRole="button"
         accessibilityState={{ selected: on }}
-        accessibilityLabel={tab.label}
+        accessibilityLabel={a11y}
       >
         {tab.module ? (
           <ModuleIcon module={tab.module} size={22} color={tint} />
         ) : (
           <MoreGlyph size={22} color={tint} />
         )}
-        <Text
-          style={[
-            styles.label,
-            { color: tint, fontFamily: face.bold },
-            on && styles.labelOn,
-          ]}
-        >
-          {tab.label}
-        </Text>
+        <View style={styles.labelRow}>
+          <Text
+            style={[
+              styles.label,
+              { color: tint, fontFamily: face.bold },
+              on && styles.labelOn,
+            ]}
+          >
+            {tab.label}
+          </Text>
+          <NavSup count={count} />
+        </View>
       </Pressable>
     );
   };
@@ -140,6 +150,12 @@ const styles = StyleSheet.create({
   },
   itemOn: {
     backgroundColor: color.brand,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    maxWidth: '100%',
   },
   label: { fontSize: 9, fontWeight: '700', textAlign: 'center' },
   labelOn: { color: '#FFFDF9' },

@@ -31,6 +31,7 @@ export const en = {
       cohort: 'Bands',
       dailySheet: 'Daily sheet',
       inbox: 'Inbox',
+      approvals: 'Approvals',
       profit: 'Profit / animal',
       expenses: 'Expenses',
       revenue: 'Revenue',
