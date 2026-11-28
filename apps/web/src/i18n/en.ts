@@ -1,6 +1,6 @@
 export const en = {
   translation: {
-    appName: 'Farm Management',
+    appName: 'Evoqed Farm Management',
     login: {
       title: 'Sign in',
       subtitle: 'Use your farm account to open the dashboard',
@@ -159,11 +159,13 @@ export const en = {
       actions: 'Actions',
       noMembers: 'No members on this farm yet.',
       noLocation: 'No location set',
+      emailTaken: 'That email is already in use. Choose a different admin email.',
     },
     errors: {
       forbidden: 'You do not have access to this page.',
       notFound: 'Page not found.',
       generic: 'Something went wrong. Please try again.',
+      emailTaken: 'That email is already in use. Choose a different email.',
       retryHint: 'Check your internet, then tap Retry.',
       animalNotFound: 'That animal could not be found.',
       breedingNotFound: 'That breeding record could not be found.',
@@ -219,6 +221,7 @@ export const en = {
       add: 'Add animal',
       edit: 'Edit animal',
       tag: 'Tag',
+      tagFormatHint: 'Tag must look like {{example}} (three letters, then 3–5 digits)',
       name: 'Name',
       species: 'Species',
       breed: 'Breed',
@@ -295,6 +298,7 @@ export const en = {
       humidity: 'Humidity',
       wind: 'Wind',
       location: 'Location',
+      weatherUnavailable: 'Weather unavailable for this farm location',
       urgentAttention: '{{count}} items need urgent attention',
       quickAccess: 'Go somewhere fast',
       quickAccessHint: 'Tap a tile to open that section',

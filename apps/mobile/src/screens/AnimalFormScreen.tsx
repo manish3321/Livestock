@@ -106,10 +106,19 @@ function AnimalForm({
       setError('No write permission');
       return;
     }
+    const normalizedTag = tag.trim().toUpperCase();
+    if (!/^[A-Z]{3}\d{3,5}$/.test(normalizedTag)) {
+      setError(t('animals.tagFormatHint', { example: 'BUF001' }));
+      return;
+    }
+    if (!breed.trim()) {
+      setError(t('animals.breedRequired'));
+      return;
+    }
     setSaving(true);
     setError(null);
     const body: AnimalCreate = {
-      tag: tag.trim().toUpperCase(),
+      tag: normalizedTag,
       name: name.trim() || undefined,
       species,
       breed: breed.trim() || 'Local',

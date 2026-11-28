@@ -8,7 +8,7 @@ const googleServicesFile =
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
-  name: 'Farm Management',
+  name: 'Evoqed Farm Management',
   slug: 'farm-shed',
   owner: 'evoqed',
   version: '0.2.0',

@@ -118,6 +118,17 @@ export class AnimalsController {
     res.send(csv);
   }
 
+  /** Alias so `/animals/export` is permission-gated (403) instead of a vague 400. */
+  @Get('export')
+  @RequirePermissions('export:data')
+  @ApiOperation({ summary: 'Export animal inventory as CSV (alias of export.csv)' })
+  async exportAlias(
+    @CurrentUser() user: RequestUser,
+    @Res() res: Response,
+  ): Promise<void> {
+    return this.exportCsv(user, res);
+  }
+
   @Post('import/preview')
   @RequirePermissions('animals:write')
   @ApiOperation({ summary: 'Preview a spreadsheet of animals before committing' })

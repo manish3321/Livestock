@@ -120,6 +120,15 @@ export function DashboardPage() {
         {user?.farmName}
       </div>
 
+      <div className="home-weather rise-in" role="status">
+        <strong>{t('dashboard.farmWeather')}</strong>
+        <span className="muted">{t('dashboard.weatherUnavailable')}</span>
+        <span className="muted">
+          {t('dashboard.location')}: {user?.farmName ?? '—'} · {t('dashboard.humidity')}: — ·{' '}
+          {t('dashboard.wind')}: —
+        </span>
+      </div>
+
       <div className="home-hero rise-in rise-in-delay-1" role="img" aria-label={t('login.pocket')}>
         <div className="home-hero-body">
           <div>

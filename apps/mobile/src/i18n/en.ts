@@ -1,6 +1,6 @@
 export const en = {
   translation: {
-    appName: 'Farm Management',
+    appName: 'Evoqed Farm Management',
     login: {
       title: 'Sign in',
       subtitle: 'Use your farm account to open the dashboard',
@@ -172,6 +172,8 @@ export const en = {
       add: 'Add animal',
       edit: 'Edit animal',
       tag: 'Tag',
+      tagFormatHint: 'Tag must look like {{example}} (three letters, then 3–5 digits)',
+      breedRequired: 'Breed is required',
       name: 'Name',
       species: 'Species',
       breed: 'Breed',
@@ -247,6 +249,7 @@ export const en = {
       humidity: 'Humidity',
       wind: 'Wind',
       location: 'Location',
+      weatherUnavailable: 'Weather unavailable for this farm location',
       urgentAttention: '{{count}} items need urgent attention',
       quickAccess: 'Go somewhere fast',
       quickAccessHint: 'Tap a tile to open that section',

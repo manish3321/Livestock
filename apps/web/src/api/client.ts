@@ -18,9 +18,21 @@ export function storeTokens(tokens: TokenPair): void {
   localStorage.setItem(REFRESH_KEY, tokens.refreshToken);
 }
 
+const SESSION_CACHE_KEYS = [
+  'farm.reminders.tasks',
+  'farm.reminders.queue',
+  'farm.reminders.fired',
+  'farm.breeding.board',
+  'farm.breeding.watch',
+  'farm.user',
+] as const;
+
 export function clearTokens(): void {
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
+  for (const key of SESSION_CACHE_KEYS) {
+    localStorage.removeItem(key);
+  }
 }
 
 /** Fired when refresh fails and tokens are wiped — AuthProvider must drop the in-memory user. */

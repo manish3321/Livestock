@@ -1,34 +1,36 @@
 /**
- * Mobile theme façade — Kharka Farm OS (local).
- * Same export names/shapes as before so screens keep compiling unchanged.
+ * Mobile theme façade — Evoqed Farm Management.
+ * Same export names/shapes so screens keep compiling unchanged.
  */
 import {
-  kharkaAnimalStatusColor,
-  kharkaApprovalStatusColor,
-  kharkaColor,
-  kharkaFontSize,
-  kharkaFontWeight,
-  kharkaInventorySeverityColor,
-  kharkaPaletteAlias,
-  kharkaRadius,
-  kharkaSpacing,
-  kharkaSpeciesColor,
-  kharkaSyncStateColor,
-  kharkaTouch,
-} from './kharka';
+  evoqedAnimalStatusColor,
+  evoqedApprovalStatusColor,
+  evoqedColor,
+  evoqedFontSize,
+  evoqedFontWeight,
+  evoqedInventorySeverityColor,
+  evoqedPaletteAlias,
+  evoqedRadius,
+  evoqedSpacing,
+  evoqedSpeciesColor,
+  evoqedStatusRail,
+  evoqedSyncStateColor,
+  evoqedTouch,
+} from './evoqed';
 
-export const palette = kharkaPaletteAlias;
-export const color = kharkaColor;
-export const animalStatusColor = kharkaAnimalStatusColor;
-export const approvalStatusColor = kharkaApprovalStatusColor;
-export const inventorySeverityColor = kharkaInventorySeverityColor;
-export const syncStateColor = kharkaSyncStateColor;
-export const speciesColor = kharkaSpeciesColor;
-export const spacing = kharkaSpacing;
-export const radius = kharkaRadius;
-export const fontSize = kharkaFontSize;
-export const fontWeight = kharkaFontWeight;
-export const touchTarget = kharkaTouch.min;
+export const palette = evoqedPaletteAlias;
+export const color = evoqedColor;
+export const animalStatusColor = evoqedAnimalStatusColor;
+export const approvalStatusColor = evoqedApprovalStatusColor;
+export const inventorySeverityColor = evoqedInventorySeverityColor;
+export const syncStateColor = evoqedSyncStateColor;
+export const speciesColor = evoqedSpeciesColor;
+export const spacing = evoqedSpacing;
+export const radius = evoqedRadius;
+export const fontSize = evoqedFontSize;
+export const fontWeight = evoqedFontWeight;
+export const touchTarget = evoqedTouch.min;
+export const statusRail = evoqedStatusRail;
 
 export const fonts = {
   body: 'PlusJakartaSans_400Regular',
@@ -85,7 +87,7 @@ export const type = {
 } as const;
 
 export const tap = touchTarget;
-export const tapField = kharkaTouch.field;
-export const tapInput = kharkaTouch.input;
-export const offlineBarHeight = kharkaTouch.offlineBar;
-export const keyline = kharkaTouch.keyline;
+export const tapField = evoqedTouch.field;
+export const tapInput = evoqedTouch.input;
+export const offlineBarHeight = evoqedTouch.offlineBar;
+export const keyline = evoqedTouch.keyline;

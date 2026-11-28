@@ -1,6 +1,6 @@
 export const ne = {
   translation: {
-    appName: 'फार्म व्यवस्थापन',
+    appName: 'Evoqed फार्म व्यवस्थापन',
     login: {
       title: 'साइन इन',
       subtitle: 'ड्यासबोर्ड खोल्न आफ्नो फार्म खाता प्रयोग गर्नुहोस्',
@@ -159,11 +159,13 @@ export const ne = {
       actions: 'कार्यहरू',
       noMembers: 'यस फार्ममा अहिलेसम्म कुनै सदस्य छैन।',
       noLocation: 'स्थान तोकिएको छैन',
+      emailTaken: 'यो इमेल पहिले नै प्रयोगमा छ। अर्को एडमिन इमेल छान्नुहोस्।',
     },
     errors: {
       forbidden: 'तपाईंलाई यो पृष्ठमा पहुँच छैन।',
       notFound: 'पृष्ठ फेला परेन।',
       generic: 'केही गडबड भयो। फेरि प्रयास गर्नुहोस्।',
+      emailTaken: 'यो इमेल पहिले नै प्रयोगमा छ। अर्को इमेल छान्नुहोस्।',
       retryHint: 'इन्टरनेट जाँच गर्नुहोस्, त्यसपछि फेरि प्रयास थिच्नुहोस्।',
       animalNotFound: 'त्यो पशु फेला परेन।',
       breedingNotFound: 'त्यो प्रजनन रेकर्ड फेला परेन।',
@@ -219,6 +221,7 @@ export const ne = {
       add: 'पशु थप्नुहोस्',
       edit: 'पशु सम्पादन',
       tag: 'ट्याग',
+      tagFormatHint: 'ट्याग {{example}} जस्तो हुनुपर्छ (तीन अक्षर, अनि ३–५ अंक)',
       name: 'नाम',
       species: 'प्रजाति',
       breed: 'नस्ल',
@@ -293,6 +296,7 @@ export const ne = {
       weather: 'फार्म मौसम',
       farmWeather: 'फार्म मौसम',
       humidity: 'आर्द्रता',
+      weatherUnavailable: 'यो फार्म स्थानको मौसम उपलब्ध छैन',
       wind: 'हावा',
       location: 'स्थान',
       urgentAttention: '{{count}} कुरा तत्काल ध्यान चाहिन्छ',

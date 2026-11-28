@@ -12,7 +12,7 @@ import {
   type StaffRole,
 } from '@farm/contracts';
 import { useAuth } from '../../auth/auth-context';
-import { api } from '../../api/client';
+import { api, ApiRequestError } from '../../api/client';
 import { DataTable, type Column } from '../../components/DataTable';
 import { ErrorState, LoadingState } from '../../components/PageState';
 
@@ -61,7 +61,13 @@ export function AdminMembersPage() {
       setEditingId(row.userId);
       void qc.invalidateQueries({ queryKey: ['admin', 'members'] });
     },
-    onError: (err: Error) => setNewError(err.message),
+    onError: (err: Error) => {
+      if (err instanceof ApiRequestError && err.error.code === 'EMAIL_TAKEN') {
+        setNewError(t('errors.emailTaken'));
+        return;
+      }
+      setNewError(err.message);
+    },
   });
 
   const rows = useMemo(() => {

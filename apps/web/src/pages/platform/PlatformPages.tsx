@@ -14,7 +14,7 @@ import {
   type Role,
 } from '@farm/contracts';
 import { useAuth } from '../../auth/auth-context';
-import { api } from '../../api/client';
+import { api, ApiRequestError } from '../../api/client';
 import { ErrorState, LoadingState } from '../../components/PageState';
 
 export function PlatformLayout() {
@@ -154,7 +154,13 @@ function CreateClientForm({ onDone }: { onDone: (farmId: string) => void }) {
       void qc.invalidateQueries({ queryKey: ['platform', 'clients'] });
       onDone(row.farmId);
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: Error) => {
+      if (err instanceof ApiRequestError && err.error.code === 'EMAIL_TAKEN') {
+        setError(t('platform.emailTaken'));
+        return;
+      }
+      setError(err.message);
+    },
   });
 
   return (

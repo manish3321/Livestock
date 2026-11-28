@@ -124,6 +124,19 @@ export function DashboardScreen() {
             </View>
           </View>
 
+          <View style={styles.weatherCard} accessibilityRole="summary">
+            <Txt weight="semibold" style={styles.weatherTitle}>
+              {t('dashboard.farmWeather')}
+            </Txt>
+            <Txt muted style={styles.weatherBody}>
+              {t('dashboard.weatherUnavailable')}
+            </Txt>
+            <Txt muted style={styles.weatherBody}>
+              {t('dashboard.location')}: {user?.farmName ?? '—'} · {t('dashboard.humidity')}: — ·{' '}
+              {t('dashboard.wind')}: —
+            </Txt>
+          </View>
+
           {urgentCount > 0 ? (
             <Pressable
               style={styles.overdueBanner}
@@ -587,6 +600,17 @@ const styles = StyleSheet.create({
     borderColor: color.mint,
   },
   greetAvatarText: { color: '#FFFDF9', fontSize: 13 },
+  weatherCard: {
+    backgroundColor: color.surface,
+    borderWidth: 1,
+    borderColor: color.border,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+    gap: 4,
+  },
+  weatherTitle: { fontSize: 14, color: color.brandStrong },
+  weatherBody: { fontSize: 12, lineHeight: 18 },
   overdueBanner: {
     flexDirection: 'row',
     alignItems: 'center',

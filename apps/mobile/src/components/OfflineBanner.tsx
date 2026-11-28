@@ -4,7 +4,7 @@ import { Txt } from './ui';
 
 type ConnectivityMode = 'online' | 'offline' | 'syncing';
 
-/** Always-on network strip — matches Kharka mockup mint “Synced” / moss offline. */
+/** Always-on network strip — mint “Synced” / moss offline. */
 export function OfflineBanner({
   visible = true,
   label,

@@ -487,8 +487,15 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
+    const tagValue = (form.tag ?? '').trim().toUpperCase();
+    const tagError = !tagValue
+      ? t('common.requiredField')
+      : !/^[A-Z]{3}\d{3,5}$/.test(tagValue)
+        ? t('animals.tagFormatHint', { example: 'BUF001' })
+        : undefined;
+    if (tagValue && tagValue !== form.tag) set('tag', tagValue);
     const ok = validate({
-      tag: required(form.tag, t('common.requiredField')),
+      tag: tagError ?? '',
       breed: required(form.breed, t('common.requiredField')),
     });
     if (ok) save.mutate();

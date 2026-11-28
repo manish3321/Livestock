@@ -23,8 +23,8 @@ import {
   tap,
   tapField,
   tapInput,
+  statusRail as evoqedStatusRail,
 } from '../theme/tokens';
-import { kharkaStatusRail } from '../theme/kharka';
 import { useLocale } from '../locale/LocaleProvider';
 
 const CHIP_COLORS: Record<string, { fg: string; bg: string }> = {
@@ -485,12 +485,12 @@ export function StatusRail({
   tone = 'normal',
   color: railColor,
 }: {
-  tone?: keyof typeof kharkaStatusRail;
+  tone?: keyof typeof evoqedStatusRail;
   color?: string;
 }) {
   return (
     <View
-      style={[styles.statusRail, { backgroundColor: railColor ?? kharkaStatusRail[tone] }]}
+      style={[styles.statusRail, { backgroundColor: railColor ?? evoqedStatusRail[tone] }]}
       accessibilityElementsHidden
       importantForAccessibility="no"
     />
@@ -558,7 +558,7 @@ export function ListRow({
   meta?: string;
   onPress?: () => void;
   zebra?: 'a' | 'b';
-  rail?: keyof typeof kharkaStatusRail;
+  rail?: keyof typeof evoqedStatusRail;
   leading?: ReactNode;
 }) {
   const body = (
