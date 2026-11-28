@@ -225,6 +225,23 @@ export class ReproStageService {
           data: { status: 'SUPERSEDED' },
         });
       }
+      // Drop invented heifer reminders when age is unknown or she left HEIFER_READY.
+      if (
+        animal.reproStage === 'HEIFER_READY' &&
+        (next === 'NEED_AGE' || next === 'CALF' || next === 'NOT_BREEDING')
+      ) {
+        await tx.task.updateMany({
+          where: {
+            farmId: animal.farmId,
+            animalId: animal.id,
+            status: { in: ['PENDING', 'SNOOZED'] },
+            sourceRefType: {
+              in: ['rule:HEIFER_BREEDING_AGE', 'rule:HEIFER_WEIGH', 'rule:HEIFER_OVERDUE'],
+            },
+          },
+          data: { status: 'SUPERSEDED' },
+        });
+      }
     });
     await this.reminders?.fireStageEntry(animal.farmId, animal, next, now);
     return next;

@@ -73,6 +73,7 @@ export class ReminderEngineService {
       herdNumber: string | null;
       tag: string;
       lactationStartDate: Date | null;
+      dateOfBirth?: Date | null;
       expectedCalvingDate: Date | null;
     },
     stage: ReproStage,
@@ -84,6 +85,12 @@ export class ReminderEngineService {
       : 0;
     const quiet = Math.max(0, dim - cfg.voluntaryWaitingDays);
     const cost = await this.delayCost(farmId, animal, now);
+    const ageMonths =
+      animal.dateOfBirth != null
+        ? Math.round(
+            (now.getTime() - animal.dateOfBirth.getTime()) / ((365.25 / 12) * DAY_MS),
+          )
+        : null;
     return this.fire(farmId, {
       enteredStage: stage,
       species: animal.species as Species,
@@ -94,6 +101,8 @@ export class ReminderEngineService {
       animalId: animal.id,
       status: animal.status,
       lactationStart: animal.lactationStartDate,
+      dateOfBirth: animal.dateOfBirth ?? null,
+      ageMonths,
       expectedCalvingDate: animal.expectedCalvingDate,
       daysQuiet: quiet,
       costOfDelay: cost,
@@ -133,6 +142,12 @@ export class ReminderEngineService {
               cfg.voluntaryWaitingDays,
           )
         : 0;
+      const ageMonths =
+        animal.dateOfBirth != null
+          ? Math.round(
+              (now.getTime() - animal.dateOfBirth.getTime()) / ((365.25 / 12) * DAY_MS),
+            )
+          : null;
       const planned = planReminders(
         rules.filter(
           (row) =>
@@ -148,6 +163,8 @@ export class ReminderEngineService {
           animalId: animal.id,
           status: animal.status,
           lactationStart: animal.lactationStartDate,
+          dateOfBirth: animal.dateOfBirth,
+          ageMonths,
           expectedCalvingDate: animal.expectedCalvingDate,
           daysQuiet: quiet,
         },

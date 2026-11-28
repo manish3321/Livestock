@@ -326,6 +326,7 @@ enum AnimalStatus {
 /// Derived reproductive stage. Never entered by hand — first matching rule wins.
 enum ReproStage {
   CALF
+  NEED_AGE
   HEIFER_READY
   VOLUNTARY_WAIT
   AWAITING_HEAT

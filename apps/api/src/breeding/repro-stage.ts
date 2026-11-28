@@ -64,8 +64,13 @@ export function deriveStage(facts: ReproStageFacts, cfg: ReproStageCfg): ReproSt
     return 'PREGNANT_EARLY';
   }
 
+  // Age-gated heifer path: never invent "ready to breed" without a known age.
+  if (facts.lactationNumber === 0 && facts.neverServed) {
+    if (facts.ageMonths == null) return 'NEED_AGE';
+    if (facts.ageMonths < cfg.ageFirstServiceMonths) return 'CALF';
+    return 'HEIFER_READY';
+  }
   if (facts.ageMonths != null && facts.ageMonths < cfg.ageFirstServiceMonths) return 'CALF';
-  if (facts.lactationNumber === 0 && facts.neverServed) return 'HEIFER_READY';
 
   const dim = facts.daysInMilk;
   if (dim != null && dim <= 21) return 'FRESH';

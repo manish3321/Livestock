@@ -318,6 +318,35 @@ describe('breeding watch', () => {
 });
 
 describe('repro timeline', () => {
+  it('asks for date of birth instead of inventing a heifer cycle', () => {
+    const timeline = buildReproTimeline({
+      now,
+      cfg: buffalo,
+      animal: animal({
+        id: 'b01',
+        tag: 'B01',
+        stage: 'NEED_AGE',
+        dateOfBirth: null,
+        lactationStart: null,
+        lastServiceAt: null,
+        expectedCalvingDate: null,
+      }),
+      tasks: [
+        {
+          titleEn: 'B01 is old enough to breed',
+          titleNp: 'x',
+          dueAt: new Date('2026-11-28'),
+          type: 'HEAT_WATCH',
+        },
+      ],
+    });
+    expect(timeline.stage).toBe('NEED_AGE');
+    expect(timeline.headlineEn.toLowerCase()).toContain('date of birth');
+    expect(timeline.milestones).toHaveLength(0);
+    expect(timeline.next).toHaveLength(0);
+    expect(timeline.youAreHerePct).toBe(0);
+  });
+
   it('returns completed and future milestones with dates', () => {
     const calved = new Date('2025-08-22T00:00:00+05:45');
     const bred = new Date('2025-11-02T00:00:00+05:45');

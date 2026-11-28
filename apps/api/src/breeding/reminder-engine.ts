@@ -20,6 +20,9 @@ export type ReminderContext = {
   animalId: string;
   status?: string;
   lactationStart?: Date | null;
+  dateOfBirth?: Date | null;
+  /** Whole months of age when DOB is known; omit when unknown. */
+  ageMonths?: number | null;
   expectedCalvingDate?: Date | null;
   placentaExpelled?: boolean;
   wasBred?: boolean;
@@ -131,6 +134,18 @@ export function matchesRule(rule: ReminderRuleDef, ctx: ReminderContext): boolea
   if (rule.code === 'HEAT_WATCH_CYCLE' && ctx.inVoluntaryWait) return false;
   if (rule.code === 'DRY_OFF_OVERDUE' && ctx.status === 'DRY') return false;
   if (rule.code === 'REPEAT_BREEDER_FLAG' && (ctx.serviceCount ?? 0) < 3) return false;
+  // Heifer age / weigh / overdue only when DOB (or age) is known.
+  if (rule.code.startsWith('HEIFER_') && (ctx.ageMonths == null || ctx.dateOfBirth == null)) {
+    return false;
+  }
+  // Daily heat watch needs a real cycle anchor — lactation or known adult age.
+  if (
+    rule.code === 'HEAT_WATCH_DAILY' &&
+    !ctx.lactationStart &&
+    (ctx.ageMonths == null || ctx.dateOfBirth == null)
+  ) {
+    return false;
+  }
   return true;
 }
 

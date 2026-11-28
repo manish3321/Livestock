@@ -47,6 +47,7 @@ export const STAGE_TO_WATCH_GROUP: Partial<Record<ReproStage, WatchGroupKey>> = 
   UNDER_PROTOCOL: 'ON_PROTOCOL',
   PREGNANT_EARLY: 'CARRYING',
   HEIFER_READY: 'HEIFERS',
+  NEED_AGE: 'DECISIONS',
   REPEAT_BREEDER: 'DECISIONS',
   DO_NOT_BREED: 'DECISIONS',
 };
@@ -69,6 +70,7 @@ const GROUP_META: Record<
 
 const STAGE_LABEL: Record<ReproStage, { en: string; np: string }> = {
   CALF: { en: 'Calf', np: 'बाच्छा' },
+  NEED_AGE: { en: 'Add date of birth', np: 'जन्म मिति हाल्नुहोस्' },
   HEIFER_READY: { en: 'Heifer ready', np: 'बाच्छी तयार' },
   VOLUNTARY_WAIT: { en: 'Too soon to breed', np: 'सेवा गर्न चाँडो' },
   AWAITING_HEAT: { en: 'Watching for heat', np: 'गर्मी हेरिँदै' },
@@ -414,8 +416,38 @@ export function countdownFor(
       });
       return { countdown: cd, contextEn: cd.labelEn, contextNp: cd.labelNp, sortKey: -day };
     }
+    case 'NEED_AGE': {
+      const cd = countdown({
+        kind: 'DAYS_QUIET',
+        eventEn: 'date of birth',
+        eventNp: 'जन्म मिति',
+        targetDate: null,
+        remaining: 0,
+        unit: 'DAYS',
+        total: null,
+        elapsed: 0,
+        labelEn: 'Add date of birth or age',
+        labelNp: 'जन्म मिति वा उमेर हाल्नुहोस्',
+      });
+      return { countdown: cd, contextEn: cd.labelEn, contextNp: cd.labelNp, sortKey: 0 };
+    }
     case 'HEIFER_READY': {
-      const age = monthsOfAge(animal.dateOfBirth, now) ?? 0;
+      const age = monthsOfAge(animal.dateOfBirth, now);
+      if (age == null) {
+        const cd = countdown({
+          kind: 'DAYS_QUIET',
+          eventEn: 'date of birth',
+          eventNp: 'जन्म मिति',
+          targetDate: null,
+          remaining: 0,
+          unit: 'DAYS',
+          total: null,
+          elapsed: 0,
+          labelEn: 'Add date of birth or age',
+          labelNp: 'जन्म मिति वा उमेर हाल्नुहोस्',
+        });
+        return { countdown: cd, contextEn: cd.labelEn, contextNp: cd.labelNp, sortKey: 0 };
+      }
       const remaining = cfg.ageFirstServiceMonths - age;
       const cd = countdown({
         kind: 'ELAPSED_OF_TARGET',
@@ -547,6 +579,36 @@ export function buildReproTimeline(input: {
 }): ReproTimelineDto {
   const now = input.now ?? new Date();
   const { animal, cfg } = input;
+  const labelsEarly = STAGE_LABEL[animal.stage];
+
+  // No DOB and no lactation/pregnancy: do not invent a calving cycle or fake due dates.
+  const hasCycleAnchor = Boolean(
+    animal.lactationStart || animal.lastServiceAt || animal.expectedCalvingDate,
+  );
+  if (animal.stage === 'NEED_AGE' || (!hasCycleAnchor && !animal.dateOfBirth)) {
+    return {
+      animalId: animal.id,
+      shortNo: animal.herdNumber ?? animal.tag,
+      name: animal.name,
+      stage: animal.stage,
+      stageLabelEn: labelsEarly.en,
+      stageLabelNp: labelsEarly.np,
+      cycleDay: null,
+      cycleTotal: null,
+      headlineEn:
+        animal.stage === 'NEED_AGE'
+          ? 'Add date of birth or age to plan first breeding'
+          : labelsEarly.en,
+      headlineNp:
+        animal.stage === 'NEED_AGE'
+          ? 'पहिलो प्रजनन योजनाका लागि जन्म मिति वा उमेर हाल्नुहोस्'
+          : labelsEarly.np,
+      youAreHerePct: 0,
+      milestones: [],
+      next: [],
+    };
+  }
+
   const origin = animal.lactationStart ?? animal.dateOfBirth ?? now;
   const serviceAt = animal.lastServiceAt;
   const edd = animal.expectedCalvingDate;

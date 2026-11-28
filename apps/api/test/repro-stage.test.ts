@@ -112,6 +112,12 @@ describe('deriveStage', () => {
     );
   });
 
+  it('does not invent HEIFER_READY when age is unknown', () => {
+    expect(deriveStage(female({ ageMonths: null, lactationNumber: 0, neverServed: true }), buffalo)).toBe(
+      'NEED_AGE',
+    );
+  });
+
   it('splits pending service on pregCheckEarliestDays', () => {
     expect(deriveStage(female({ daysInMilk: 90, pendingServiceDaysAgo: 20 }), buffalo)).toBe(
       'SERVED_UNCONFIRMED',

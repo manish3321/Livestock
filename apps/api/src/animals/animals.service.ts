@@ -1053,8 +1053,8 @@ function resolveDateOfBirth(data: {
     return { dateOfBirth: derived, dobIsEstimated: true };
   }
   // Nothing to go on. Still a valid animal; age-based figures simply cannot be
-  // computed for her until someone fills this in.
-  return { dateOfBirth: undefined, dobIsEstimated: true };
+  // computed for her until someone fills this in. Not "estimated" — unknown.
+  return { dateOfBirth: undefined, dobIsEstimated: false };
 }
 
 function toDto(

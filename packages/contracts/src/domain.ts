@@ -66,6 +66,7 @@ export const ANIMAL_EXIT_STATUSES = ['CULLED', 'SOLD', 'DEAD'] as const;
 /** Derived reproductive stage. Never entered by hand — first matching rule wins. */
 export const REPRO_STAGES = [
   'CALF',
+  'NEED_AGE',
   'HEIFER_READY',
   'VOLUNTARY_WAIT',
   'AWAITING_HEAT',
@@ -87,6 +88,7 @@ export type ReproStage = (typeof REPRO_STAGES)[number];
 
 export const REPRO_STAGE_LABEL: Record<ReproStage, string> = {
   CALF: 'Calf',
+  NEED_AGE: 'Add date of birth',
   HEIFER_READY: 'Heifer ready',
   VOLUNTARY_WAIT: 'Voluntary wait',
   AWAITING_HEAT: 'Awaiting heat',

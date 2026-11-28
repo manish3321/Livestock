@@ -790,6 +790,7 @@ export const en = {
         inDays: 'in {{n}}d',
         here: 'you are here',
         next: 'Next three',
+        needAgeHelp: 'Enter date of birth or age at purchase, then open breeding work for this animal.',
       },
       recordHelp: 'Record what you saw. The board will queue what comes next.',
       cycleHelp: 'Every step stays on this cow. Jump anywhere — the next act is marked Now.',
@@ -1351,6 +1352,7 @@ export const en = {
       },
       reproStage: {
         CALF: 'Calf',
+        NEED_AGE: 'Add date of birth',
         HEIFER_READY: 'Heifer ready',
         VOLUNTARY_WAIT: 'Voluntary wait',
         AWAITING_HEAT: 'Awaiting heat',
