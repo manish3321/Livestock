@@ -191,6 +191,10 @@ export class ReproStageService {
         where: { id: animal.id },
         data: { reproStageComputedAt: now },
       });
+      // Clear leftover heat/service tasks if she is still not age-ready.
+      if (next === 'NEED_AGE' || next === 'CALF') {
+        await this.clearAgeGatedTasks(animal.farmId, animal.id);
+      }
       return next;
     }
     const daysInPrevious =
@@ -225,27 +229,55 @@ export class ReproStageService {
           data: { status: 'SUPERSEDED' },
         });
       }
-      // Drop invented heifer reminders when age is unknown or she left HEIFER_READY.
-      if (
-        animal.reproStage === 'HEIFER_READY' &&
-        (next === 'NEED_AGE' || next === 'CALF' || next === 'NOT_BREEDING')
-      ) {
+      if (next === 'NEED_AGE' || next === 'CALF') {
         await tx.task.updateMany({
-          where: {
-            farmId: animal.farmId,
-            animalId: animal.id,
-            status: { in: ['PENDING', 'SNOOZED'] },
-            sourceRefType: {
-              in: ['rule:HEIFER_BREEDING_AGE', 'rule:HEIFER_WEIGH', 'rule:HEIFER_OVERDUE'],
-            },
-          },
+          where: ageGatedTaskWhere(animal.farmId, animal.id),
           data: { status: 'SUPERSEDED' },
         });
       }
     });
-    await this.reminders?.fireStageEntry(animal.farmId, animal, next, now);
+    // NEED_AGE / CALF should not fire breeding-stage reminder ladders.
+    if (next !== 'NEED_AGE' && next !== 'CALF') {
+      await this.reminders?.fireStageEntry(animal.farmId, animal, next, now);
+    }
     return next;
   }
+
+  private async clearAgeGatedTasks(farmId: string, animalId: string): Promise<void> {
+    await this.prisma.task.updateMany({
+      where: ageGatedTaskWhere(farmId, animalId),
+      data: { status: 'SUPERSEDED' },
+    });
+  }
+}
+
+function ageGatedTaskWhere(farmId: string, animalId: string): Prisma.TaskWhereInput {
+  return {
+    farmId,
+    animalId,
+    status: { in: ['PENDING', 'SNOOZED'] },
+    OR: [
+      {
+        type: {
+          in: [
+            'HEAT_WATCH',
+            'SERVICE_WINDOW',
+            'SILENT_HEAT_CHECK',
+            'CYCLING_UNBRED',
+            'CALF_HEALTH_CHECK',
+            'ANESTRUS_MINERAL',
+            'ANESTRUS_VET',
+            'ANESTRUS_DECISION',
+          ],
+        },
+      },
+      {
+        sourceRefType: {
+          in: ['rule:HEIFER_BREEDING_AGE', 'rule:HEIFER_WEIGH', 'rule:HEIFER_OVERDUE'],
+        },
+      },
+    ],
+  };
 }
 
 function toCfg(cfg: SpeciesConfigDto): ReproStageCfg {

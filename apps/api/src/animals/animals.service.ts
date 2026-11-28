@@ -415,11 +415,25 @@ export class AnimalsService {
       }
     }
 
+    const dobResolved = resolveDateOfBirth({
+      dateOfBirth: input.dateOfBirth,
+      dobIsEstimated: input.dobIsEstimated,
+      ageAtAcquisitionMonths: input.ageAtAcquisitionMonths,
+      purchaseDate: input.purchaseDate ?? current.purchaseDate ?? undefined,
+    });
+    // Prefer an explicit DOB from the form; otherwise keep derived/current.
+    const nextDob =
+      input.dateOfBirth !== undefined
+        ? input.dateOfBirth
+        : dobResolved.dateOfBirth !== undefined
+          ? dobResolved.dateOfBirth
+          : undefined;
+
     await this.validateParents(
       user.farmId,
       input.damId ?? current.damId ?? undefined,
       input.sireId ?? current.sireId ?? undefined,
-      input.dateOfBirth ?? current.dateOfBirth ?? undefined,
+      nextDob ?? current.dateOfBirth ?? undefined,
       id,
     );
 
@@ -428,7 +442,55 @@ export class AnimalsService {
       const row = await tx.animal.update({
         where: { id },
         data: {
-          ...rest,
+          ...(rest.tag !== undefined ? { tag: rest.tag } : {}),
+          ...(rest.name !== undefined ? { name: rest.name } : {}),
+          ...(rest.species !== undefined ? { species: rest.species } : {}),
+          ...(rest.breed !== undefined ? { breed: rest.breed } : {}),
+          ...(rest.gender !== undefined ? { gender: rest.gender } : {}),
+          ...(rest.color !== undefined ? { color: rest.color } : {}),
+          ...(rest.source !== undefined ? { source: rest.source } : {}),
+          ...(rest.motherTag !== undefined ? { motherTag: rest.motherTag } : {}),
+          ...(rest.purchaseDate !== undefined ? { purchaseDate: rest.purchaseDate } : {}),
+          ...(rest.purchaseCost !== undefined ? { purchaseCost: rest.purchaseCost } : {}),
+          ...(rest.sellerName !== undefined ? { sellerName: rest.sellerName } : {}),
+          ...(rest.distinguishingMarks !== undefined
+            ? { distinguishingMarks: rest.distinguishingMarks }
+            : {}),
+          ...(rest.status !== undefined ? { status: rest.status } : {}),
+          ...(rest.isPregnant !== undefined ? { isPregnant: rest.isPregnant } : {}),
+          ...(rest.pregnancyConfirmedDate !== undefined
+            ? { pregnancyConfirmedDate: rest.pregnancyConfirmedDate }
+            : {}),
+          ...(rest.expectedCalvingDate !== undefined
+            ? { expectedCalvingDate: rest.expectedCalvingDate }
+            : {}),
+          ...(rest.lactationNumber !== undefined ? { lactationNumber: rest.lactationNumber } : {}),
+          ...(rest.lactationStartDate !== undefined
+            ? { lactationStartDate: rest.lactationStartDate }
+            : {}),
+          ...(rest.breedingStock !== undefined ? { breedingStock: rest.breedingStock } : {}),
+          ...(rest.doNotBreed !== undefined ? { doNotBreed: rest.doNotBreed } : {}),
+          ...(rest.doNotBreedReason !== undefined ? { doNotBreedReason: rest.doNotBreedReason } : {}),
+          ...(rest.shed !== undefined ? { shed: rest.shed } : {}),
+          ...(rest.damId !== undefined ? { damId: rest.damId } : {}),
+          ...(rest.sireId !== undefined ? { sireId: rest.sireId } : {}),
+          ...(rest.notes !== undefined ? { notes: rest.notes } : {}),
+          ...(rest.ageAtAcquisitionMonths !== undefined
+            ? { ageAtAcquisitionMonths: rest.ageAtAcquisitionMonths }
+            : {}),
+          ...(input.dateOfBirth !== undefined
+            ? {
+                dateOfBirth: input.dateOfBirth,
+                dobIsEstimated: input.dobIsEstimated ?? false,
+              }
+            : dobResolved.dateOfBirth
+              ? {
+                  dateOfBirth: dobResolved.dateOfBirth,
+                  dobIsEstimated: true,
+                }
+              : input.dobIsEstimated !== undefined
+                ? { dobIsEstimated: input.dobIsEstimated }
+                : {}),
           ...(breedComposition !== undefined
             ? { breedComposition: breedComposition ?? Prisma.DbNull }
             : {}),
@@ -481,7 +543,12 @@ export class AnimalsService {
       requestId,
     });
 
-    await this.reproStage?.recomputeAnimal(user.farmId, updated.id, 'STATUS');
+    // Stage recompute must not fail the save — age/DOB edits should always stick.
+    try {
+      await this.reproStage?.recomputeAnimal(user.farmId, updated.id, 'STATUS');
+    } catch {
+      // Nightly job will retry stage derivation.
+    }
     return this.get(user, updated.id);
   }
 

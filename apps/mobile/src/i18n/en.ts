@@ -188,6 +188,8 @@ export const en = {
       dateOfBirth: 'Date of birth',
       purchaseDate: 'Purchase date',
       purchaseCost: 'Purchase cost',
+      purchaseCostRequired: 'Purchase cost is required when source is purchased.',
+      dobAfterPurchase: 'Date of birth cannot be after the purchase date.',
       breedingStock: 'Breeding stock',
       breedingHistory: 'Breeding history',
       noBreedingRecords: 'No mating records for this animal yet.',

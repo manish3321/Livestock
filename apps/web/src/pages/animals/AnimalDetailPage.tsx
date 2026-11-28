@@ -444,29 +444,29 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
     mutationFn: async () => {
       const payload: AnimalCreate = {
         tag: form.tag!,
-        name: form.name,
+        name: form.name?.trim() || undefined,
         species: (form.species ?? 'BUFFALO') as Species,
         breed: form.breed!,
         gender: (form.gender ?? 'FEMALE') as Gender,
-        color: form.color,
+        color: form.color?.trim() || undefined,
         source: form.source as AnimalSource | undefined,
-        motherTag: form.motherTag,
+        motherTag: form.motherTag?.trim() || undefined,
         status: (form.status ?? 'ACTIVE') as AnimalStatus,
         breedingStock: form.breedingStock ?? true,
-        notes: form.notes,
+        notes: form.notes?.trim() || undefined,
         purchaseCost: form.purchaseCost,
         dateOfBirth: form.dateOfBirth,
-        dobIsEstimated: form.dobIsEstimated,
+        dobIsEstimated: form.dobIsEstimated ?? false,
         ageAtAcquisitionMonths: form.ageAtAcquisitionMonths,
-        sellerName: form.sellerName,
-        distinguishingMarks: form.distinguishingMarks,
+        sellerName: form.sellerName?.trim() || undefined,
+        distinguishingMarks: form.distinguishingMarks?.trim() || undefined,
         lactationNumber: form.lactationNumber,
         lactationStartDate: form.lactationStartDate,
         purchaseDate: form.purchaseDate,
         initialWeightKg: form.initialWeightKg,
-        shed: form.shed,
-        damId: form.damId,
-        sireId: form.sireId,
+        shed: form.shed?.trim() || undefined,
+        damId: form.damId || undefined,
+        sireId: form.sireId || undefined,
       };
       if (mode === 'create') return createAnimal(payload);
       return updateAnimal(id!, payload);
@@ -476,6 +476,8 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
       const animalId = mode === 'edit' ? id! : animal.id;
       void qc.invalidateQueries({ queryKey: ['animals'] });
       void qc.invalidateQueries({ queryKey: ['animal', animalId] });
+      void qc.invalidateQueries({ queryKey: ['tasks'] });
+      void qc.invalidateQueries({ queryKey: ['breeding'] });
       navigate(`/animals/${animalId}`);
     },
   });
@@ -494,9 +496,18 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
         ? t('animals.tagFormatHint', { example: 'BUF001' })
         : undefined;
     if (tagValue && tagValue !== form.tag) set('tag', tagValue);
+    const purchasedWithoutCost =
+      form.source === 'PURCHASED' && (form.purchaseCost == null || Number.isNaN(form.purchaseCost));
+    const dobAfterPurchase =
+      form.dateOfBirth &&
+      form.purchaseDate &&
+      form.dateOfBirth.getTime() > form.purchaseDate.getTime();
     const ok = validate({
       tag: tagError ?? '',
       breed: required(form.breed, t('common.requiredField')),
+      purchaseCost: purchasedWithoutCost ? t('animals.purchaseCostRequired') : '',
+      purchaseDate: dobAfterPurchase ? t('animals.dobAfterPurchase') : '',
+      dateOfBirth: dobAfterPurchase ? t('animals.dobAfterPurchase') : '',
     });
     if (ok) save.mutate();
   };
@@ -687,15 +698,18 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
             />
           </div>
           <div className="field">
-            <label htmlFor="dateOfBirth">{t('animals.dateOfBirth')}</label>
+            <label htmlFor="animal-dateOfBirth">{t('animals.dateOfBirth')}</label>
             <input
-              id="dateOfBirth"
+              {...fieldProps('dateOfBirth')}
               type="date"
               value={toDateInput(form.dateOfBirth)}
-              onChange={(e) =>
-                set('dateOfBirth', e.target.value ? new Date(e.target.value) : undefined)
-              }
+              onChange={(e) => {
+                clearField('dateOfBirth');
+                clearField('purchaseDate');
+                set('dateOfBirth', e.target.value ? new Date(e.target.value) : undefined);
+              }}
             />
+            <FieldError id="animal-dateOfBirth-error" message={fieldErrors.dateOfBirth} />
           </div>
           <div className="field">
             <label htmlFor="dobEst">{t('animals.dobUnknown')}</label>
@@ -751,15 +765,18 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
             />
           </div>
           <div className="field">
-            <label htmlFor="purchaseDate">{t('animals.purchaseDate')}</label>
+            <label htmlFor="animal-purchaseDate">{t('animals.purchaseDate')}</label>
             <input
-              id="purchaseDate"
+              {...fieldProps('purchaseDate')}
               type="date"
               value={toDateInput(form.purchaseDate)}
-              onChange={(e) =>
-                set('purchaseDate', e.target.value ? new Date(e.target.value) : undefined)
-              }
+              onChange={(e) => {
+                clearField('purchaseDate');
+                clearField('dateOfBirth');
+                set('purchaseDate', e.target.value ? new Date(e.target.value) : undefined);
+              }}
             />
+            <FieldError id="animal-purchaseDate-error" message={fieldErrors.purchaseDate} />
           </div>
           {mode === 'create' && (
             <div className="field">
@@ -780,16 +797,21 @@ export function AnimalFormPage({ mode }: { mode: 'create' | 'edit' }) {
             </div>
           )}
           <div className="field">
-            <label htmlFor="purchaseCost">{t('animals.purchaseCost')}</label>
+            <label htmlFor="animal-purchaseCost">{t('animals.purchaseCost')}</label>
             <input
-              id="purchaseCost"
+              {...fieldProps('purchaseCost')}
               type="number"
               min="0"
               value={form.purchaseCost ?? ''}
-              onChange={(e) =>
-                set('purchaseCost', e.target.value ? Number(e.target.value) : undefined)
-              }
+              onChange={(e) => {
+                clearField('purchaseCost');
+                set('purchaseCost', e.target.value ? Number(e.target.value) : undefined);
+              }}
             />
+            {form.source === 'PURCHASED' ? (
+              <p className="field-hint">{t('animals.purchaseCostRequired')}</p>
+            ) : null}
+            <FieldError id="animal-purchaseCost-error" message={fieldErrors.purchaseCost} />
           </div>
           <div className="field">
             <label htmlFor="breedingStock">{t('animals.breedingStock')}</label>

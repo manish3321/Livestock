@@ -20,6 +20,7 @@ import type { RequestUser } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProfitService } from '../profit/profit.service';
 import { SpeciesConfigService } from '../species-config/species-config.service';
+import { monthsOfAge } from './repro-stage';
 import { ReproStageService } from './repro-stage.service';
 import { SYSTEM_REMINDER_RULES } from './reminder-catalog';
 import { planReminders, type ReminderContext } from './reminder-engine';
@@ -428,7 +429,13 @@ export class BreedingService {
     const serviceWindowEnd = addHours(input.observedAt, cfg.serviceWindowEndHours);
     const nextHeatAt = addDays(input.observedAt, cfg.estrusCycleDays);
 
-    if (!animal.isPregnant) {
+    // Never-calved animals need a known age before heat opens a service window.
+    const ageMonths = monthsOfAge(animal.dateOfBirth, input.observedAt);
+    const breedingAgeReady =
+      (animal.lactationNumber ?? 0) > 0 ||
+      (ageMonths != null && ageMonths >= cfg.ageFirstServiceMonths);
+
+    if (!animal.isPregnant && breedingAgeReady) {
       await supersedeOpenTasks(this.prisma, {
         farmId: user.farmId,
         animalId: animal.id,
@@ -462,8 +469,13 @@ export class BreedingService {
       : await this.prisma.breedingService.count({
           where: { farmId: user.farmId, animalId: animal.id },
         });
-    // Only flag cycling-unbred when we know the open period (fresh lactation or never-calved).
-    if (heatCount >= 3 && serviceCount === 0 && (since || (animal.lactationNumber ?? 0) === 0)) {
+    // Only flag cycling-unbred when she is past first-service age with a real open period.
+    if (
+      breedingAgeReady &&
+      heatCount >= 3 &&
+      serviceCount === 0 &&
+      (since || (animal.lactationNumber ?? 0) === 0)
+    ) {
       await ensureTask(this.prisma, {
         farmId: user.farmId,
         animalId: animal.id,

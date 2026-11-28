@@ -188,6 +188,8 @@ export const ne = {
       dateOfBirth: 'जन्म मिति',
       purchaseDate: 'खरिद मिति',
       purchaseCost: 'खरिद लागत',
+      purchaseCostRequired: 'स्रोत खरिद हुँदा खरिद लागत चाहिन्छ।',
+      dobAfterPurchase: 'जन्म मिति खरिद मितिभन्दा पछि हुन सक्दैन।',
       breedingStock: 'प्रजनन पशु',
       breedingHistory: 'प्रजनन इतिहास',
       noBreedingRecords: 'यो पशुका लागि अहिलेसम्म मिलान रेकर्ड छैन।',
